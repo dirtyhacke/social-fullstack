@@ -17,6 +17,7 @@ import { fetchUser } from './features/user/userSlice'
 import { fetchConnections } from './features/connections/connectionsSlice'
 import { addMessage } from './features/messages/messagesSlice'
 import Notification from './components/Notification'
+import RandomChat from './components/RandomChat'
 
 const App = () => {
   const {user} = useUser()
@@ -76,6 +77,7 @@ const App = () => {
           <Route path='profile' element={<Profile/>}/>
           <Route path='profile/:profileId' element={<Profile/>}/>
           <Route path='create-post' element={<CreatePost/>}/>
+          <Route path='/random-chat' element={<RandomChat/>}/>
         </Route>
       </Routes>
     </>

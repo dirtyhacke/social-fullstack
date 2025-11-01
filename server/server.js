@@ -9,8 +9,12 @@ import userRouter from './routes/userRotes.js';
 import postRouter from './routes/postRoutes.js';
 import storyRouter from './routes/storyRoutes.js';
 import messageRouter from './routes/messageRoutes.js';
+import randomChatRouter from './routes/randomChatRoutes.js';
+import { setupSSE, connections } from './controllers/sseController.js';
 
 const app = express();
+
+global.connections = connections;
 
 await connectDB();
 
@@ -24,6 +28,10 @@ app.use('/api/user', userRouter)
 app.use('/api/post', postRouter)
 app.use('/api/story', storyRouter)
 app.use('/api/message', messageRouter)
+
+// Add this to your existing routes
+app.use('/api/random-chat', randomChatRouter);
+app.get('/api/sse/:userId', setupSSE);
 
 const PORT = process.env.PORT || 4000;
 
