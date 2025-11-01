@@ -59,7 +59,7 @@ const ProfileModal = ({setShowEdit}) => {
                         Profile Picture
                         <input hidden type="file" accept="image/*" id="profile_picture" className="w-full p-3 border border-gray-200 rounded-lg" onChange={(e)=>setEditForm({...editForm, profile_picture: e.target.files[0]})}/>
                         <div className='group/profile relative'>
-                            <img src={editForm.profile_picture ? URL.createObjectURL(editForm.profile_picture) : user.profile_picture} alt="" className='w-24 h-24 rounded-full object-cover mt-2'/>
+                            <img src={editForm.profile_picture ? URL.createObjectURL(editForm.profile_picture) : user.profile_picture} alt="" className='w-20 h-24 rounded-full object-cover mt-2'/>
 
                             <div className='absolute hidden group-hover/profile:flex top-0 left-0 right-0 bottom-0 bg-black/20 rounded-full items-center justify-center'>
                                 <Pencil className="w-5 h-5 text-white"/>
