@@ -72,7 +72,7 @@ const ChatBot = () => {
 
         try {
             const token = await getToken();
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://social-server-nine.vercel.app';
             
             const response = await fetch(`${backendUrl}/api/ai/chat`, {
                 method: 'POST',
