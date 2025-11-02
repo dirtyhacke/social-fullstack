@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, RefreshCw, AlertCircle, Wifi, WifiOff } from 'lucide-react';
+import { Send, Bot, User, RefreshCw, AlertCircle, Wifi, WifiOff, Network } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import toast from 'react-hot-toast';
 
@@ -142,7 +142,7 @@ const ChatBot = () => {
         switch (apiStatus) {
             case 'online':
                 return {
-                    icon: <Wifi className="w-4 h-4" />,
+                    icon: <Network className="w-4 h-4" />,
                     text: 'Online',
                     color: 'text-green-600',
                     bgColor: 'bg-green-100',
