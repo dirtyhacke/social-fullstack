@@ -10,7 +10,9 @@ import postRouter from './routes/postRoutes.js';
 import storyRouter from './routes/storyRoutes.js';
 import messageRouter from './routes/messageRoutes.js';
 import randomChatRouter from './routes/randomChatRoutes.js';
-import { setupSSE, connections } from './controllers/sseController.js';
+
+// ✅ FIXED: Import from messageController with proper exports
+import { connections, setupSSE } from './controllers/messageController.js';
 
 const app = express();
 
@@ -24,15 +26,33 @@ app.use(clerkMiddleware());
 
 app.get('/', (req, res)=> res.send('Server is running'))
 app.use('/api/inngest', serve({ client: inngest, functions }))
-app.use('/api/user', userRouter)
-app.use('/api/post', postRouter)
-app.use('/api/story', storyRouter)
-app.use('/api/message', messageRouter)
 
-// Add this to your existing routes
+// ✅ CRITICAL: SSE route must come BEFORE message routes
+app.get('/api/sse/:userId', (req, res) => {
+    console.log('🚀🚀🚀 SSE ROUTE HIT! User:', req.params.userId);
+    console.log('📋 Full URL:', req.originalUrl);
+    setupSSE(req, res);
+});
+
+// Routes
+app.use('/api/user', userRouter);
+app.use('/api/users', userRouter);
+app.use('/api/post', postRouter);
+app.use('/api/posts', postRouter);
+app.use('/api/story', storyRouter);
+app.use('/api/stories', storyRouter);
+app.use('/api/message', messageRouter);
+app.use('/api/messages', messageRouter);
 app.use('/api/random-chat', randomChatRouter);
-app.get('/api/sse/:userId', setupSSE);
+
+// Test endpoint
+app.get('/api/test', (req, res) => {
+    res.json({ success: true, message: 'Server is working!' });
+});
 
 const PORT = process.env.PORT || 4000;
 
-app.listen(PORT, ()=> console.log(`Server is running on port ${PORT}`))
+app.listen(PORT, ()=> {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log('✅ SSE endpoint: /api/sse/:userId');
+});
