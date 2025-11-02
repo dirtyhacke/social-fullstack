@@ -19,6 +19,7 @@ import { addMessage } from './features/messages/messagesSlice'
 import Notification from './components/Notification'
 import RandomChat from './components/RandomChat'
 import ChatBot from './pages/ChatBot'
+import PixoMusic from './pages/pixoMusic';
 
 const App = () => {
   const {user} = useUser()
@@ -151,6 +152,7 @@ const App = () => {
           <Route path='create-post' element={<CreatePost/>}/>
           <Route path='/random-chat' element={<RandomChat/>}/>
           <Route path='chat-bot' element={<ChatBot/>}/>
+          <Route path="/pixo-music" element={<PixoMusic />} />
         </Route>
       </Routes>
     </>

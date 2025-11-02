@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { assets } from '../assets/assets'
 import { Link, useNavigate } from 'react-router-dom'
-import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot } from 'lucide-react'
+import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, Music } from 'lucide-react'
 import {UserButton, useClerk} from '@clerk/clerk-react'
 import { useSelector } from 'react-redux';
 import ProfileModal from './ProfileModal';
@@ -23,6 +23,13 @@ const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
 
     const handleChatBot = () => {
         navigate('/chat-bot');
+        if (window.innerWidth < 640) {
+            setSidebarOpen(false);
+        }
+    }
+
+    const handlePixoMusic = () => {
+        navigate('/pixo-music');
         if (window.innerWidth < 640) {
             setSidebarOpen(false);
         }
@@ -67,6 +74,12 @@ const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
             name: "AI Chat Bot",
             path: "/chat-bot",
             onClick: handleChatBot
+        },
+        {
+            icon: <Music className='w-5 h-5'/>,
+            name: "Pixo Music",
+            path: "/pixo-music",
+            onClick: handlePixoMusic
         },
         {
             icon: <User className='w-5 h-5'/>,

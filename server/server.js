@@ -13,6 +13,8 @@ import randomChatRouter from './routes/randomChatRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 // ✅ FIXED: Import from messageController with proper exports
 import { connections, setupSSE } from './controllers/messageController.js';
+import musicRoutes from './routes/musicRoutes.js'
+import musicLikesRoutes from './routes/musicLikesRoutes.js';
 
 const app = express();
 
@@ -45,6 +47,8 @@ app.use('/api/message', messageRouter);
 app.use('/api/messages', messageRouter);
 app.use('/api/random-chat', randomChatRouter);
 app.use('/api/ai', aiRoutes);
+app.use('/api/music', musicRoutes); // ✅ FIXED: Added forward slash
+app.use('/api/music-likes', musicLikesRoutes);
 // Test endpoint
 app.get('/api/test', (req, res) => {
     res.json({ success: true, message: 'Server is working!' });
