@@ -66,7 +66,7 @@ const Messages = () => {
       }
 
       // ✅ CORRECT: Use /api/sse/ endpoint (not /api/messages/sse/)
-      eventSourceRef.current = new EventSource(`/api/sse/${currentUserId}?token=${token}`);
+      eventSourceRef.current = new EventSource(`https://social-server-nine.vercel.app/api/sse/${currentUserId}?token=${token}`);
 
       eventSourceRef.current.onopen = () => {
         console.log('🔗 SSE connection opened for Messages page');
