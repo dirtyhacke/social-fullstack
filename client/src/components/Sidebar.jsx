@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { assets } from '../assets/assets'
 import { Link, useNavigate } from 'react-router-dom'
-import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User } from 'lucide-react'
+import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot } from 'lucide-react'
 import {UserButton, useClerk} from '@clerk/clerk-react'
 import { useSelector } from 'react-redux';
-import ProfileModal from './ProfileModal'; // ✅ IMPORT YOUR MODAL
+import ProfileModal from './ProfileModal';
 
 const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
 
@@ -12,7 +12,7 @@ const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
     const user = useSelector((state) => state.user.value)
     const {signOut} = useClerk()
     
-    const [showProfileModal, setShowProfileModal] = useState(false); // ✅ STATE FOR MODAL
+    const [showProfileModal, setShowProfileModal] = useState(false);
 
     const handleRandomChat = () => {
         navigate('/random-chat');
@@ -21,8 +21,15 @@ const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
         }
     }
 
+    const handleChatBot = () => {
+        navigate('/chat-bot');
+        if (window.innerWidth < 640) {
+            setSidebarOpen(false);
+        }
+    }
+
     const handleEditProfile = () => {
-        setShowProfileModal(true); // ✅ OPEN MODAL
+        setShowProfileModal(true);
         if (window.innerWidth < 640) {
             setSidebarOpen(false);
         }
@@ -55,11 +62,16 @@ const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
             path: "/random-chat",
             onClick: handleRandomChat
         },
-        // ✅ ADDED: Edit Profile Option - Opens Modal
+        {
+            icon: <Bot className='w-5 h-5'/>,
+            name: "AI Chat Bot",
+            path: "/chat-bot",
+            onClick: handleChatBot
+        },
         {
             icon: <User className='w-5 h-5'/>,
             name: "Edit Profile",
-            onClick: handleEditProfile // ✅ CALLS MODAL FUNCTION
+            onClick: handleEditProfile
         }
     ]
 
@@ -105,7 +117,7 @@ const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
           <div className='w-full border-t border-gray-200 p-4 px-7 flex items-center justify-between'>
               <div 
                   className='flex gap-2 items-center cursor-pointer'
-                  onClick={handleEditProfile} // ✅ CLICK USER INFO TO EDIT PROFILE TOO
+                  onClick={handleEditProfile}
               >
                   <UserButton />
                   <div>
@@ -118,7 +130,7 @@ const Sidebar = ({sidebarOpen, setSidebarOpen}) => {
 
       </div>
 
-      {/* ✅ PROFILE MODAL - SHOWS WHEN EDIT PROFILE IS CLICKED */}
+      {/* PROFILE MODAL */}
       {showProfileModal && <ProfileModal setShowEdit={setShowProfileModal} />}
     </>
   )

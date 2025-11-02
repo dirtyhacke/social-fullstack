@@ -10,7 +10,7 @@ import postRouter from './routes/postRoutes.js';
 import storyRouter from './routes/storyRoutes.js';
 import messageRouter from './routes/messageRoutes.js';
 import randomChatRouter from './routes/randomChatRoutes.js';
-
+import aiRoutes from './routes/aiRoutes.js';
 // ✅ FIXED: Import from messageController with proper exports
 import { connections, setupSSE } from './controllers/messageController.js';
 
@@ -44,7 +44,7 @@ app.use('/api/stories', storyRouter);
 app.use('/api/message', messageRouter);
 app.use('/api/messages', messageRouter);
 app.use('/api/random-chat', randomChatRouter);
-
+app.use('/api/ai', aiRoutes);
 // Test endpoint
 app.get('/api/test', (req, res) => {
     res.json({ success: true, message: 'Server is working!' });

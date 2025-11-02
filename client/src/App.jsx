@@ -18,6 +18,7 @@ import { fetchConnections } from './features/connections/connectionsSlice'
 import { addMessage } from './features/messages/messagesSlice'
 import Notification from './components/Notification'
 import RandomChat from './components/RandomChat'
+import ChatBot from './pages/ChatBot'
 
 const App = () => {
   const {user} = useUser()
@@ -57,7 +58,7 @@ const App = () => {
           }
 
           // ✅ FIXED: Use correct backend URL with port 4000
-          const backendUrl = 'https://social-server-nine.vercel.app';
+          const backendUrl = 'http://localhost:4000';
           eventSourceRef.current = new EventSource(`${backendUrl}/api/sse/${user.id}?token=${token}`)
 
           eventSourceRef.current.onopen = () => {
@@ -149,6 +150,7 @@ const App = () => {
           <Route path='profile/:profileId' element={<Profile/>}/>
           <Route path='create-post' element={<CreatePost/>}/>
           <Route path='/random-chat' element={<RandomChat/>}/>
+          <Route path='chat-bot' element={<ChatBot/>}/>
         </Route>
       </Routes>
     </>
