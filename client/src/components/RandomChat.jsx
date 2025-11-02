@@ -32,7 +32,7 @@ const RandomChat = () => {
 
         console.log('🔗 Setting up SSE connection for user:', userId);
         
-        const es = new EventSource(`http://localhost:4000/api/sse/${userId}`);
+        const es = new EventSource(`https://social-server-nine.vercel.app/api/sse/${userId}`);
         
         es.onopen = () => {
             console.log('✅ SSE connection opened');

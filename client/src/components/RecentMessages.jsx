@@ -59,7 +59,7 @@ const RecentMessages = () => {
             }
 
             // ✅ FIXED: Use correct backend URL (port 4000)
-            const backendUrl = 'http://localhost:4000';
+            const backendUrl = 'https://social-server-nine.vercel.app';
             eventSourceRef.current = new EventSource(
                 `${backendUrl}/api/sse/${currentUserId}?token=${token}`
             );

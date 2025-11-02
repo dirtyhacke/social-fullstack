@@ -57,7 +57,7 @@ const App = () => {
           }
 
           // ✅ FIXED: Use correct backend URL with port 4000
-          const backendUrl = 'http://localhost:4000';
+          const backendUrl = 'https://social-server-nine.vercel.app';
           eventSourceRef.current = new EventSource(`${backendUrl}/api/sse/${user.id}?token=${token}`)
 
           eventSourceRef.current.onopen = () => {
