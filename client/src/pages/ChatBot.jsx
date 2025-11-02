@@ -142,7 +142,7 @@ const ChatBot = () => {
         switch (apiStatus) {
             case 'online':
                 return {
-                    icon: <Network className="w-4 h-4" />,
+                    icon: <Wifi className="w-4 h-4" />,
                     text: 'Online',
                     color: 'text-green-600',
                     bgColor: 'bg-green-100',
