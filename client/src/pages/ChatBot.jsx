@@ -146,7 +146,7 @@ const ChatBot = () => {
                     text: 'Online',
                     color: 'text-green-600',
                     bgColor: 'bg-green-100',
-                    message: 'Connected to DeepSeek AI'
+                    message: 'Connected to Pixo AI'
                 };
             case 'mock':
                 return {
