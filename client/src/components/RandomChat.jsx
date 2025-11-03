@@ -29,7 +29,7 @@ const RandomChat = () => {
     // --- SSE Logic (Omitted for brevity, unchanged) ---
     useEffect(() => { /* ... (Your SSE Logic) ... */
         if (!userId) return;
-        const es = new EventSource(`https://social-server-nine.vercel.app/sse/${userId}`);
+        const es = new EventSource(`https://social-server-nine.vercel.app/api/sse/${userId}`);
         es.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);

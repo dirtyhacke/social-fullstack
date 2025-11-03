@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'; // Added useCallback
-import { ImageIcon, SendHorizonal, ArrowLeft, MessageSquare } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { ImageIcon, SendHorizonal, ArrowLeft, MessageSquare, Smile, X } from 'lucide-react'; // Added Smile, X icons
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/clerk-react'; 
@@ -19,12 +19,64 @@ const ChatBox = () => {
   const [text, setText] = useState('');
   const [image, setImage] = useState(null);
   const [user, setUser] = useState(null); 
+  const [isConnectionsListVisible, setIsConnectionsListVisible] = useState(false);
+  
+  // 🎯 EMOJI/STICKER STATE AND REFS
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [activeTab, setActiveTab] = useState('emojis'); // 'emojis' or 'stickers'
+  const [emojis, setEmojis] = useState([]);
+  const [stickers, setStickers] = useState([]);
+  
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null); 
-  
-  const [isConnectionsListVisible, setIsConnectionsListVisible] = useState(false);
+  const pickerRef = useRef(null); // Ref for the picker panel itself
+  const emojiButtonRef = useRef(null); // Ref for the toggle button
 
   // --- Data Fetching and Logic ---
+
+  // 🎯 New: Effect to fetch Emojis and Stickers
+  useEffect(() => {
+    // 1. Fetch Emojis (standard emoji list)
+    fetch("https://cdn.jsdelivr.net/npm/emoji.json@13.1.0/emoji.json")
+      .then(res => res.json())
+      .then(data => {
+        const emojiChars = data.map(e => e.char);
+        setEmojis(emojiChars);
+      })
+      .catch(error => console.error("Error fetching emojis:", error));
+
+    // 2. Fetch Stickers (Using reliable Noto Emoji data file for URLs)
+    fetch("https://raw.githubusercontent.com/googlefonts/noto-emoji/main/emoji_13.1_data.json")
+      .then(res => res.json())
+      .then(data => {
+        const stickerUrls = Object.values(data).map(item => 
+          `https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/512/emoji_u${item.unicode.toLowerCase()}.png`
+        );
+        setStickers(stickerUrls);
+      })
+      .catch(error => console.error("Error fetching stickers:", error));
+  }, []);
+
+  // 🎯 New: Logic for closing the picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Check if the click is outside the picker and not on the emoji button
+      if (
+        pickerRef.current && 
+        !pickerRef.current.contains(event.target) &&
+        emojiButtonRef.current && 
+        !emojiButtonRef.current.contains(event.target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
 
   const fetchUserMessages = async () => {
     try {
@@ -45,6 +97,9 @@ const ChatBox = () => {
       formData.append('text', text.trim());
       image && formData.append('image', image);
 
+      // Reset picker state after sending a message
+      setShowEmojiPicker(false);
+      
       const { data } = await api.post('/api/message/send', formData, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -54,7 +109,6 @@ const ChatBox = () => {
         setImage(null);
         dispatch(addMessage(data.message));
         
-        // Ensure focus after sending
         inputRef.current?.focus(); 
       } else {
         throw new Error(data.message || 'Failed to send message.');
@@ -70,20 +124,42 @@ const ChatBox = () => {
     setText(newValue);
     
     // The critical change: Delaying focus slightly (e.g., 0ms)
-    // This allows the DOM to update with the new 'value' prop before we call focus(),
-    // preventing the cursor from being lost during the re-render cycle.
     setTimeout(() => {
-        inputRef.current?.focus();
-        // Optional: Ensure cursor is at the end of the text
         if (inputRef.current) {
+            inputRef.current.focus();
+            // Optional: Ensure cursor is at the end of the text
             const cursorPosition = newValue.length;
             inputRef.current.setSelectionRange(cursorPosition, cursorPosition);
         }
     }, 0); 
-  }, []); // Empty dependency array means this function is created once
+  }, []);
+
+  // 🎯 New: Function to handle emoji/sticker selection and insertion
+  const handleEmojiSelect = (item) => {
+    let newValue = '';
+    // Check if the item is a full URL (sticker) or a character (emoji)
+    if (item.startsWith('http')) {
+        // For stickers, insert a placeholder
+        newValue = text + ' [STICKER] ';
+    } else {
+        // For emojis, insert the character
+        newValue = text + item;
+    }
+    
+    setText(newValue);
+
+    // Set a slight timeout to ensure the state update processes before focusing/setting cursor
+    setTimeout(() => {
+        if (inputRef.current) {
+            inputRef.current.focus();
+            const cursorPosition = newValue.length;
+            inputRef.current.setSelectionRange(cursorPosition, cursorPosition);
+        }
+    }, 0);
+  };
 
   // --- Effects ---
-// ... (rest of the effects remain the same)
+
   useEffect(() => {
     fetchUserMessages();
     setIsConnectionsListVisible(false);
@@ -242,6 +318,96 @@ const ChatBox = () => {
 
         {/* --- Message Input --- */}
         <div className='sticky bottom-0 z-10 bg-white p-4 shadow-xl flex-shrink-0'>
+            
+            {/* 🎯 EMOJI PICKER PANEL */}
+            {showEmojiPicker && (
+                <div 
+                    ref={pickerRef}
+                    className='absolute bottom-full left-1/2 -translate-x-1/2 w-full max-w-xl p-2'
+                >
+                    <div className='bg-white border border-gray-200 rounded-xl shadow-2xl h-80 flex flex-col'>
+                        
+                        {/* Picker Header with Close Button and Tabs */}
+                        <div className='flex justify-between items-center p-3 border-b border-gray-100'>
+                            
+                            {/* Tabs */}
+                            <div className='flex gap-4'>
+                                <button 
+                                    onClick={() => setActiveTab('emojis')}
+                                    className={`font-semibold text-sm pb-1 transition ${activeTab === 'emojis' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    Emojis ({emojis.length})
+                                </button>
+                                <button 
+                                    onClick={() => setActiveTab('stickers')}
+                                    className={`font-semibold text-sm pb-1 transition ${activeTab === 'stickers' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    Stickers ({stickers.length})
+                                </button>
+                            </div>
+
+                            {/* Close Button */}
+                            <button 
+                                onClick={() => setShowEmojiPicker(false)}
+                                className='p-1 rounded-full hover:bg-red-100 text-gray-500 hover:text-red-600 transition'
+                                title="Close Picker"
+                            >
+                                <X className='size-5'/>
+                            </button>
+                        </div>
+
+                        {/* Content Grid */}
+                        <div className='p-4 flex-1 overflow-y-auto'>
+                            {activeTab === 'emojis' && (
+                                <div className='grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1'>
+                                    {emojis.length === 0 ? (
+                                        <p className='col-span-12 text-center text-gray-500 py-4'>Loading Emojis...</p>
+                                    ) : (
+                                        emojis.map((emoji, index) => (
+                                            <button 
+                                                key={index}
+                                                onClick={() => handleEmojiSelect(emoji)} 
+                                                className='text-2xl hover:bg-gray-100 p-1 rounded transition flex items-center justify-center'
+                                                title={emoji}
+                                            >
+                                                {emoji}
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'stickers' && (
+                                <div className='grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3'>
+                                    {stickers.length === 0 ? (
+                                        <p className='col-span-6 text-center text-gray-500 py-4'>Loading Stickers...</p>
+                                    ) : (
+                                        stickers.map((stickerUrl, index) => (
+                                            <button 
+                                                key={index}
+                                                onClick={() => handleEmojiSelect(stickerUrl)} 
+                                                className='p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition flex items-center justify-center h-20 w-full'
+                                                title="Sticker"
+                                            >
+                                                {stickerUrl && (
+                                                    <img 
+                                                        src={stickerUrl} 
+                                                        alt={`Sticker ${index + 1}`} 
+                                                        className="max-h-full max-w-full object-contain"
+                                                        onError={(e) => { e.target.style.display = 'none'; }}
+                                                    />
+                                                )}
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Image Preview Area */}
             {image && (
                 <div className='flex items-center justify-between p-2 mb-2 bg-indigo-50 rounded-lg max-w-xl mx-auto'>
                     <div className='flex items-center gap-3'>
@@ -252,16 +418,28 @@ const ChatBox = () => {
                 </div>
             )}
 
+            {/* Input Row */}
             <div className='flex items-center gap-3 p-1.5 bg-white w-full max-w-xl mx-auto border border-gray-300 rounded-full shadow-lg'>
               
+              {/* 🎯 EMOJI/STICKER BUTTON */}
+              <button
+                  ref={emojiButtonRef}
+                  onClick={() => setShowEmojiPicker(prev => !prev)}
+                  className={`flex-shrink-0 size-10 flex items-center justify-center rounded-full transition ml-1 ${showEmojiPicker ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:text-indigo-500'}`}
+                  title="Select Emoji or Sticker"
+              >
+                  <Smile className='size-5'/>
+              </button>
+
               <input 
                   type="text" 
                   ref={inputRef} 
                   className='flex-1 py-2 px-3 outline-none text-slate-700 placeholder:text-gray-400' 
                   placeholder='Type a message...'
                   onKeyDown={e=>e.key === 'Enter' && sendMessage()} 
-                  onChange={handleTextChange} // <-- Using the new stable/delayed handler
+                  onChange={handleTextChange} 
                   value={text} 
+                  onFocus={() => setShowEmojiPicker(false)} // Close picker when focusing input
               />
 
               <label htmlFor="image" className='flex-shrink-0'>
@@ -269,7 +447,7 @@ const ChatBox = () => {
                   {
                     image 
                     ? <img src={URL.createObjectURL(image)} alt="" className='h-6 w-6 rounded object-cover'/> 
-                    : <ImageIcon className='size-6 text-indigo-500'/>
+                    : <ImageIcon className='size-5 text-indigo-500'/>
                   }
                 </div>
                 <input 
@@ -288,7 +466,7 @@ const ChatBox = () => {
                   className={`flex-shrink-0 cursor-pointer text-white p-3 rounded-full transition-all ${!text.trim() && !image 
                       ? 'bg-gray-400' 
                       : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'
-                  }`}
+                  } mr-1`}
                   title="Send"
               >
                 <SendHorizonal size={18}/>
