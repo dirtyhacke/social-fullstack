@@ -1,6 +1,5 @@
 import React from 'react'
-import { dummyUserData } from '../assets/assets'
-import { MapPin, MessageCircle, Plus, UserPlus } from 'lucide-react'
+import { MapPin, MessageCircle, Plus, UserPlus, Send } from 'lucide-react'
 import { useDispatch, useSelector } from 'react-redux'
 import { useAuth } from '@clerk/clerk-react'
 import { useNavigate } from 'react-router-dom'
@@ -15,6 +14,11 @@ const UserCard = ({user}) => {
     const dispatch = useDispatch()
     const navigate = useNavigate()
 
+    const isFollowing = currentUser?.following.includes(user._id);
+    const isConnected = currentUser?.connections.includes(user._id);
+
+    // --- API Handlers (Kept logic stable) ---
+
     const handleFollow = async () => {
         try {
             const { data } = await api.post('/api/user/follow', {id: user._id}, {
@@ -22,7 +26,7 @@ const UserCard = ({user}) => {
             })
             if (data.success) {
                 toast.success(data.message)
-                dispatch(fetchUser(await getToken()))
+                dispatch(fetchUser(await getToken())) // Refresh current user's data
             }else{
                 toast.error(data.message)
             }
@@ -32,7 +36,8 @@ const UserCard = ({user}) => {
     }
 
     const handleConnectionRequest = async () => {
-        if(currentUser.connections.includes(user._id)){
+        if(isConnected){
+            // If already connected, navigate to message thread
             return navigate('/messages/' + user._id)
         }
 
@@ -51,35 +56,79 @@ const UserCard = ({user}) => {
     }
 
   return (
-    <div key={user._id} className='p-4 pt-6 flex flex-col justify-between w-72 shadow border border-gray-200 rounded-md'>
-        <div className='text-center'>
-            <img src={user.profile_picture} alt="" className='rounded-full w-16 shadow-md mx-auto'/>
-            <p className='mt-4 font-semibold'>{user.full_name}</p>
-            {user.username && <p className='text-gray-500 font-light'>@{user.username}</p>}
-            {user.bio && <p className='text-gray-600 mt-2 text-center text-sm px-4'>{user.bio}</p>}
+    // Card with enhanced styling: wider, rounded, and a cleaner shadow
+    <div key={user._id} className='p-6 flex flex-col items-center justify-between w-full max-w-sm mx-auto bg-white shadow-xl border border-gray-100 rounded-2xl transition-all duration-300 hover:shadow-2xl'>
+        
+        {/* Profile Info Section */}
+        <div className='text-center w-full'>
+            {/* Avatar - Larger and more prominent with a ring */}
+            <img 
+                src={user.profile_picture || 'https://via.placeholder.com/150?text=User'} 
+                alt={user.full_name} 
+                className='rounded-full w-20 h-20 object-cover shadow-lg ring-4 ring-indigo-100 mx-auto'
+            />
+            
+            {/* Name and Username */}
+            <p className='mt-4 text-xl font-bold text-gray-800 leading-tight'>{user.full_name}</p>
+            {user.username && <p className='text-indigo-600 font-medium'>@{user.username}</p>}
+            
+            {/* Bio */}
+            {user.bio && (
+                <p className='text-gray-600 mt-2 text-center text-sm px-2 italic line-clamp-2'>
+                    {user.bio}
+                </p>
+            )}
         </div>
 
-        <div className='flex items-center justify-center gap-2 mt-4 text-xs text-gray-600'>
-            <div className='flex items-center gap-1 border border-gray-300 rounded-full px-3 py-1'>
-                <MapPin className='w-4 h-4'/> {user.location}
-            </div>
-            <div className='flex items-center gap-1 border border-gray-300 rounded-full px-3 py-1'>
-                <span>{user.followers.length}</span> Followers
+        {/* Details/Stats Section */}
+        <div className='flex flex-wrap items-center justify-center gap-3 mt-4 text-xs text-gray-500'>
+            {user.location && (
+                <div className='flex items-center gap-1 bg-gray-50 text-gray-600 rounded-full px-3 py-1 shadow-sm'>
+                    <MapPin className='w-3 h-3'/> {user.location}
+                </div>
+            )}
+            <div className='flex items-center gap-1 bg-gray-50 text-gray-600 rounded-full px-3 py-1 shadow-sm'>
+                <span className='font-semibold'>{user.followers.length}</span> Followers
             </div>
         </div>
 
-        <div className='flex mt-4 gap-2'>
-            {/* Follow Button */}
-            <button onClick={handleFollow} disabled={currentUser?.following.includes(user._id)} className='w-full py-2 rounded-md  flex justify-center items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition text-white cursor-pointer'>
-                <UserPlus className='w-4 h-4'/> {currentUser?.following.includes(user._id) ? 'Following' : 'Follow'}
+        {/* Action Buttons */}
+        <div className='flex mt-6 gap-3 w-full'>
+            
+            {/* Follow Button (Primary Action) */}
+            <button 
+                onClick={handleFollow} 
+                disabled={isFollowing} 
+                className={`flex-1 py-2 rounded-full flex justify-center items-center gap-2 font-semibold transition text-white shadow-md active:scale-[0.98] ${
+                    isFollowing
+                        ? 'bg-gray-400 hover:bg-gray-500 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800 cursor-pointer'
+                }`}
+            >
+                {isFollowing ? (
+                    'Following'
+                ) : (
+                    <>
+                        <UserPlus className='w-4 h-4'/> Follow
+                    </>
+                )}
             </button>
-            {/* Connection Request Button / Message Button */}
-            <button onClick={handleConnectionRequest} className='flex items-center justify-center w-16 border text-slate-500 group rounded-md cursor-pointer active:scale-95 transition'>
+            
+            {/* Connection/Message Button (Secondary Action) */}
+            <button 
+                onClick={handleConnectionRequest} 
+                className={`w-12 h-12 flex items-center justify-center rounded-full transition shadow-md active:scale-[0.98] ${
+                    isConnected
+                        ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+                title={isConnected ? "Message" : "Connect"}
+            >
                 {
-                    currentUser?.connections.includes(user._id) ? 
-                    <MessageCircle className='w-5 h-5 group-hover:scale-105 transition'/>
+                    isConnected ? 
+                    <Send className='w-5 h-5'/>
                     :
-                    <Plus className='w-5 h-5 group-hover:scale-105 transition'/>
+                    <Plus className='w-5 h-5'/>
                 }
             </button>
         </div>

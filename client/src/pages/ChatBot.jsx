@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, RefreshCw, AlertCircle, Wifi, WifiOff, Network } from 'lucide-react';
+import { Send, Bot, User, RefreshCw, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import toast from 'react-hot-toast';
 
@@ -31,10 +31,13 @@ const ChatBot = () => {
         checkApiStatus();
     }, []);
 
+    // --- API and Status Logic ---
+
     const checkApiStatus = async () => {
         try {
             setApiStatus('checking');
             const token = await getToken();
+            // Use a fallback for VITE_BACKEND_URL in case of undefined environment
             const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://social-server-nine.vercel.app';
             
             const response = await fetch(`${backendUrl}/api/ai/status`, {
@@ -81,7 +84,7 @@ const ChatBot = () => {
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    message: inputMessage,
+                    message: userMessage.text,
                     conversation_history: messages.slice(-10)
                 })
             });
@@ -125,6 +128,8 @@ const ChatBot = () => {
             setIsLoading(false);
         }
     };
+    
+    // --- Utility Functions ---
 
     const handleKeyPress = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -146,7 +151,7 @@ const ChatBot = () => {
                     text: 'Online',
                     color: 'text-green-600',
                     bgColor: 'bg-green-100',
-                    message: 'Connected to Pixo AI'
+                    message: 'Connected to DeepSeek AI'
                 };
             case 'mock':
                 return {
@@ -177,100 +182,103 @@ const ChatBot = () => {
 
     const statusInfo = getStatusInfo();
 
-    return (
-        <div className="max-w-4xl mx-auto p-4 h-screen flex flex-col">
-            {/* Header */}
-            <div className="bg-white rounded-lg shadow-sm border p-4 mb-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-2 rounded-full">
-                            <Bot className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-semibold text-gray-800">PIXO Chat Bot</h1>
-                            <p className="text-sm text-gray-600">
-                                {apiStatus === 'online' ? 'Powered by Team PIXO' : 'AI Assistant'}
-                            </p>
-                        </div>
-                    </div>
-                    
-                    {/* Status Indicator */}
-                    <button 
-                        onClick={retryConnection}
-                        className={`flex items-center gap-2 px-3 py-1 rounded-full ${statusInfo.bgColor} ${statusInfo.color} transition-colors hover:opacity-80`}
-                    >
-                        {statusInfo.icon}
-                        <span className="text-sm font-medium">{statusInfo.text}</span>
-                    </button>
+    // --- Message Bubble Component ---
+    const MessageBubble = ({ message }) => (
+        <div
+            key={message.id}
+            className={`flex ${message.isBot ? 'justify-start' : 'justify-end'} gap-3 max-w-full`}
+        >
+            {message.isBot && (
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 shadow-md ${
+                    message.isError 
+                        ? 'bg-red-500'
+                        : message.isMock
+                        ? 'bg-yellow-500'
+                        : 'bg-gradient-to-r from-purple-500 to-indigo-600'
+                }`}>
+                    <Bot className="w-4 h-4 text-white" />
                 </div>
-                {statusInfo.message && (
-                    <p className={`text-xs mt-2 ${statusInfo.color}`}>
-                        {statusInfo.message}
-                    </p>
-                )}
+            )}
+            
+            <div className={`flex flex-col max-w-[80%] sm:max-w-[65%] ${!message.isBot && 'items-end'}`}>
+                <div
+                    // Enhanced Bubble Styling: larger radius, softer shadow, no hard borders
+                    className={`rounded-2xl p-3 shadow-lg whitespace-pre-wrap transition-colors duration-150 ${
+                        message.isBot
+                            ? message.isError
+                                ? 'bg-red-50 text-red-800 rounded-tl-lg'
+                                : message.isMock
+                                ? 'bg-yellow-50 text-yellow-800 rounded-tl-lg'
+                                : 'bg-white text-gray-800 shadow-md rounded-tl-lg'
+                            : 'bg-indigo-600 text-white rounded-br-lg'
+                    }`}
+                >
+                    <p className="text-sm">{message.text}</p>
+                </div>
+                <p className="text-xs mt-1 mr-2 text-gray-500">
+                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {message.isMock && ' • Demo'}
+                </p>
             </div>
 
-            {/* Messages Container */}
-            <div className="flex-1 bg-gray-50 rounded-lg border overflow-hidden flex flex-col">
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {messages.map((message) => (
-                        <div
-                            key={message.id}
-                            className={`flex ${message.isBot ? 'justify-start' : 'justify-end'} gap-3`}
-                        >
-                            {message.isBot && (
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                    message.isError 
-                                        ? 'bg-red-500'
-                                        : message.isMock
-                                        ? 'bg-yellow-500'
-                                        : 'bg-gradient-to-r from-purple-500 to-indigo-600'
-                                }`}>
-                                    <Bot className="w-4 h-4 text-white" />
-                                </div>
-                            )}
-                            
-                            <div
-                                className={`max-w-[70%] rounded-2xl p-4 ${
-                                    message.isBot
-                                        ? message.isError
-                                            ? 'bg-red-50 border border-red-200 text-red-800 rounded-tl-none'
-                                            : message.isMock
-                                            ? 'bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-tl-none'
-                                            : 'bg-white border border-gray-200 text-gray-800 rounded-tl-none'
-                                        : 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-tr-none'
-                                }`}
-                            >
-                                <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-                                <p className={`text-xs mt-2 ${
-                                    message.isBot 
-                                        ? message.isError 
-                                            ? 'text-red-600'
-                                            : message.isMock
-                                            ? 'text-yellow-600'
-                                            : 'text-gray-500'
-                                        : 'text-indigo-100'
-                                }`}>
-                                    {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    {message.isMock && ' • Demo'}
+            {!message.isBot && (
+                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1 shadow-md">
+                    <User className="w-4 h-4 text-white" />
+                </div>
+            )}
+        </div>
+    );
+
+    return (
+        // Wrapper for full height chat interface (using h-[100dvh] for mobile safety)
+        <div className="flex flex-col h-[100dvh] bg-gradient-to-br from-gray-50 to-indigo-50">
+            <div className="max-w-4xl mx-auto flex flex-col h-full w-full bg-white shadow-2xl sm:rounded-xl overflow-hidden">
+                
+                {/* Sticky Header */}
+                <div className="sticky top-0 bg-white border-b border-gray-100 shadow-sm z-10 p-4 flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-gradient-to-r from-purple-500 to-indigo-600 p-2 rounded-full shadow-lg">
+                                <Bot className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold text-gray-800">PIXO AI Chat</h1>
+                                <p className="text-sm text-gray-500">
+                                    Your intelligent assistant
                                 </p>
                             </div>
-
-                            {!message.isBot && (
-                                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-600 rounded-full flex items-center justify-center flex-shrink-0">
-                                    <User className="w-4 h-4 text-white" />
-                                </div>
-                            )}
                         </div>
+                        
+                        {/* Status Indicator */}
+                        <button 
+                            onClick={retryConnection}
+                            className={`flex items-center gap-2 px-3 py-1 rounded-full ${statusInfo.bgColor} ${statusInfo.color} text-sm font-medium transition-colors duration-150 hover:shadow-md`}
+                            disabled={apiStatus === 'checking'}
+                        >
+                            {statusInfo.icon}
+                            {statusInfo.text}
+                        </button>
+                    </div>
+                    {statusInfo.message && (
+                        <p className={`text-xs mt-2 text-center ${statusInfo.color}`}>
+                            {statusInfo.message}
+                        </p>
+                    )}
+                </div>
+
+                {/* Messages Container (Scrollable Area) */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/70">
+                    {messages.map((message) => (
+                        <MessageBubble key={message.id} message={message} />
                     ))}
                     
+                    {/* Typing Indicator */}
                     {isLoading && (
                         <div className="flex justify-start gap-3">
-                            <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full flex items-center justify-center flex-shrink-0">
+                            <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1 shadow-md">
                                 <Bot className="w-4 h-4 text-white" />
                             </div>
-                            <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-none p-4">
+                            <div className="bg-white rounded-2xl rounded-tl-lg p-3 shadow-md">
                                 <div className="flex space-x-2">
                                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                                     <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
@@ -283,32 +291,32 @@ const ChatBot = () => {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input Area */}
-                <div className="border-t bg-white p-4">
-                    <div className="flex gap-2">
+                {/* Sticky Input Area */}
+                <div className="sticky bottom-0 bg-white p-4 shadow-xl z-10 flex-shrink-0">
+                    <div className="flex gap-3 items-end">
                         <textarea
                             value={inputMessage}
                             onChange={(e) => setInputMessage(e.target.value)}
                             onKeyPress={handleKeyPress}
                             placeholder={
                                 apiStatus === 'offline' 
-                                    ? "Service is offline. Please try again later..."
-                                    : "Type your message here..."
+                                    ? "AI service is offline..."
+                                    : "Ask me anything..."
                             }
-                            className="flex-1 border border-gray-300 rounded-lg px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                            // Removed border, relying on shadow-inner and ring for focus
+                            className="flex-1 bg-gray-50 rounded-xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner disabled:bg-gray-100 disabled:cursor-not-allowed max-h-32 min-h-[3rem] transition-shadow duration-200"
                             rows="1"
                             disabled={isLoading || apiStatus === 'offline'}
                         />
                         <button
                             onClick={sendMessage}
                             disabled={!inputMessage.trim() || isLoading || apiStatus === 'offline'}
-                            className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-3 rounded-lg hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center gap-2"
+                            className="h-12 w-12 flex-shrink-0 bg-gradient-to-r from-indigo-600 to-purple-700 text-white rounded-xl hover:from-indigo-700 hover:to-purple-800 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center"
                         >
-                            <Send className="w-4 h-4" />
-                            Send
+                            <Send className="w-5 h-5" />
                         </button>
                     </div>
-                    <p className="text-xs text-gray-500 text-center mt-2">
+                    <p className="text-xs text-gray-400 text-center mt-2">
                         {apiStatus === 'offline' && 'AI service is currently unavailable'}
                         {apiStatus !== 'offline' && 'Press Enter to send, Shift+Enter for new line'}
                     </p>

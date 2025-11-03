@@ -46,7 +46,7 @@ function PixoMusic() {
     const progressRef = useRef(null);
 
     // Your backend API base URL
-    const BACKEND_API = 'https://social-server-nine.vercel.app/api';
+    const BACKEND_API = 'https://social-server-nine.vercel.app';
     const user = useSelector((state) => state.user.value);
 
     // Load trending songs and liked songs on component mount

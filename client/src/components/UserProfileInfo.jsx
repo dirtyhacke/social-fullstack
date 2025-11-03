@@ -3,62 +3,89 @@ import moment from 'moment'
 import React from 'react'
 
 const UserProfileInfo = ({ user, posts, profileId, setShowEdit }) => {
-    return (
-        <div className='relative py-4 px-6 md:px-8 bg-white'>
-            <div className='flex flex-col md:flex-row items-start gap-6'>
+    
+    // Fallback for user data
+    const followerCount = user.followers?.length || 0;
+    const followingCount = user.following?.length || 0;
+    const postCount = posts?.length || 0;
 
-                <div className="w-32 h-32 border-4 border-white shadow-lg absolute -top-16 rounded-full overflow-hidden">
+    return (
+        // Added bottom border and soft shadow to make the section pop
+        <div className='relative py-6 px-4 md:px-8 bg-white border-b border-gray-200 shadow-sm'>
+            <div className='flex flex-col items-start gap-4'>
+
+                {/* Profile Picture Container - Positioned and styled more cleanly */}
+                <div className="w-28 h-28 sm:w-32 sm:h-32 border-4 border-white shadow-xl absolute -top-14 sm:-top-16 left-4 md:left-8 rounded-full overflow-hidden z-10">
                     <img
-                        src={user.profile_picture}
-                        alt=""
-                        className="w-full h-full object-cover"
+                        src={user.profile_picture || '/default-profile.png'} // Added fallback
+                        alt={`${user.full_name}'s profile`}
+                        className="w-full h-full object-cover bg-gray-200"
                     />
                 </div>
 
-
-                <div className='w-full pt-16 md:pt-0 md:pl-36'>
-                    <div className='flex flex-col md:flex-row items-start justify-between'>
-                        <div>
-                            <div className='flex items-center gap-3'>
-                                <h1 className='text-2xl font-bold text-gray-900'>{user.full_name}</h1>
-                                <Verified className='w-6 h-6 text-blue-500' />
-                            </div>
-                            <p className='text-gray-600'>{user.username ? `@${user.username}` : 'Add a username'}</p>
-                        </div>
-                        {/* if user is not on others profile that means he is opening his profile so we will give edit button */}
-                        {!profileId &&
-                            <button onClick={() => setShowEdit(true)} className='flex items-center gap-2 border border-gray-300 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors mt-4 md:mt-0 cursor-pointer'>
-                                <PenBox className='"w-4 h-4' />
-                                Edit
-                            </button>}
+                {/* Content Area */}
+                {/* Adjusted padding to account for the profile picture offset */}
+                <div className='w-full pt-16 sm:pt-16'>
+                    <div className='flex items-start justify-between'>
+                        
+                        {/* Edit Button - Positioned top-right */}
+                        {!profileId && (
+                            <button 
+                                onClick={() => setShowEdit(true)} 
+                                className='flex items-center gap-2 text-sm text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-4 py-1.5 rounded-full font-semibold transition-colors cursor-pointer shadow-sm ml-auto'
+                            >
+                                <PenBox className='w-4 h-4' />
+                                Edit Profile
+                            </button>
+                        )}
                     </div>
-                    <p className='text-gray-700 text-sm max-w-md mt-4'>{user.bio}</p>
+                    
+                    {/* Name and Username */}
+                    <div className='mt-2'>
+                        <div className='flex items-center gap-2'>
+                            <h1 className='text-2xl sm:text-3xl font-extrabold text-gray-900 leading-tight'>{user.full_name}</h1>
+                            {user.isVerified && <Verified className='w-5 h-5 text-blue-500' title="Verified User" />}
+                        </div>
+                        <p className='text-lg text-gray-500 font-normal mt-0.5'>
+                            {user.username ? `@${user.username}` : <span className="italic text-gray-400">Add a username</span>}
+                        </p>
+                    </div>
 
+                    {/* Bio */}
+                    <p className='text-gray-700 text-base max-w-xl mt-3 leading-relaxed'>
+                        {user.bio || <span className="italic text-gray-400">No bio added yet.</span>}
+                    </p>
+
+                    {/* Details (Location, Joined Date) */}
                     <div className='flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500 mt-4'>
+                        {user.location && (
+                            <span className='flex items-center gap-1.5'>
+                                <MapPin className='w-4 h-4 text-gray-400' />
+                                <span className='font-medium text-gray-600'>{user.location}</span>
+                            </span>
+                        )}
                         <span className='flex items-center gap-1.5'>
-                            <MapPin className='w-4 h-4' />
-                            {user.location ? user.location : 'Add location'}
-                        </span>
-                        <span className='flex items-center gap-1.5'>
-                            <Calendar className='w-4 h-4' />
-                            Joined <span className='font-medium'>{moment(user.createdAt).fromNow()}</span>
+                            <Calendar className='w-4 h-4 text-gray-400' />
+                            Joined <span className='font-medium text-gray-600'>{moment(user.createdAt).format('MMMM YYYY')}</span>
                         </span>
                     </div>
 
-                    <div className='flex items-center gap-6 mt-6 border-t border-gray-200 pt-4'>
+                    {/* Stats (Posts, Followers, Following) */}
+                    <div className='flex items-center gap-8 mt-5 pt-5 border-t border-gray-100'>
+                        {/* Posts */}
                         <div>
-                            <span className='sm:text-xl font-bold text-gray-900'>{posts.length}</span>
-                            <span className='text-xs sm:text-sm text-gray-500 ml-1.5'>Posts</span>
+                            <span className='text-lg font-bold text-gray-900'>{postCount}</span>
+                            <span className='text-sm text-gray-500 ml-1.5 font-medium'>Posts</span>
                         </div>
-                        <div>
-                            <span className='sm:text-xl font-bold text-gray-900'>
-                                {user.followers.length}</span>
-                            <span className='text-xs sm:text-sm text-gray-500 ml-1.5'>Followers</span>
+                        {/* Followers */}
+                        <div className="cursor-pointer hover:text-indigo-600 transition-colors">
+                            <span className='text-lg font-bold text-gray-900'>{followerCount}</span>
+                            <span className='text-sm text-gray-500 ml-1.5 font-medium'>Followers</span>
                         </div>
-                        <div>
-                            <span className='sm:text-xl font-bold text-gray-900'>
-                                {user.following.length}</span>
-                            <span className='text-xs sm:text-sm text-gray-500 ml-1.5'>Following</span>
+                        {/* Following */}
+                        <div className="cursor-pointer hover:text-indigo-600 transition-colors">
+                            <span className='text-lg font-bold text-gray-900'>{followingCount}</span>
+                            <span className='text-sm text-gray-500 ml-1.5 font-medium'>Following</span>
                         </div>
                     </div>
                 </div>

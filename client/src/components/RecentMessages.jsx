@@ -4,6 +4,7 @@ import moment from 'moment'
 import { useAuth, useUser } from '@clerk/clerk-react'
 import api from '../api/axios'
 import toast from 'react-hot-toast'
+import { MessageSquareText } from 'lucide-react' // Added a new icon for empty state
 
 const RecentMessages = () => {
     const [conversations, setConversations] = useState([])
@@ -138,6 +139,7 @@ const RecentMessages = () => {
             fetchRecentMessages();
             setupSSE();
             
+            // Polling fallback every 30 seconds (even with SSE, this is good for missed updates/disconnections)
             const interval = setInterval(fetchRecentMessages, 30000);
             return () => {
                 clearInterval(interval);
@@ -159,11 +161,16 @@ const RecentMessages = () => {
     }, []);
 
     return (
-        <div className='bg-white max-w-xs mt-4 p-4 min-h-20 rounded-md shadow text-xs text-slate-800'>
-            <h3 className='font-semibold text-slate-800 mb-4'>Recent Messages</h3>
-            <div className='flex flex-col max-h-56 overflow-y-scroll no-scrollbar'>
+        <div className='bg-white max-w-xs mt-4 p-4 rounded-xl border border-gray-100 shadow-lg text-sm text-slate-800'> {/* Updated Container Style */}
+            <h3 className='font-bold text-slate-900 mb-4 text-lg border-b pb-2'>
+                Recent Conversations 💬
+            </h3>
+            <div className='flex flex-col max-h-72 overflow-y-scroll custom-scrollbar divide-y divide-gray-100 -mx-4 px-4'> {/* Added divide-y */}
                 {!conversations || conversations.length === 0 ? (
-                    <p className='text-gray-500 text-center py-4'>No recent conversations</p>
+                    <div className='text-center py-6 text-gray-500'>
+                        <MessageSquareText className='w-6 h-6 mx-auto mb-2 text-indigo-400' />
+                        <p className='text-xs'>Start a conversation to see it here!</p>
+                    </div>
                 ) : (
                     conversations.map((conversation, index) => {
                         const userData = conversation?.user;
@@ -173,40 +180,53 @@ const RecentMessages = () => {
                         if (!userData) return null;
 
                         const uniqueKey = `${userData._id}_${lastMessage?._id}_${index}`;
+                        const isUnread = unreadCount > 0;
                         
+                        // Determine the last message content to display
+                        const messageText = lastMessage?.text 
+                            ? (lastMessage.text.length > 25 
+                                ? lastMessage.text.substring(0, 25) + '...' 
+                                : lastMessage.text)
+                            : lastMessage?.image_url 
+                                ? '🖼️ Image' 
+                                : '💬 New Chat'; // Fallback for media
+
                         return (
                             <Link 
                                 to={`/messages/${userData._id}`} 
                                 key={uniqueKey}
-                                className='flex items-start gap-2 py-2 hover:bg-slate-100 rounded px-2'
+                                // Highlight the row if there are unread messages
+                                className={`flex items-center gap-3 py-3 px-2 -mx-2 transition-all 
+                                            ${isUnread ? 'bg-indigo-50/50' : ''} 
+                                            hover:bg-indigo-100 rounded-lg`} 
                             >
-                                <img 
-                                    src={userData.profile_picture || '/default-avatar.png'} 
-                                    alt={userData.full_name}
-                                    className='w-8 h-8 rounded-full object-cover'
-                                    onError={(e) => {
-                                        e.target.src = '/default-avatar.png'
-                                    }}
-                                />
-                                <div className='w-full'>
-                                    <div className='flex justify-between'>
-                                        <p className='font-medium'>{userData.full_name}</p>
-                                        <p className='text-[10px] text-slate-400'>
+                                <div className='relative flex-shrink-0'>
+                                    <img 
+                                        src={userData.profile_picture || '/default-avatar.png'} 
+                                        alt={userData.full_name}
+                                        className='w-10 h-10 rounded-full object-cover ring-2 ring-gray-200' // Larger avatar
+                                        onError={(e) => {
+                                            e.target.src = '/default-avatar.png'
+                                        }}
+                                    />
+                                </div>
+
+                                <div className='flex-1 min-w-0'>
+                                    <div className='flex justify-between items-center'>
+                                        <p className={`text-sm ${isUnread ? 'font-bold text-slate-900' : 'font-semibold text-slate-700'}`}>
+                                            {userData.full_name}
+                                        </p>
+                                        <p className={`text-[11px] ${isUnread ? 'font-bold text-indigo-600' : 'text-slate-400'}`}>
                                             {moment(lastMessage?.createdAt || lastMessage?.created_at).fromNow()}
                                         </p>
                                     </div>
-                                    <div className='flex justify-between'>
-                                        <p className='text-gray-500 truncate max-w-[120px]'>
-                                            {lastMessage?.text 
-                                                ? (lastMessage.text.length > 25 
-                                                    ? lastMessage.text.substring(0, 25) + '...' 
-                                                    : lastMessage.text)
-                                                : '📷 Media'
-                                            }
+                                    <div className='flex justify-between items-center mt-0.5'>
+                                        <p className={`truncate text-xs ${isUnread ? 'text-slate-700 font-medium' : 'text-gray-500'}`}>
+                                            {messageText}
                                         </p>
                                         {unreadCount > 0 && (
-                                            <p className='bg-indigo-500 text-white w-4 h-4 flex items-center justify-center rounded-full text-[10px]'>
-                                                {unreadCount}
+                                            <p className='bg-indigo-600 text-white w-4 h-4 flex items-center justify-center rounded-full text-[10px] font-bold shadow-md flex-shrink-0 ml-2'>
+                                                {unreadCount > 9 ? '9+' : unreadCount}
                                             </p>
                                         )}
                                     </div>
@@ -216,6 +236,22 @@ const RecentMessages = () => {
                     })
                 )}
             </div>
+            {/* Custom Scrollbar Style */}
+            <style jsx="true">{`
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background-color: #e0e7ff; /* light indigo */
+                    border-radius: 20px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background-color: #c7d2fe;
+                }
+            `}</style>
         </div>
     )
 }

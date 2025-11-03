@@ -21,6 +21,7 @@ import RandomChat from './components/RandomChat'
 import ChatBot from './pages/ChatBot'
 import PixoMusic from './pages/pixoMusic';
 
+
 const App = () => {
   const {user} = useUser()
   const {getToken } = useAuth()
@@ -153,6 +154,7 @@ const App = () => {
           <Route path='/random-chat' element={<RandomChat/>}/>
           <Route path='chat-bot' element={<ChatBot/>}/>
           <Route path="/pixo-music" element={<PixoMusic />} />
+          
         </Route>
       </Routes>
     </>

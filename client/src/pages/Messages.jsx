@@ -1,18 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { Eye, MessageSquare, Bell, BellOff } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
-import { useSelector } from 'react-redux'
-import { useAuth, useUser } from '@clerk/clerk-react'
-import api from '../api/axios'
-import toast from 'react-hot-toast'
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Eye, MessageSquare, Bell, BellOff, ArrowRight } from 'lucide-react'; // Added ArrowRight
+import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { useAuth, useUser } from '@clerk/clerk-react';
+import api from '../api/axios';
+import toast from 'react-hot-toast';
 
 const Messages = () => {
-  const { connections } = useSelector((state) => state.connections)
-  const navigate = useNavigate()
-  const { user } = useUser()
-  const { getToken } = useAuth()
-  const eventSourceRef = useRef(null)
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false)
+  const { connections } = useSelector((state) => state.connections);
+  const navigate = useNavigate();
+  const { user } = useUser();
+  const { getToken } = useAuth();
+  const eventSourceRef = useRef(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   // Function to show system notification
   const showNotification = (data) => {
@@ -65,7 +65,6 @@ const Messages = () => {
         eventSourceRef.current.close();
       }
 
-      // ✅ CORRECT: Use /api/sse/ endpoint (not /api/messages/sse/)
       eventSourceRef.current = new EventSource(`https://social-server-nine.vercel.app/api/sse/${currentUserId}?token=${token}`);
 
       eventSourceRef.current.onopen = () => {
@@ -79,10 +78,8 @@ const Messages = () => {
           console.log('📩 SSE message received in Messages:', data);
 
           if (data.type === 'new_message') {
-            // Show notification
             showNotification(data);
 
-            // Show toast notification
             const fromName = data.notification?.from || data.message?.from_user_id?.full_name || 'Someone';
             toast.success(`New message from ${fromName}`, {
               duration: 4000,
@@ -106,10 +103,8 @@ const Messages = () => {
 
       eventSourceRef.current.onerror = (error) => {
         console.log('❌ SSE error in Messages:', error);
-        console.log('🔍 SSE connection state:', eventSourceRef.current?.readyState);
         setNotificationsEnabled(false);
         
-        // Attempt to reconnect after 5 seconds
         setTimeout(() => {
           if (user?.id) {
             console.log('🔄 Attempting SSE reconnection...');
@@ -148,13 +143,12 @@ const Messages = () => {
     }
   }
 
-  // Request notification permission on component mount
+  // Request notification permission and setup SSE on mount
   useEffect(() => {
-    if ("Notification" in window) {
-      if (Notification.permission === "granted") {
-        setupSSE();
-      }
+    if ("Notification" in window && Notification.permission === "granted") {
+      setupSSE();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Cleanup on unmount
@@ -168,105 +162,119 @@ const Messages = () => {
 
   return (
     <div className='min-h-screen relative bg-slate-50'>
-      <div className='max-w-6xl mx-auto p-6'>
+      <div className='max-w-6xl mx-auto p-4 sm:p-6'>
         {/* Title and Header */}
-        <div className='mb-8 flex justify-between items-center'>
+        <div className='mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center'>
           <div>
-            <h1 className='text-3xl font-bold text-slate-900 mb-2'>Messages</h1>
-            <p className='text-slate-600'>Talk to your friends and family</p>
+            <h1 className='text-4xl font-extrabold text-slate-900 mb-2'>Chat <span className='text-blue-600'>Connections</span></h1>
+            <p className='text-slate-600'>Start conversations with the people you follow or connect with.</p>
           </div>
           
           {/* Notification Toggle Button */}
           <button
             onClick={toggleNotifications}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
+            className={`mt-4 sm:mt-0 flex items-center gap-2 px-4 py-2 rounded-full border transition-all shadow-md text-sm font-semibold ${
               notificationsEnabled 
-                ? 'bg-green-100 text-green-700 border-green-300 hover:bg-green-200' 
-                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100' 
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
             }`}
-            title={notificationsEnabled ? "Disable notifications" : "Enable notifications"}
+            title={notificationsEnabled ? "Disable message notifications" : "Enable real-time message notifications"}
           >
             {notificationsEnabled ? (
-              <Bell className="w-4 h-4" />
+              <Bell className="w-4 h-4 text-green-500" />
             ) : (
-              <BellOff className="w-4 h-4" />
+              <BellOff className="w-4 h-4 text-gray-500" />
             )}
-            <span className="text-sm font-medium">
+            <span className="hidden sm:inline">
               {notificationsEnabled ? 'Notifications ON' : 'Notifications OFF'}
             </span>
+            <span className="inline sm:hidden">{notificationsEnabled ? 'ON' : 'OFF'}</span>
           </button>
         </div>
 
         {/* Connection Status */}
         {notificationsEnabled && (
-          <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-blue-700 text-sm flex items-center gap-2">
+          <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg shadow-sm">
+            <p className="text-blue-800 text-sm flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              Real-time messaging enabled - You'll receive notifications for new messages
+              **Live Connection Active** - You are ready for real-time messaging.
             </p>
           </div>
         )}
 
-        {/* Connected Users */}
-        <div className='flex flex-col gap-3'>
+        {/* Connected Users List (The main UI Improvement) */}
+        <div className='mb-8'>
+          <h2 className='text-xl font-semibold text-slate-700 mb-4'>Your Connections ({connections.length})</h2>
+          
           {connections.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-16 bg-white rounded-xl shadow-lg border border-gray-100">
               <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No connections yet</h3>
-              <p className="text-gray-500">Connect with people to start messaging</p>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">It's quiet here...</h3>
+              <p className="text-gray-500 max-w-sm mx-auto">Connect with people on the main feed to start messaging them instantly!</p>
             </div>
           ) : (
-            connections.map((user) => (
-              <div key={user._id} className='max-w-xl flex flex-wrap gap-5 p-6 bg-white shadow rounded-md hover:shadow-md transition-shadow'>
-                <img 
-                  src={user.profile_picture || '/default-avatar.png'} 
-                  alt={user.full_name}
-                  className='rounded-full size-12 mx-auto object-cover'
-                  onError={(e) => {
-                    e.target.src = '/default-avatar.png'
-                  }}
-                />
-                <div className='flex-1'>
-                  <p className='font-medium text-slate-700'>{user.full_name}</p>
-                  <p className='text-slate-500'>@{user.username}</p>
-                  <p className='text-sm text-gray-600 mt-1'>{user.bio}</p>
-                </div>
+            // Grid Layout for better use of space
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+              {connections.map((user) => (
+                <div 
+                  key={user._id} 
+                  // Make the entire card clickable/interactive
+                  onClick={() => navigate(`/messages/${user._id}`)} 
+                  className='flex items-center p-4 bg-white shadow-lg rounded-xl transition-all duration-200 border border-gray-100 hover:shadow-xl hover:border-blue-300 cursor-pointer'
+                >
+                  {/* User Avatar */}
+                  <img 
+                    src={user.profile_picture || '/default-avatar.png'} 
+                    alt={user.full_name}
+                    className='rounded-full size-14 sm:size-16 object-cover flex-shrink-0 border-2 border-white shadow-md'
+                    onError={(e) => {
+                      e.target.src = '/default-avatar.png'
+                    }}
+                  />
+                  
+                  {/* User Info */}
+                  <div className='flex-1 ml-4 overflow-hidden'>
+                    <div className='flex items-center justify-between'>
+                      <p className='font-bold text-lg text-slate-800 truncate'>{user.full_name}</p>
+                      {/* Optional: Placeholder for Unread count */}
+                      {/* <span className='text-xs font-bold text-white bg-red-500 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0'>3</span> */}
+                    </div>
+                    <p className='text-blue-500 text-sm font-medium'>@{user.username}</p>
+                    <p className='text-sm text-gray-600 mt-1 truncate'>{user.bio || 'No bio available'}</p>
+                  </div>
 
-                <div className='flex flex-col gap-2 mt-4'>
-                  <button 
-                    onClick={() => navigate(`/messages/${user._id}`)} 
-                    className='size-10 flex items-center justify-center text-sm rounded bg-blue-100 hover:bg-blue-200 text-blue-800 active:scale-95 transition cursor-pointer gap-1'
-                    title="Send Message"
-                  >
-                    <MessageSquare className="w-4 h-4"/>
-                  </button>
-
-                  <button 
-                    onClick={() => navigate(`/profile/${user._id}`)} 
-                    className='size-10 flex items-center justify-center text-sm rounded bg-slate-100 hover:bg-slate-200 text-slate-800 active:scale-95 transition cursor-pointer'
-                    title="View Profile"
-                  >
-                    <Eye className="w-4 h-4"/>
-                  </button>
+                  {/* Action Buttons (Combined into a single interactive end) */}
+                  <div className='ml-4 flex flex-col gap-2 items-end flex-shrink-0'>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevent card click event
+                        navigate(`/profile/${user._id}`);
+                      }} 
+                      className='size-8 flex items-center justify-center text-sm rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer'
+                      title="View Profile"
+                    >
+                      <Eye className="w-4 h-4"/>
+                    </button>
+                    <ArrowRight className="w-5 h-5 text-blue-500 group-hover:translate-x-1 transition-transform" />
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Help Text */}
-        <div className="mt-8 p-4 bg-slate-100 rounded-lg">
-          <h4 className="font-medium text-slate-700 mb-2">How messaging works:</h4>
-          <ul className="text-sm text-slate-600 space-y-1">
-            <li>• Click the message icon to start a conversation</li>
-            <li>• Enable notifications to get real-time message alerts</li>
-            <li>• You'll see unread message counts in the notifications</li>
-            <li>• Click on notifications to jump directly to the chat</li>
+        {/* Help Text - Made slightly more prominent */}
+        <div className="mt-8 p-6 bg-white border-t-4 border-blue-500 rounded-lg shadow-md">
+          <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><MessageSquare className='w-5 h-5 text-blue-500'/> Chat Guide</h4>
+          <ul className="text-sm text-slate-600 space-y-2">
+            <li>• Click on any **Connection Card** to jump directly into the chat.</li>
+            <li>• Toggle **Notifications ON** to receive system alerts for new messages.</li>
+            <li>• Live updates rely on an **SSE (Server-Sent Events) connection**, indicated by the "Live Connection Active" banner.</li>
           </ul>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
-export default Messages
+export default Messages;
