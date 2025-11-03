@@ -1,9 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Eye, MessageSquare, Bell, BellOff, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import api from '../api/axios';
 import toast from 'react-hot-toast';
 
 const Messages = () => {
@@ -13,6 +12,7 @@ const Messages = () => {
   const { getToken } = useAuth();
   const eventSourceRef = useRef(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [sseSupported, setSseSupported] = useState(true); // Track if SSE is supported
 
   // Function to show system notification
   const showNotification = (data) => {
@@ -52,10 +52,44 @@ const Messages = () => {
     }
   }
 
-  // Setup SSE for real-time messages with absolute URL
+  // Test if SSE endpoint exists
+  const testSSEEndpoint = async () => {
+    try {
+      const token = await getToken();
+      const currentUserId = user.id;
+      const baseUrl = window.location.origin;
+      const testUrl = `${baseUrl}/api/sse/${currentUserId}?token=${token}`;
+      
+      console.log('🧪 Testing SSE endpoint:', testUrl);
+      
+      const response = await fetch(testUrl, {
+        method: 'HEAD' // Just check if endpoint exists
+      });
+      
+      const contentType = response.headers.get('content-type');
+      console.log('📋 SSE endpoint content-type:', contentType);
+      
+      return contentType && contentType.includes('text/event-stream');
+    } catch (error) {
+      console.log('❌ SSE endpoint test failed:', error);
+      return false;
+    }
+  }
+
+  // Setup SSE for real-time messages
   const setupSSE = async () => {
     if (!user?.id) {
       console.log('❌ No user ID available for SSE');
+      return;
+    }
+
+    // Test if SSE endpoint exists first
+    const endpointExists = await testSSEEndpoint();
+    if (!endpointExists) {
+      console.log('❌ SSE endpoint not available, disabling real-time features');
+      setSseSupported(false);
+      setNotificationsEnabled(false);
+      toast.error('Real-time messaging not available');
       return;
     }
 
@@ -69,7 +103,7 @@ const Messages = () => {
         eventSourceRef.current.close();
       }
 
-      // Use absolute URL for production
+      // Use absolute URL
       const baseUrl = window.location.origin;
       const sseUrl = `${baseUrl}/api/sse/${currentUserId}?token=${token}`;
       
@@ -80,6 +114,7 @@ const Messages = () => {
       eventSourceRef.current.onopen = () => {
         console.log('✅ SSE connection opened successfully for Messages page');
         setNotificationsEnabled(true);
+        setSseSupported(true);
         toast.success('Real-time messaging connected');
       };
 
@@ -117,33 +152,39 @@ const Messages = () => {
         console.log('❌ SSE readyState:', eventSourceRef.current?.readyState);
         setNotificationsEnabled(false);
         
-        // Show error toast
-        toast.error('Connection lost - reconnecting...');
-        
-        setTimeout(() => {
-          if (user?.id) {
-            console.log('🔄 Attempting SSE reconnection...');
-            setupSSE();
-          }
-        }, 5000);
+        // Don't auto-reconnect if we know SSE isn't supported
+        if (sseSupported) {
+          toast.error('Connection lost - reconnecting...');
+          setTimeout(() => {
+            if (user?.id) {
+              console.log('🔄 Attempting SSE reconnection...');
+              setupSSE();
+            }
+          }, 10000); // Longer delay for reconnection
+        }
       };
 
     } catch (error) {
       console.log('❌ Error setting up SSE in Messages:', error);
       setNotificationsEnabled(false);
-      toast.error('Failed to connect to real-time messaging');
+      setSseSupported(false);
+      toast.error('Real-time messaging unavailable');
     }
   }
 
   // Toggle notifications
   const toggleNotifications = async () => {
+    if (!sseSupported) {
+      toast.error('Real-time messaging is not available on this server');
+      return;
+    }
+
     if (!notificationsEnabled) {
       // Enable notifications
       if ("Notification" in window) {
         const permission = await Notification.requestPermission();
         if (permission === "granted") {
           setupSSE();
-          toast.success('Notifications enabled');
         } else {
           toast.error('Notifications blocked by browser');
         }
@@ -159,11 +200,20 @@ const Messages = () => {
     }
   }
 
-  // Request notification permission and setup SSE on mount
+  // Check SSE support on component mount
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      setupSSE();
-    }
+    const checkSSESupport = async () => {
+      if (user?.id) {
+        const supported = await testSSEEndpoint();
+        setSseSupported(supported);
+        
+        if (supported && "Notification" in window && Notification.permission === "granted") {
+          setupSSE();
+        }
+      }
+    };
+
+    checkSSESupport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -176,25 +226,6 @@ const Messages = () => {
     };
   }, []);
 
-  // Add connection status monitoring
-  useEffect(() => {
-    const checkConnection = () => {
-      if (eventSourceRef.current) {
-        const isConnected = eventSourceRef.current.readyState === EventSource.OPEN;
-        console.log('🔍 SSE Connection status:', isConnected ? 'Connected' : 'Disconnected');
-        
-        if (!isConnected && notificationsEnabled) {
-          console.log('🔄 Connection lost, attempting reconnect...');
-          setupSSE();
-        }
-      }
-    };
-
-    const interval = setInterval(checkConnection, 30000); // Check every 30 seconds
-    
-    return () => clearInterval(interval);
-  }, [notificationsEnabled]);
-
   return (
     <div className='min-h-screen relative bg-slate-50'>
       <div className='max-w-6xl mx-auto p-4 sm:p-6'>
@@ -206,25 +237,35 @@ const Messages = () => {
           </div>
           
           {/* Notification Toggle Button */}
-          <button
-            onClick={toggleNotifications}
-            className={`mt-4 sm:mt-0 flex items-center gap-2 px-4 py-2 rounded-full border transition-all shadow-md text-sm font-semibold ${
-              notificationsEnabled 
-                ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100' 
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-            }`}
-            title={notificationsEnabled ? "Disable message notifications" : "Enable real-time message notifications"}
-          >
-            {notificationsEnabled ? (
-              <Bell className="w-4 h-4 text-green-500" />
-            ) : (
-              <BellOff className="w-4 h-4 text-gray-500" />
+          <div className="flex flex-col items-end gap-2 mt-4 sm:mt-0">
+            {!sseSupported && (
+              <span className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded border border-red-200">
+                Real-time features unavailable
+              </span>
             )}
-            <span className="hidden sm:inline">
-              {notificationsEnabled ? 'Notifications ON' : 'Notifications OFF'}
-            </span>
-            <span className="inline sm:hidden">{notificationsEnabled ? 'ON' : 'OFF'}</span>
-          </button>
+            <button
+              onClick={toggleNotifications}
+              disabled={!sseSupported}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all shadow-md text-sm font-semibold ${
+                notificationsEnabled 
+                  ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100' 
+                  : !sseSupported
+                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+              }`}
+              title={!sseSupported ? "Real-time messaging not supported" : notificationsEnabled ? "Disable message notifications" : "Enable real-time message notifications"}
+            >
+              {notificationsEnabled ? (
+                <Bell className="w-4 h-4 text-green-500" />
+              ) : (
+                <BellOff className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">
+                {notificationsEnabled ? 'Notifications ON' : 'Notifications OFF'}
+              </span>
+              <span className="inline sm:hidden">{notificationsEnabled ? 'ON' : 'OFF'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Connection Status */}
@@ -233,6 +274,14 @@ const Messages = () => {
             <p className="text-blue-800 text-sm flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
               **Live Connection Active** - You are ready for real-time messaging.
+            </p>
+          </div>
+        )}
+
+        {!sseSupported && (
+          <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded-lg shadow-sm">
+            <p className="text-yellow-800 text-sm">
+              ⚠️ <strong>Real-time messaging is currently unavailable.</strong> You can still send messages, but you won't receive instant notifications.
             </p>
           </div>
         )}
@@ -298,10 +347,13 @@ const Messages = () => {
         <div className="mt-8 p-6 bg-white border-t-4 border-blue-500 rounded-lg shadow-md">
           <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><MessageSquare className='w-5 h-5 text-blue-500'/> Chat Guide</h4>
           <ul className="text-sm text-slate-600 space-y-2">
-            <li>• Click on any **Connection Card** to jump directly into the chat.</li>
-            <li>• Toggle **Notifications ON** to receive system alerts for new messages.</li>
-            <li>• Live updates rely on an **SSE (Server-Sent Events) connection**, indicated by the "Live Connection Active" banner.</li>
-            <li>• Connection issues? Make sure your backend server supports SSE and CORS.</li>
+            <li>• Click on any <strong>Connection Card</strong> to jump directly into the chat.</li>
+            <li>• Toggle <strong>Notifications ON</strong> to receive system alerts for new messages.</li>
+            {sseSupported ? (
+              <li>• <span className="text-green-600">✓ Real-time messaging is supported</span> - you'll receive instant updates.</li>
+            ) : (
+              <li>• <span className="text-yellow-600">⚠ Real-time messaging is currently unavailable</span> - check your backend configuration.</li>
+            )}
           </ul>
         </div>
       </div>
