@@ -12,7 +12,7 @@ const Messages = () => {
   const { getToken } = useAuth();
   const eventSourceRef = useRef(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [sseSupported, setSseSupported] = useState(true); // Track if SSE is supported
+  const [sseSupported, setSseSupported] = useState(true);
 
   // Function to show system notification
   const showNotification = (data) => {
@@ -52,44 +52,10 @@ const Messages = () => {
     }
   }
 
-  // Test if SSE endpoint exists
-  const testSSEEndpoint = async () => {
-    try {
-      const token = await getToken();
-      const currentUserId = user.id;
-      const baseUrl = window.location.origin;
-      const testUrl = `${baseUrl}/api/sse/${currentUserId}?token=${token}`;
-      
-      console.log('🧪 Testing SSE endpoint:', testUrl);
-      
-      const response = await fetch(testUrl, {
-        method: 'HEAD' // Just check if endpoint exists
-      });
-      
-      const contentType = response.headers.get('content-type');
-      console.log('📋 SSE endpoint content-type:', contentType);
-      
-      return contentType && contentType.includes('text/event-stream');
-    } catch (error) {
-      console.log('❌ SSE endpoint test failed:', error);
-      return false;
-    }
-  }
-
   // Setup SSE for real-time messages
   const setupSSE = async () => {
     if (!user?.id) {
       console.log('❌ No user ID available for SSE');
-      return;
-    }
-
-    // Test if SSE endpoint exists first
-    const endpointExists = await testSSEEndpoint();
-    if (!endpointExists) {
-      console.log('❌ SSE endpoint not available, disabling real-time features');
-      setSseSupported(false);
-      setNotificationsEnabled(false);
-      toast.error('Real-time messaging not available');
       return;
     }
 
@@ -103,7 +69,7 @@ const Messages = () => {
         eventSourceRef.current.close();
       }
 
-      // Use absolute URL
+      // Use absolute URL - make sure this matches your backend route
       const baseUrl = window.location.origin;
       const sseUrl = `${baseUrl}/api/sse/${currentUserId}?token=${token}`;
       
@@ -152,15 +118,19 @@ const Messages = () => {
         console.log('❌ SSE readyState:', eventSourceRef.current?.readyState);
         setNotificationsEnabled(false);
         
-        // Don't auto-reconnect if we know SSE isn't supported
-        if (sseSupported) {
-          toast.error('Connection lost - reconnecting...');
+        // Check if it's a CORS or content-type error
+        if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+          console.log('🚫 SSE connection closed due to error');
+          setSseSupported(false);
+          toast.error('Real-time connection failed');
+        } else {
+          // Try reconnection only if it's a temporary error
           setTimeout(() => {
-            if (user?.id) {
+            if (user?.id && sseSupported) {
               console.log('🔄 Attempting SSE reconnection...');
               setupSSE();
             }
-          }, 10000); // Longer delay for reconnection
+          }, 10000);
         }
       };
 
@@ -168,14 +138,14 @@ const Messages = () => {
       console.log('❌ Error setting up SSE in Messages:', error);
       setNotificationsEnabled(false);
       setSseSupported(false);
-      toast.error('Real-time messaging unavailable');
+      toast.error('Failed to setup real-time messaging');
     }
   }
 
   // Toggle notifications
   const toggleNotifications = async () => {
     if (!sseSupported) {
-      toast.error('Real-time messaging is not available on this server');
+      toast.error('Real-time messaging is not available');
       return;
     }
 
@@ -200,20 +170,11 @@ const Messages = () => {
     }
   }
 
-  // Check SSE support on component mount
+  // Setup SSE when component mounts and user is available
   useEffect(() => {
-    const checkSSESupport = async () => {
-      if (user?.id) {
-        const supported = await testSSEEndpoint();
-        setSseSupported(supported);
-        
-        if (supported && "Notification" in window && Notification.permission === "granted") {
-          setupSSE();
-        }
-      }
-    };
-
-    checkSSESupport();
+    if (user?.id && "Notification" in window && Notification.permission === "granted") {
+      setupSSE();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
