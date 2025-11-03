@@ -5,7 +5,7 @@ import { protect } from '../middlewares/auth.js';
 const router = express.Router();
 
 // Cohere AI Configuration
-const COHERE_API_KEY = process.env.COHERE_API_KEY || 'leOAwcMPwyakyw4hl5DjkzmyWhvAnxLgWUS6DWO8';
+const COHERE_API_KEY = process.env.COHERE_API_KEY || 'eCSBEHJCBAYUFRequwkNJ8YU0Z10ZY0nmSKUTx1R';
 
 console.log('🔧 AI Configuration:');
 console.log('   COHERE_API_KEY:', COHERE_API_KEY ? 'Present' : 'Not found');
