@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Eye, MessageSquare, Bell, BellOff, ArrowRight } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Eye, MessageSquare, Bell, BellOff, ArrowRight } from 'lucide-react'; // Added ArrowRight
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useAuth, useUser } from '@clerk/clerk-react';
+import api from '../api/axios';
 import toast from 'react-hot-toast';
 
 const Messages = () => {
@@ -12,7 +13,6 @@ const Messages = () => {
   const { getToken } = useAuth();
   const eventSourceRef = useRef(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [sseSupported, setSseSupported] = useState(true);
 
   // Function to show system notification
   const showNotification = (data) => {
@@ -54,10 +54,7 @@ const Messages = () => {
 
   // Setup SSE for real-time messages
   const setupSSE = async () => {
-    if (!user?.id) {
-      console.log('❌ No user ID available for SSE');
-      return;
-    }
+    if (!user?.id) return;
 
     try {
       const token = await getToken();
@@ -65,23 +62,14 @@ const Messages = () => {
 
       // Close existing connection if any
       if (eventSourceRef.current) {
-        console.log('🔒 Closing existing SSE connection');
         eventSourceRef.current.close();
       }
 
-      // Use absolute URL - make sure this matches your backend route
-      const baseUrl = window.location.origin;
-      const sseUrl = `${baseUrl}/api/sse/${currentUserId}?token=${token}`;
-      
-      console.log('🔗 Attempting SSE connection to:', sseUrl);
-      
-      eventSourceRef.current = new EventSource(sseUrl);
+      eventSourceRef.current = new EventSource(`/api/sse/${currentUserId}?token=${token}`);
 
       eventSourceRef.current.onopen = () => {
-        console.log('✅ SSE connection opened successfully for Messages page');
+        console.log('🔗 SSE connection opened for Messages page');
         setNotificationsEnabled(true);
-        setSseSupported(true);
-        toast.success('Real-time messaging connected');
       };
 
       eventSourceRef.current.onmessage = (event) => {
@@ -115,46 +103,31 @@ const Messages = () => {
 
       eventSourceRef.current.onerror = (error) => {
         console.log('❌ SSE error in Messages:', error);
-        console.log('❌ SSE readyState:', eventSourceRef.current?.readyState);
         setNotificationsEnabled(false);
         
-        // Check if it's a CORS or content-type error
-        if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
-          console.log('🚫 SSE connection closed due to error');
-          setSseSupported(false);
-          toast.error('Real-time connection failed');
-        } else {
-          // Try reconnection only if it's a temporary error
-          setTimeout(() => {
-            if (user?.id && sseSupported) {
-              console.log('🔄 Attempting SSE reconnection...');
-              setupSSE();
-            }
-          }, 10000);
-        }
+        setTimeout(() => {
+          if (user?.id) {
+            console.log('🔄 Attempting SSE reconnection...');
+            setupSSE();
+          }
+        }, 5000);
       };
 
     } catch (error) {
       console.log('❌ Error setting up SSE in Messages:', error);
       setNotificationsEnabled(false);
-      setSseSupported(false);
-      toast.error('Failed to setup real-time messaging');
     }
   }
 
   // Toggle notifications
   const toggleNotifications = async () => {
-    if (!sseSupported) {
-      toast.error('Real-time messaging is not available');
-      return;
-    }
-
     if (!notificationsEnabled) {
       // Enable notifications
       if ("Notification" in window) {
         const permission = await Notification.requestPermission();
         if (permission === "granted") {
           setupSSE();
+          toast.success('Notifications enabled');
         } else {
           toast.error('Notifications blocked by browser');
         }
@@ -170,9 +143,9 @@ const Messages = () => {
     }
   }
 
-  // Setup SSE when component mounts and user is available
+  // Request notification permission and setup SSE on mount
   useEffect(() => {
-    if (user?.id && "Notification" in window && Notification.permission === "granted") {
+    if ("Notification" in window && Notification.permission === "granted") {
       setupSSE();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,35 +171,25 @@ const Messages = () => {
           </div>
           
           {/* Notification Toggle Button */}
-          <div className="flex flex-col items-end gap-2 mt-4 sm:mt-0">
-            {!sseSupported && (
-              <span className="text-xs text-red-500 bg-red-50 px-2 py-1 rounded border border-red-200">
-                Real-time features unavailable
-              </span>
+          <button
+            onClick={toggleNotifications}
+            className={`mt-4 sm:mt-0 flex items-center gap-2 px-4 py-2 rounded-full border transition-all shadow-md text-sm font-semibold ${
+              notificationsEnabled 
+                ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100' 
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+            }`}
+            title={notificationsEnabled ? "Disable message notifications" : "Enable real-time message notifications"}
+          >
+            {notificationsEnabled ? (
+              <Bell className="w-4 h-4 text-green-500" />
+            ) : (
+              <BellOff className="w-4 h-4 text-gray-500" />
             )}
-            <button
-              onClick={toggleNotifications}
-              disabled={!sseSupported}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all shadow-md text-sm font-semibold ${
-                notificationsEnabled 
-                  ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100' 
-                  : !sseSupported
-                  ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-              }`}
-              title={!sseSupported ? "Real-time messaging not supported" : notificationsEnabled ? "Disable message notifications" : "Enable real-time message notifications"}
-            >
-              {notificationsEnabled ? (
-                <Bell className="w-4 h-4 text-green-500" />
-              ) : (
-                <BellOff className="w-4 h-4" />
-              )}
-              <span className="hidden sm:inline">
-                {notificationsEnabled ? 'Notifications ON' : 'Notifications OFF'}
-              </span>
-              <span className="inline sm:hidden">{notificationsEnabled ? 'ON' : 'OFF'}</span>
-            </button>
-          </div>
+            <span className="hidden sm:inline">
+              {notificationsEnabled ? 'Notifications ON' : 'Notifications OFF'}
+            </span>
+            <span className="inline sm:hidden">{notificationsEnabled ? 'ON' : 'OFF'}</span>
+          </button>
         </div>
 
         {/* Connection Status */}
@@ -239,15 +202,7 @@ const Messages = () => {
           </div>
         )}
 
-        {!sseSupported && (
-          <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded-lg shadow-sm">
-            <p className="text-yellow-800 text-sm">
-              ⚠️ <strong>Real-time messaging is currently unavailable.</strong> You can still send messages, but you won't receive instant notifications.
-            </p>
-          </div>
-        )}
-
-        {/* Connected Users List */}
+        {/* Connected Users List (The main UI Improvement) */}
         <div className='mb-8'>
           <h2 className='text-xl font-semibold text-slate-700 mb-4'>Your Connections ({connections.length})</h2>
           
@@ -258,12 +213,14 @@ const Messages = () => {
               <p className="text-gray-500 max-w-sm mx-auto">Connect with people on the main feed to start messaging them instantly!</p>
             </div>
           ) : (
+            // Grid Layout for better use of space
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               {connections.map((user) => (
                 <div 
                   key={user._id} 
+                  // Make the entire card clickable/interactive
                   onClick={() => navigate(`/messages/${user._id}`)} 
-                  className='flex items-center p-4 bg-white shadow-lg rounded-xl transition-all duration-200 border border-gray-100 hover:shadow-xl hover:border-blue-300 cursor-pointer group'
+                  className='flex items-center p-4 bg-white shadow-lg rounded-xl transition-all duration-200 border border-gray-100 hover:shadow-xl hover:border-blue-300 cursor-pointer'
                 >
                   {/* User Avatar */}
                   <img 
@@ -279,16 +236,18 @@ const Messages = () => {
                   <div className='flex-1 ml-4 overflow-hidden'>
                     <div className='flex items-center justify-between'>
                       <p className='font-bold text-lg text-slate-800 truncate'>{user.full_name}</p>
+                      {/* Optional: Placeholder for Unread count */}
+                      {/* <span className='text-xs font-bold text-white bg-red-500 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0'>3</span> */}
                     </div>
                     <p className='text-blue-500 text-sm font-medium'>@{user.username}</p>
                     <p className='text-sm text-gray-600 mt-1 truncate'>{user.bio || 'No bio available'}</p>
                   </div>
 
-                  {/* Action Buttons */}
+                  {/* Action Buttons (Combined into a single interactive end) */}
                   <div className='ml-4 flex flex-col gap-2 items-end flex-shrink-0'>
                     <button 
                       onClick={(e) => {
-                        e.stopPropagation();
+                        e.stopPropagation(); // Prevent card click event
                         navigate(`/profile/${user._id}`);
                       }} 
                       className='size-8 flex items-center justify-center text-sm rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer'
@@ -304,17 +263,13 @@ const Messages = () => {
           )}
         </div>
 
-        {/* Help Text */}
+        {/* Help Text - Made slightly more prominent */}
         <div className="mt-8 p-6 bg-white border-t-4 border-blue-500 rounded-lg shadow-md">
           <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><MessageSquare className='w-5 h-5 text-blue-500'/> Chat Guide</h4>
           <ul className="text-sm text-slate-600 space-y-2">
-            <li>• Click on any <strong>Connection Card</strong> to jump directly into the chat.</li>
-            <li>• Toggle <strong>Notifications ON</strong> to receive system alerts for new messages.</li>
-            {sseSupported ? (
-              <li>• <span className="text-green-600">✓ Real-time messaging is supported</span> - you'll receive instant updates.</li>
-            ) : (
-              <li>• <span className="text-yellow-600">⚠ Real-time messaging is currently unavailable</span> - check your backend configuration.</li>
-            )}
+            <li>• Click on any **Connection Card** to jump directly into the chat.</li>
+            <li>• Toggle **Notifications ON** to receive system alerts for new messages.</li>
+            <li>• Live updates rely on an **SSE (Server-Sent Events) connection**, indicated by the "Live Connection Active" banner.</li>
           </ul>
         </div>
       </div>
