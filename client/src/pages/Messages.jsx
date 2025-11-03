@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Eye, MessageSquare, Bell, BellOff, ArrowRight } from 'lucide-react'; // Added ArrowRight
+import { Eye, MessageSquare, Bell, BellOff, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useAuth, useUser } from '@clerk/clerk-react';
@@ -52,9 +52,12 @@ const Messages = () => {
     }
   }
 
-  // Setup SSE for real-time messages
+  // Setup SSE for real-time messages with absolute URL
   const setupSSE = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      console.log('❌ No user ID available for SSE');
+      return;
+    }
 
     try {
       const token = await getToken();
@@ -62,14 +65,22 @@ const Messages = () => {
 
       // Close existing connection if any
       if (eventSourceRef.current) {
+        console.log('🔒 Closing existing SSE connection');
         eventSourceRef.current.close();
       }
 
-      eventSourceRef.current = new EventSource(`/api/sse/${currentUserId}?token=${token}`);
+      // Use absolute URL for production
+      const baseUrl = window.location.origin;
+      const sseUrl = `${baseUrl}/api/sse/${currentUserId}?token=${token}`;
+      
+      console.log('🔗 Attempting SSE connection to:', sseUrl);
+      
+      eventSourceRef.current = new EventSource(sseUrl);
 
       eventSourceRef.current.onopen = () => {
-        console.log('🔗 SSE connection opened for Messages page');
+        console.log('✅ SSE connection opened successfully for Messages page');
         setNotificationsEnabled(true);
+        toast.success('Real-time messaging connected');
       };
 
       eventSourceRef.current.onmessage = (event) => {
@@ -103,7 +114,11 @@ const Messages = () => {
 
       eventSourceRef.current.onerror = (error) => {
         console.log('❌ SSE error in Messages:', error);
+        console.log('❌ SSE readyState:', eventSourceRef.current?.readyState);
         setNotificationsEnabled(false);
+        
+        // Show error toast
+        toast.error('Connection lost - reconnecting...');
         
         setTimeout(() => {
           if (user?.id) {
@@ -116,6 +131,7 @@ const Messages = () => {
     } catch (error) {
       console.log('❌ Error setting up SSE in Messages:', error);
       setNotificationsEnabled(false);
+      toast.error('Failed to connect to real-time messaging');
     }
   }
 
@@ -160,6 +176,25 @@ const Messages = () => {
     };
   }, []);
 
+  // Add connection status monitoring
+  useEffect(() => {
+    const checkConnection = () => {
+      if (eventSourceRef.current) {
+        const isConnected = eventSourceRef.current.readyState === EventSource.OPEN;
+        console.log('🔍 SSE Connection status:', isConnected ? 'Connected' : 'Disconnected');
+        
+        if (!isConnected && notificationsEnabled) {
+          console.log('🔄 Connection lost, attempting reconnect...');
+          setupSSE();
+        }
+      }
+    };
+
+    const interval = setInterval(checkConnection, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [notificationsEnabled]);
+
   return (
     <div className='min-h-screen relative bg-slate-50'>
       <div className='max-w-6xl mx-auto p-4 sm:p-6'>
@@ -202,7 +237,7 @@ const Messages = () => {
           </div>
         )}
 
-        {/* Connected Users List (The main UI Improvement) */}
+        {/* Connected Users List */}
         <div className='mb-8'>
           <h2 className='text-xl font-semibold text-slate-700 mb-4'>Your Connections ({connections.length})</h2>
           
@@ -213,14 +248,12 @@ const Messages = () => {
               <p className="text-gray-500 max-w-sm mx-auto">Connect with people on the main feed to start messaging them instantly!</p>
             </div>
           ) : (
-            // Grid Layout for better use of space
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
               {connections.map((user) => (
                 <div 
                   key={user._id} 
-                  // Make the entire card clickable/interactive
                   onClick={() => navigate(`/messages/${user._id}`)} 
-                  className='flex items-center p-4 bg-white shadow-lg rounded-xl transition-all duration-200 border border-gray-100 hover:shadow-xl hover:border-blue-300 cursor-pointer'
+                  className='flex items-center p-4 bg-white shadow-lg rounded-xl transition-all duration-200 border border-gray-100 hover:shadow-xl hover:border-blue-300 cursor-pointer group'
                 >
                   {/* User Avatar */}
                   <img 
@@ -236,18 +269,16 @@ const Messages = () => {
                   <div className='flex-1 ml-4 overflow-hidden'>
                     <div className='flex items-center justify-between'>
                       <p className='font-bold text-lg text-slate-800 truncate'>{user.full_name}</p>
-                      {/* Optional: Placeholder for Unread count */}
-                      {/* <span className='text-xs font-bold text-white bg-red-500 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0'>3</span> */}
                     </div>
                     <p className='text-blue-500 text-sm font-medium'>@{user.username}</p>
                     <p className='text-sm text-gray-600 mt-1 truncate'>{user.bio || 'No bio available'}</p>
                   </div>
 
-                  {/* Action Buttons (Combined into a single interactive end) */}
+                  {/* Action Buttons */}
                   <div className='ml-4 flex flex-col gap-2 items-end flex-shrink-0'>
                     <button 
                       onClick={(e) => {
-                        e.stopPropagation(); // Prevent card click event
+                        e.stopPropagation();
                         navigate(`/profile/${user._id}`);
                       }} 
                       className='size-8 flex items-center justify-center text-sm rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer'
@@ -263,13 +294,14 @@ const Messages = () => {
           )}
         </div>
 
-        {/* Help Text - Made slightly more prominent */}
+        {/* Help Text */}
         <div className="mt-8 p-6 bg-white border-t-4 border-blue-500 rounded-lg shadow-md">
           <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><MessageSquare className='w-5 h-5 text-blue-500'/> Chat Guide</h4>
           <ul className="text-sm text-slate-600 space-y-2">
             <li>• Click on any **Connection Card** to jump directly into the chat.</li>
             <li>• Toggle **Notifications ON** to receive system alerts for new messages.</li>
             <li>• Live updates rely on an **SSE (Server-Sent Events) connection**, indicated by the "Live Connection Active" banner.</li>
+            <li>• Connection issues? Make sure your backend server supports SSE and CORS.</li>
           </ul>
         </div>
       </div>
