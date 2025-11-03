@@ -20,7 +20,7 @@ import Notification from './components/Notification'
 import RandomChat from './components/RandomChat'
 import ChatBot from './pages/ChatBot'
 import PixoMusic from './pages/pixoMusic';
-
+import PixoGames from './components/PixoGames';
 
 const App = () => {
   const {user} = useUser()
@@ -60,7 +60,7 @@ const App = () => {
           }
 
           // ✅ FIXED: Use correct backend URL with port 4000
-          const backendUrl = 'https://social-server-nine.vercel.app';
+          const backendUrl = 'http://localhost:4000';
           eventSourceRef.current = new EventSource(`${backendUrl}/api/sse/${user.id}?token=${token}`)
 
           eventSourceRef.current.onopen = () => {
@@ -154,7 +154,7 @@ const App = () => {
           <Route path='/random-chat' element={<RandomChat/>}/>
           <Route path='chat-bot' element={<ChatBot/>}/>
           <Route path="/pixo-music" element={<PixoMusic />} />
-          
+          <Route path="/pixo-games" element={<PixoGames />} />
         </Route>
       </Routes>
     </>
