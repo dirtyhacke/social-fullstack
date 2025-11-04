@@ -28,7 +28,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const handleRandomChat = () => handleNavigation('/random-chat', () => navigate('/random-chat'));
     const handleChatBot = () => handleNavigation('/chat-bot', () => navigate('/chat-bot'));
     const handlePixoGames = () => handleNavigation('/pixo-games', () => navigate('/pixo-games'));
-    const handlePixoMovies = () => handleNavigation('/pixo-movies', () => navigate('/pixo-movies'));
+    const handlePixoMovies = () => handleNavigation('/pixo-music', () => navigate('/pixo-music'));
     
     const handleEditProfile = () => {
         setShowProfileModal(true);
@@ -79,8 +79,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         },
         {
             icon: <Film className='w-5 h-5'/>,
-            name: "Pixo Movies",
-            path: "/pixo-movies",
+            name: "Pixo Music",
+            path: "/pixo-music",
             onClick: handlePixoMovies,
         },
         { isSeparator: true },
