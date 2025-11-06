@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { BadgeCheck, Heart, MessageCircle, Share2, Send, X, Edit, Trash2, MoreVertical, Loader2, Link } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { BadgeCheck, Heart, MessageCircle, Share2, Send, X, Edit, Trash2, MoreVertical, Loader2, Link, Shield } from 'lucide-react'
 import moment from 'moment'
 import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
@@ -8,7 +8,7 @@ import api from '../api/axios'
 import toast from 'react-hot-toast'
 
 // ----------------------------------------------------------------------
-// --- Post Modal Component (Revamped UI/UX) ---
+// --- Post Modal Component (Enhanced with Protection) ---
 // ----------------------------------------------------------------------
 
 const PostModal = ({ 
@@ -32,6 +32,103 @@ const PostModal = ({
     const [editCommentText, setEditCommentText] = useState('');
     const [showMenu, setShowMenu] = useState(null);
     const [showPostOptionsMenu, setShowPostOptionsMenu] = useState(false);
+
+    const modalRef = useRef(null);
+    const imageRefs = useRef([]);
+
+    // Enhanced protection functions
+    const preventDefaultActions = (e) => {
+        e.preventDefault();
+        return false;
+    };
+
+    const protectiveStyles = {
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        WebkitUserDrag: 'none',
+        KhtmlUserDrag: 'none',
+        MozUserDrag: 'none',
+        OUserDrag: 'none',
+        userDrag: 'none',
+        WebkitTouchCallout: 'none',
+        WebkitTapHighlightColor: 'transparent',
+        pointerEvents: 'none'
+    };
+
+    // Anti-screenshot protection
+    useEffect(() => {
+        if (modalRef.current) {
+            // Add protective overlay
+            const addProtectiveOverlay = () => {
+                const overlay = document.createElement('div');
+                overlay.id = 'post-modal-protection';
+                overlay.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: repeating-linear-gradient(
+                        45deg,
+                        transparent,
+                        transparent 5px,
+                        rgba(255,255,255,0.01) 5px,
+                        rgba(255,255,255,0.01) 10px
+                    );
+                    pointer-events: none;
+                    z-index: 10001;
+                    opacity: 0;
+                `;
+                document.body.appendChild(overlay);
+            };
+
+            // Block keyboard shortcuts
+            const handleKeyDown = (e) => {
+                if (
+                    e.key === 'PrintScreen' ||
+                    e.keyCode === 44 ||
+                    (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i')) ||
+                    e.key === 'F12' ||
+                    (e.ctrlKey && e.key === 'p')
+                ) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                }
+            };
+
+            addProtectiveOverlay();
+            document.addEventListener('keydown', handleKeyDown);
+
+            return () => {
+                document.removeEventListener('keydown', handleKeyDown);
+                const overlay = document.getElementById('post-modal-protection');
+                if (overlay) {
+                    document.body.removeChild(overlay);
+                }
+            };
+        }
+    }, []);
+
+    // Protection Overlay Component
+    const ProtectionOverlay = () => (
+        <div 
+            style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.02) 3px, rgba(255,255,255,0.02) 6px)',
+                pointerEvents: 'none',
+                zIndex: 1,
+                opacity: 0.2
+            }}
+            onContextMenu={preventDefaultActions}
+        />
+    );
 
     const fetchComments = async () => {
         setIsFetchingComments(true)
@@ -131,11 +228,9 @@ const PostModal = ({
         }
     }, [post?._id]);
 
-
-    // Combined handler for Edit/Delete
     const handleAction = (action) => {
         setShowPostOptionsMenu(false);
-        onClose(); // Close the modal before the action
+        onClose();
         if (action === 'edit') {
             handleEditPost();
         } else if (action === 'delete') {
@@ -143,30 +238,44 @@ const PostModal = ({
         }
     }
 
-    // Don't render if no post
     if (!post) return null;
 
     return (
         <div 
-            className='fixed inset-0 bg-black bg-opacity-70 backdrop-blur-bg flex items-start lg:items-center justify-center z-50 p-0 sm:p-4'
-            onClick={onClose} 
+            ref={modalRef}
+            className='fixed inset-0 bg-black bg-opacity-90 backdrop-blur-md flex items-start lg:items-center justify-center z-50 p-0 sm:p-4'
+            onClick={onClose}
+            onContextMenu={preventDefaultActions}
+            style={{ WebkitUserSelect: 'none' }}
         >
+           
+
+            <ProtectionOverlay />
+            
             <div 
-                className='bg-white rounded-none sm:rounded-xl shadow-2xl w-full max-w-4xl h-full max-h-full sm:max-h-[90vh] flex flex-col lg:flex-row overflow-hidden' // Full height on mobile
+                className='bg-white rounded-none sm:rounded-xl shadow-2xl w-full max-w-4xl h-full max-h-full sm:max-h-[90vh] flex flex-col lg:flex-row overflow-hidden relative'
                 onClick={(e) => e.stopPropagation()} 
             >
                 
-                {/* 1. Post Content & Images (Left on Desktop, Top on Mobile) */}
+                {/* 1. Post Content & Images */}
                 <div className='w-full lg:w-3/5 flex flex-col overflow-y-auto custom-scrollbar-lg border-b lg:border-r lg:border-b-0 border-gray-100'> 
 
-                    {/* Sticky Header: User Info & Close/Menu */}
+                    {/* Sticky Header */}
                     <div className='sticky top-0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between'>
-                        {/* User Info */}
-                        <div className='flex items-center gap-3 cursor-pointer' onClick={()=> navigate('/profile/' + (post?.user?._id || ''))}>
+                        {/* Protected User Info */}
+                        <div 
+                            className='flex items-center gap-3 cursor-pointer' 
+                            onClick={()=> navigate('/profile/' + (post?.user?._id || ''))}
+                            onContextMenu={preventDefaultActions}
+                        >
                             <img
                                 src={post?.user?.profile_picture || '/default-avatar.png'}
                                 alt={post?.user?.full_name || 'User'}
                                 className='w-10 h-10 rounded-full object-cover shadow-sm'
+                                style={protectiveStyles}
+                                onContextMenu={preventDefaultActions}
+                                onDragStart={preventDefaultActions}
+                                draggable={false}
                             />
                             <div>
                                 <span className="font-bold text-gray-800 flex items-center gap-1">
@@ -177,9 +286,8 @@ const PostModal = ({
                             </div>
                         </div>
 
-                        {/* Actions (Close + More) */}
+                        {/* Actions */}
                         <div className='flex items-center gap-2 relative'>
-                            {/* Post Options Menu */}
                             {isPostOwner && (
                                 <button
                                     className='p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition'
@@ -190,7 +298,6 @@ const PostModal = ({
                                 </button>
                             )}
 
-                            {/* Options Dropdown */}
                             {isPostOwner && showPostOptionsMenu && (
                                 <div className='absolute right-0 top-8 bg-white shadow-xl rounded-lg border border-gray-100 z-30 min-w-36 divide-y divide-gray-100'>
                                     <button onClick={() => handleAction('edit')} className='flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 rounded-t-lg transition'>
@@ -202,77 +309,95 @@ const PostModal = ({
                                 </div>
                             )}
 
-                            {/* Close Button */}
                             <button onClick={onClose} className='p-1 rounded-full text-gray-500 hover:text-red-500 hover:bg-red-50 transition' title="Close">
                                 <X className='w-6 h-6' />
                             </button>
                         </div>
                     </div>
                     
-                    {/* Post Content Body (Scrollable) */}
-                    <div className='p-4 sm:p-6 space-y-4'>
+                    {/* Protected Post Content */}
+                    <div className='p-4 sm:p-6 space-y-4' onContextMenu={preventDefaultActions}>
                         
                         <div className='text-gray-400 text-xs'>
                             {moment(post?.createdAt).format('MMM D, YYYY HH:mm')}
                         </div>
 
-                        {/* Content */}
                         {post?.content && (
                             <div
                                 className='text-gray-800 text-lg leading-relaxed whitespace-pre-line'
                                 dangerouslySetInnerHTML={{ __html: postWithHashtags }}
+                                style={protectiveStyles}
+                                onContextMenu={preventDefaultActions}
                             />
                         )}
 
-                        {/* Images - Full size */}
+                        {/* Protected Images */}
                         {post?.image_urls && post.image_urls.length > 0 && (
-                            <div className={`grid gap-3 ${post.image_urls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                            <div 
+                                className={`grid gap-3 ${post.image_urls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}
+                                onContextMenu={preventDefaultActions}
+                            >
                                 {post.image_urls.map((img, index) => (
-                                    <img
-                                        src={img}
-                                        key={index}
-                                        className='w-full rounded-lg shadow-md object-contain border border-gray-100'
-                                        alt={`Post image ${index + 1}`}
-                                    />
+                                    <div key={index} className="relative">
+                                        <ProtectionOverlay />
+                                        <img
+                                            src={img}
+                                            ref={el => imageRefs.current[index] = el}
+                                            className='w-full rounded-lg shadow-md object-contain border border-gray-100 relative z-0'
+                                            alt={`Post image ${index + 1}`}
+                                            style={protectiveStyles}
+                                            onContextMenu={preventDefaultActions}
+                                            onDragStart={preventDefaultActions}
+                                            draggable={false}
+                                        />
+                                    </div>
                                 ))}
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* 2. Comments Section (Right on Desktop, Bottom on Mobile) */}
+                {/* 2. Comments Section */}
                 <div className='w-full lg:w-2/5 flex flex-col flex-shrink-0'>
                     
-                    {/* Comments Header */}
                     <h3 className='font-bold text-gray-800 text-lg p-4 border-b border-gray-100 flex-shrink-0'>
                         Comments ({commentsCount})
                     </h3>
                     
-                    {/* Comments List (Scrollable) */}
-                    <div className='flex-1 p-4 space-y-4 overflow-y-auto custom-scrollbar'>
+                    {/* Protected Comments List */}
+                    <div 
+                        className='flex-1 p-4 space-y-4 overflow-y-auto custom-scrollbar'
+                        onContextMenu={preventDefaultActions}
+                    >
                         {isFetchingComments ? (
                             <div className='flex justify-center py-6'>
                                 <Loader2 className='w-6 h-6 animate-spin text-blue-500' />
                             </div>
                         ) : comments.length > 0 ? (
                             comments.map((comment) => (
-                                <div key={comment?._id} className='flex gap-3 group relative p-3 -mx-3 rounded-lg hover:bg-gray-50 transition'>
+                                <div 
+                                    key={comment?._id} 
+                                    className='flex gap-3 group relative p-3 -mx-3 rounded-lg hover:bg-gray-50 transition'
+                                    onContextMenu={preventDefaultActions}
+                                >
                                     <img
                                         src={comment?.user?.profile_picture || '/default-avatar.png'}
                                         alt={comment?.user?.full_name || 'User'}
                                         className='w-8 h-8 rounded-full cursor-pointer flex-shrink-0 object-cover'
                                         onClick={() => navigate('/profile/' + (comment?.user?._id || ''))}
+                                        style={protectiveStyles}
+                                        onContextMenu={preventDefaultActions}
+                                        onDragStart={preventDefaultActions}
+                                        draggable={false}
                                     />
                                     
                                     <div className='flex-1'>
-                                        {/* Comment Header */}
                                         <div className='flex items-center gap-2 mb-1'>
                                             <span className='font-semibold text-sm text-gray-800'>{comment?.user?.full_name || 'Unknown User'}</span>
                                             <span className='text-gray-500 text-xs'>@{comment?.user?.username || 'unknown'}</span>
                                             <span className='text-gray-400 text-xs ml-auto'>• {moment(comment?.createdAt).fromNow()}</span>
                                         </div>
                                         
-                                        {/* Comment Content / Edit Form */}
                                         {editingComment === comment?._id ? (
                                             <div className='space-y-2 pt-1'>
                                                 <input
@@ -289,11 +414,16 @@ const PostModal = ({
                                                 </div>
                                             </div>
                                         ) : (
-                                            <p className='text-gray-800 text-sm break-words'>{comment?.content}</p>
+                                            <p 
+                                                className='text-gray-800 text-sm break-words'
+                                                style={protectiveStyles}
+                                                onContextMenu={preventDefaultActions}
+                                            >
+                                                {comment?.content}
+                                            </p>
                                         )}
                                     </div>
                                     
-                                    {/* Comment Menu */}
                                     {isCurrentUserComment(comment) && (
                                         <div className='absolute right-2 top-3'>
                                             <MoreVertical
@@ -322,13 +452,17 @@ const PostModal = ({
                         )}
                     </div>
 
-                    {/* Comment Input Box (Fixed to Bottom for Mobile) */}
+                    {/* Comment Input */}
                     <div className='p-4 border-t border-gray-100 flex-shrink-0 bg-white sticky bottom-0 z-20'>
                         <div className='flex items-center gap-2'>
                             <img
                                 src={currentUser?.profile_picture || '/default-avatar.png'}
                                 alt="Your Profile"
                                 className='w-8 h-8 rounded-full flex-shrink-0'
+                                style={protectiveStyles}
+                                onContextMenu={preventDefaultActions}
+                                onDragStart={preventDefaultActions}
+                                draggable={false}
                             />
                             <input
                                 type="text"
@@ -350,6 +484,15 @@ const PostModal = ({
                     </div>
                 </div>
             </div>
+
+            {/* Privacy Warning */}
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-red-500/20 backdrop-blur-sm text-white px-4 py-2 rounded-full text-xs border border-red-500/30">
+                <div className="flex items-center gap-2">
+                    <Shield className="w-3 h-3" />
+                    <span>Protected: Screenshots & downloads disabled</span>
+                </div>
+            </div>
+             
              <style jsx="true">{`
                 .backdrop-blur-bg {
                     backdrop-filter: blur(8px);
@@ -374,11 +517,10 @@ const PostModal = ({
 }
 
 // ----------------------------------------------------------------------
-// --- Main PostCard Component (Mostly unchanged) ---
+// --- Main PostCard Component (Enhanced with Protection) ---
 // ----------------------------------------------------------------------
 
 const PostCard = ({ post, onEdit, onDelete }) => {
-    // Don't render if post is null or undefined
     if (!post) {
         console.warn('PostCard received null or undefined post');
         return null;
@@ -404,9 +546,50 @@ const PostCard = ({ post, onEdit, onDelete }) => {
     const currentUser = useSelector((state) => state.user.value)
     const { getToken } = useAuth()
     const navigate = useNavigate()
+    const postCardRef = useRef(null)
 
-    // Fix: Use optional chaining to prevent null errors
     const isPostOwner = post?.user?._id === currentUser?._id;
+
+    // Enhanced protection functions
+    const preventDefaultActions = (e) => {
+        e.preventDefault();
+       
+        return false;
+    };
+
+    const protectiveStyles = {
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        WebkitUserDrag: 'none',
+        KhtmlUserDrag: 'none',
+        MozUserDrag: 'none',
+        OUserDrag: 'none',
+        userDrag: 'none',
+        WebkitTouchCallout: 'none',
+        WebkitTapHighlightColor: 'transparent',
+    };
+
+    // Add protection to post card
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (
+                (e.key === 'PrintScreen' || e.keyCode === 44) &&
+                postCardRef.current?.contains(document.activeElement)
+            ) {
+                e.preventDefault();
+                toast.error('🔒 Screenshots are disabled for privacy', {
+                    duration: 3000
+                });
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
 
     useEffect(() => {
         setCommentsCount(post?.comments_count || 0)
@@ -425,6 +608,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         };
     }, [showPostMenu]);
 
+    // Rest of your existing functions remain the same...
     const fetchSharesCount = async () => { 
         try {
             const token = await getToken();
@@ -595,8 +779,6 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         toast.promise(
             new Promise(async (resolve, reject) => {
                 try {
-                    // Placeholder for actual API call
-                    
                     setTimeout(() => {
                         if (post?._id) { 
                             if(onDelete) onDelete(post._id); 
@@ -616,12 +798,15 @@ const PostCard = ({ post, onEdit, onDelete }) => {
             }
         );
     }
-    
-    // --- Render Component ---
 
     return (
-        <div className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100'>
-            {/* Post Modal - Passes all necessary states and handlers */}
+        <div 
+            ref={postCardRef}
+            className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100 relative'
+            onContextMenu={preventDefaultActions}
+            style={{ WebkitUserSelect: 'none' }}>
+
+            {/* Post Modal */}
             {showPostModal && (
                 <PostModal 
                     post={post} 
@@ -636,13 +821,21 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                 />
             )}
 
-            {/* User Info Header */}
+            {/* Protected User Info Header */}
             <div className='flex items-center justify-between'>
-                <div onClick={()=> navigate('/profile/' + (post?.user?._id || ''))} className='inline-flex items-center gap-3 cursor-pointer'>
+                <div 
+                    onClick={()=> navigate('/profile/' + (post?.user?._id || ''))} 
+                    className='inline-flex items-center gap-3 cursor-pointer'
+                    onContextMenu={preventDefaultActions}
+                >
                     <img
                         src={post?.user?.profile_picture || '/default-avatar.png'}
                         alt={post?.user?.full_name || 'User'}
                         className='w-12 h-12 rounded-full object-cover shadow-md ring-2 ring-indigo-50'
+                        style={protectiveStyles}
+                        onContextMenu={preventDefaultActions}
+                        onDragStart={preventDefaultActions}
+                        draggable={false}
                     />
                     <div>
                         <div className='flex items-center space-x-1'>
@@ -668,7 +861,6 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                             <MoreVertical className='w-5 h-5' />
                         </button>
 
-                        {/* Menu Dropdown */}
                         {showPostMenu && (
                             <div className='post-menu-dropdown absolute right-0 top-8 bg-white shadow-xl rounded-lg border border-gray-100 z-10 min-w-36 divide-y divide-gray-100'>
                                 <button
@@ -689,16 +881,18 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                 )}
             </div>
             
-            {/* Content (Clickable to open modal) */}
+            {/* Protected Content */}
             {post?.content && (
                 <div
                     className='text-gray-800 text-base leading-relaxed whitespace-pre-line cursor-pointer hover:bg-gray-50 p-2 -m-2 rounded-lg transition'
                     dangerouslySetInnerHTML={{__html: postWithHashtags}}
                     onClick={() => setShowPostModal(true)}
+                    style={protectiveStyles}
+                    onContextMenu={preventDefaultActions}
                 />
             )}
 
-            {/* Images (Clickable to open modal) */}
+            {/* Protected Images */}
             {post?.image_urls && post.image_urls.length > 0 && (
                 <div 
                     className={`grid gap-2 cursor-pointer ${
@@ -707,18 +901,24 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                         'grid-cols-2 grid-rows-2'
                     }`}
                     onClick={() => setShowPostModal(true)}
+                    onContextMenu={preventDefaultActions}
                 >
                     {post.image_urls.slice(0, 4).map((img, index) => (
-                        <img
-                            src={img}
-                            key={index}
-                            className={`w-full object-cover rounded-lg shadow-sm transition-transform duration-300 hover:scale-[1.01] ${
-                                post.image_urls.length === 1 ? 'h-auto max-h-96' :
-                                post.image_urls.length === 2 ? 'h-48 sm:h-64' :
-                                'h-40 sm:h-48'
-                            }`}
-                            alt={`Post image ${index + 1}`}
-                        />
+                        <div key={index} className="relative">
+                            <img
+                                src={img}
+                                className={`w-full object-cover rounded-lg shadow-sm transition-transform duration-300 hover:scale-[1.01] ${
+                                    post.image_urls.length === 1 ? 'h-auto max-h-96' :
+                                    post.image_urls.length === 2 ? 'h-48 sm:h-64' :
+                                    'h-40 sm:h-48'
+                                }`}
+                                alt={`Post image ${index + 1}`}
+                                style={protectiveStyles}
+                                onContextMenu={preventDefaultActions}
+                                onDragStart={preventDefaultActions}
+                                draggable={false}
+                            />
+                        </div>
                     ))}
                     {post.image_urls.length > 4 && (
                          <div className='w-full h-40 sm:h-48 bg-gray-200 rounded-lg flex items-center justify-center text-lg font-bold text-gray-600'>
@@ -730,7 +930,6 @@ const PostCard = ({ post, onEdit, onDelete }) => {
 
             {/* Actions Bar */}
             <div className='flex items-center justify-between text-gray-600 text-sm pt-3 border-t border-gray-100'>
-                {/* Left Actions: Like, Comment, Share */}
                 <div className='flex items-center gap-3'>
                     <button onClick={handleLike} className='flex items-center gap-1.5 p-2 rounded-full transition-colors hover:bg-red-50 hover:text-red-500' title="Like">
                         <Heart className={`w-5 h-5 ${likes.includes(currentUser?._id) ? 'text-red-500 fill-red-500' : 'text-gray-500'}`} />
@@ -747,13 +946,11 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                         <span className='font-medium text-sm'>{sharesCount}</span>
                     </button>
                     
-                    {/* View Post Button - Added to link to the modal */}
                     <button onClick={() => setShowPostModal(true)} className='flex items-center gap-1.5 p-2 rounded-full transition-colors hover:bg-indigo-50 hover:text-indigo-500' title="View Full Post & Comments">
                         <Link className="w-5 h-5 text-gray-500"/>
                     </button>
                 </div>
                 
-                {/* Right Action: View Comments Link (Only visible if comments are NOT open, as modal handles main view) */}
                 {commentsCount > 0 && !showComments && (
                     <button onClick={handleShowComments} className='text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition p-2'>
                         {`View all ${commentsCount} comments`}
@@ -761,18 +958,33 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                 )}
             </div>
 
-            {/* Comment Box (Still available on the card if preferred) */}
+            {/* Comment Box */}
             {showCommentBox && (
                 <div className='flex items-center gap-2 border-t border-gray-100 pt-3'>
-                    <img src={currentUser?.profile_picture || '/default-avatar.png'} alt="Your Profile" className='w-8 h-8 rounded-full flex-shrink-0'/>
-                    <input type="text" placeholder='Add a comment...' className='flex-1 border border-gray-200 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 outline-none transition-shadow' value={commentText} onChange={(e) => setCommentText(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}/>
+                    <img 
+                        src={currentUser?.profile_picture || '/default-avatar.png'} 
+                        alt="Your Profile" 
+                        className='w-8 h-8 rounded-full flex-shrink-0'
+                        style={protectiveStyles}
+                        onContextMenu={preventDefaultActions}
+                        onDragStart={preventDefaultActions}
+                        draggable={false}
+                    />
+                    <input 
+                        type="text" 
+                        placeholder='Add a comment...' 
+                        className='flex-1 border border-gray-200 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 outline-none transition-shadow' 
+                        value={commentText} 
+                        onChange={(e) => setCommentText(e.target.value)} 
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
+                    />
                     <button onClick={handleAddComment} disabled={isCommenting || !commentText.trim()} className='bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition' title="Post Comment">
                         {isCommenting ? <Loader2 className='w-4 h-4 animate-spin' /> : <Send className='w-4 h-4' />}
                     </button>
                 </div>
             )}
 
-            {/* Comments List (If opened directly on the card) */}
+            {/* Comments List */}
             {showComments && (
                 <div className='border-t border-gray-100 pt-4 space-y-4'>
                     <div className='flex items-center justify-between'>
@@ -787,8 +999,21 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                     ) : comments.length > 0 ? (
                         <div className='space-y-4 max-h-72 overflow-y-auto pr-2 custom-scrollbar'>
                             {comments.map((comment) => (
-                                <div key={comment?._id} className='flex gap-3 group relative'>
-                                    <img src={comment?.user?.profile_picture || '/default-avatar.png'} alt={comment?.user?.full_name || 'User'} className='w-8 h-8 rounded-full cursor-pointer flex-shrink-0 object-cover' onClick={() => navigate('/profile/' + (comment?.user?._id || ''))}/>
+                                <div 
+                                    key={comment?._id} 
+                                    className='flex gap-3 group relative'
+                                    onContextMenu={preventDefaultActions}
+                                >
+                                    <img 
+                                        src={comment?.user?.profile_picture || '/default-avatar.png'} 
+                                        alt={comment?.user?.full_name || 'User'} 
+                                        className='w-8 h-8 rounded-full cursor-pointer flex-shrink-0 object-cover'
+                                        onClick={() => navigate('/profile/' + (comment?.user?._id || ''))}
+                                        style={protectiveStyles}
+                                        onContextMenu={preventDefaultActions}
+                                        onDragStart={preventDefaultActions}
+                                        draggable={false}
+                                    />
                                     <div className='flex-1 bg-gray-50 rounded-xl p-3 pb-2 relative'>
                                         <div className='flex items-center gap-2 mb-1'>
                                             <span className='font-bold text-sm text-gray-800'>{comment?.user?.full_name || 'Unknown User'}</span>
@@ -804,7 +1029,13 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <p className='text-gray-800 text-sm break-words'>{comment?.content}</p>
+                                            <p 
+                                                className='text-gray-800 text-sm break-words'
+                                                style={protectiveStyles}
+                                                onContextMenu={preventDefaultActions}
+                                            >
+                                                {comment?.content}
+                                            </p>
                                         )}
                                     </div>
                                     {isCurrentUserComment(comment) && (
