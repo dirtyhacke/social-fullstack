@@ -1,9 +1,11 @@
-import { Calendar, MapPin, PenBox, Verified, X, ZoomIn, ZoomOut, RotateCw } from 'lucide-react'
+import { Calendar, MapPin, PenBox, Verified, X, ZoomIn, ZoomOut, RotateCw, Download } from 'lucide-react'
 import moment from 'moment'
 import React, { useState } from 'react'
 
 const UserProfileInfo = ({ user, posts, profileId, setShowEdit, onProfilePictureClick }) => {
     const [showProfilePicture, setShowProfilePicture] = useState(false)
+    const [showMediaPopup, setShowMediaPopup] = useState(false)
+    const [currentMedia, setCurrentMedia] = useState(null)
     const [imageZoom, setImageZoom] = useState(1)
     const [rotation, setRotation] = useState(0)
 
@@ -12,14 +14,31 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit, onProfilePicture
     const followingCount = user.following?.length || 0;
     const postCount = posts?.length || 0;
 
+    // Get all media from posts
+    const allMedia = posts.reduce((acc, post) => {
+        if (post.image_urls && post.image_urls.length > 0) {
+            return [...acc, ...post.image_urls.map(url => ({ url, post }))]
+        }
+        return acc
+    }, [])
+
     const handleProfilePictureClick = () => {
         setShowProfilePicture(true)
         setImageZoom(1)
         setRotation(0)
     }
 
-    const handleCloseProfilePicture = () => {
+    const handleMediaClick = (media) => {
+        setCurrentMedia(media)
+        setShowMediaPopup(true)
+        setImageZoom(1)
+        setRotation(0)
+    }
+
+    const handleClosePopup = () => {
         setShowProfilePicture(false)
+        setShowMediaPopup(false)
+        setCurrentMedia(null)
         setImageZoom(1)
         setRotation(0)
     }
@@ -41,16 +60,35 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit, onProfilePicture
         setRotation(0)
     }
 
-    // Profile Picture Popup Component
-    const ProfilePicturePopup = () => {
-        if (!showProfilePicture || !user?.profile_picture) return null
+    // Prevent right-click and drag
+    const preventDefaultActions = (e) => {
+        e.preventDefault()
+        return false
+    }
+
+    // Add CSS to prevent text selection and image drag
+    const preventDragStyle = {
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        MozUserSelect: 'none',
+        msUserSelect: 'none',
+        WebkitUserDrag: 'none',
+        KhtmlUserDrag: 'none',
+        MozUserDrag: 'none',
+        OUserDrag: 'none',
+        userDrag: 'none'
+    }
+
+    // Media Popup Component
+    const MediaPopup = () => {
+        if (!showMediaPopup || !currentMedia) return null
 
         return (
             <div className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="relative max-w-4xl max-h-[90vh] w-full">
+                <div className="relative max-w-6xl max-h-[90vh] w-full">
                     {/* Close Button */}
                     <button
-                        onClick={handleCloseProfilePicture}
+                        onClick={handleClosePopup}
                         className="absolute top-4 right-4 z-10 bg-white/20 hover:bg-white/30 text-white p-2 rounded-full transition-colors backdrop-blur-sm"
                     >
                         <X className="w-6 h-6" />
@@ -58,16 +96,127 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit, onProfilePicture
 
                     {/* Image Container */}
                     <div className="flex flex-col items-center">
+                        {/* Image with zoom and rotation */}
+                        <div className="bg-black rounded-lg overflow-hidden max-w-full max-h-[70vh] flex items-center justify-center min-w-[300px] min-h-[300px]">
+                            <img
+                                src={currentMedia.url}
+                                alt={`Media from post`}
+                                className="max-w-full max-h-full object-contain transition-transform duration-300"
+                                style={{
+                                    transform: `scale(${imageZoom}) rotate(${rotation}deg)`,
+                                    ...preventDragStyle
+                                }}
+                                onContextMenu={preventDefaultActions}
+                                onDragStart={preventDefaultActions}
+                                draggable={false}
+                            />
+                        </div>
+
+                        {/* Post Info */}
+                        <div className="mt-4 text-center text-white max-w-2xl">
+                            <h3 className="text-xl font-semibold">{user.full_name || user.username}</h3>
+                            <p className="text-gray-300">@{user.username}</p>
+                            {currentMedia.post?.content && (
+                                <p className="text-gray-200 mt-2 text-sm">{currentMedia.post.content}</p>
+                            )}
+                            <p className="text-gray-400 text-xs mt-1">
+                                Posted {moment(currentMedia.post?.createdAt).fromNow()}
+                            </p>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="mt-6 flex items-center gap-4 bg-white/10 backdrop-blur-sm rounded-full px-6 py-3">
+                            {/* Zoom Out */}
+                            <button
+                                onClick={zoomOut}
+                                disabled={imageZoom <= 0.5}
+                                className="p-2 text-white hover:bg-white/20 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="Zoom Out"
+                            >
+                                <ZoomOut className="w-5 h-5" />
+                            </button>
+
+                            {/* Zoom Level */}
+                            <span className="text-white text-sm font-medium min-w-[60px] text-center">
+                                {Math.round(imageZoom * 100)}%
+                            </span>
+
+                            {/* Zoom In */}
+                            <button
+                                onClick={zoomIn}
+                                disabled={imageZoom >= 3}
+                                className="p-2 text-white hover:bg-white/20 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                title="Zoom In"
+                            >
+                                <ZoomIn className="w-5 h-5" />
+                            </button>
+
+                            {/* Rotate */}
+                            <button
+                                onClick={rotateImage}
+                                className="p-2 text-white hover:bg-white/20 rounded-full transition-colors"
+                                title="Rotate"
+                            >
+                                <RotateCw className="w-5 h-5" />
+                            </button>
+
+                            {/* Reset */}
+                            <button
+                                onClick={resetImage}
+                                className="px-3 py-1 text-white hover:bg-white/20 rounded-full transition-colors text-sm border border-white/30"
+                                title="Reset"
+                            >
+                                Reset
+                            </button>
+                        </div>
+
+                        {/* Instructions */}
+                        <div className="mt-4 text-center text-white/70 text-sm">
+                            <p>Use controls to adjust the image • Right-click and download disabled for privacy</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    // Profile Picture Popup Component
+    const ProfilePicturePopup = () => {
+        if (!showProfilePicture || !user?.profile_picture) return null
+
+        return (
+            <div 
+                className="fixed inset-0 z-[10000] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+                onContextMenu={preventDefaultActions}
+            >
+                <div className="relative max-w-4xl max-h-[90vh] w-full">
+                    {/* Close Button */}
+                    <button
+                        onClick={handleClosePopup}
+                        className="absolute top-4 right-4 z-10 bg-white/20 hover:bg-white/30 text-white p-2 rounded-full transition-colors backdrop-blur-sm"
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+
+                    
+
+                    {/* Image Container */}
+                    <div className="flex flex-col items-center">
                         {/* Image with zoom and rotation - Square shape like Instagram */}
-                        <div className="bg-black rounded-lg overflow-hidden max-w-full max-h-[70vh] w-96 h-96 flex items-center justify-center">
+                        <div 
+                            className="bg-black rounded-lg overflow-hidden max-w-full max-h-[70vh] w-96 h-96 flex items-center justify-center"
+                            onContextMenu={preventDefaultActions}
+                        >
                             <img
                                 src={user.profile_picture}
                                 alt={`${user.full_name || user.username}'s profile`}
                                 className="max-w-full max-h-full object-contain transition-transform duration-300"
                                 style={{
                                     transform: `scale(${imageZoom}) rotate(${rotation}deg)`,
-                                    cursor: imageZoom > 1 ? 'grab' : 'default'
+                                    ...preventDragStyle
                                 }}
+                                onContextMenu={preventDefaultActions}
+                                onDragStart={preventDefaultActions}
                                 draggable={false}
                             />
                         </div>
@@ -124,9 +273,9 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit, onProfilePicture
                             </button>
                         </div>
 
-                        {/* Instructions */}
-                        <div className="mt-4 text-center text-white/70 text-sm">
-                            <p>Click and drag to move zoomed image • Use controls to adjust</p>
+                        {/* Privacy Notice */}
+                        <div className="mt-4 text-center text-white/70 text-sm max-w-md">
+                            <p></p>
                         </div>
                     </div>
                 </div>
@@ -149,6 +298,10 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit, onProfilePicture
                             src={user.profile_picture || '/default-profile.png'}
                             alt={`${user.full_name}'s profile`}
                             className="w-full h-full object-cover bg-gray-200 transition-transform duration-300 group-hover:scale-110"
+                            style={preventDragStyle}
+                            onContextMenu={preventDefaultActions}
+                            onDragStart={preventDefaultActions}
+                            draggable={false}
                         />
                         {/* Hover overlay */}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 flex items-center justify-center">
@@ -229,6 +382,9 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit, onProfilePicture
 
             {/* Profile Picture Popup */}
             <ProfilePicturePopup />
+            
+            {/* Media Popup */}
+            <MediaPopup />
         </>
     )
 }
