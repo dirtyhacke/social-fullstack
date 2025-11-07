@@ -123,7 +123,7 @@ export default function Loading({ height = "100vh" }) {
             }}>{l}</span>
           ))}
         </div>
-        <p className="pixo-msg" style={{ marginTop: 12 }}>Establishing Connection with PIXO </p>
+        <p className="pixo-msg" style={{ marginTop: 12 }}> Phantom access granted… PIXO sees everything but knows nothing.... </p>
       </div>
 
       <style>{`
