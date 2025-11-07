@@ -123,7 +123,7 @@ export default function Loading({ height = "100vh" }) {
             }}>{l}</span>
           ))}
         </div>
-        <p className="pixo-msg" style={{ marginTop: 12 }}>Establishing Lunar PIXO Link...</p>
+        <p className="pixo-msg" style={{ marginTop: 12 }}>Establishing Connection with PIXO </p>
       </div>
 
       <style>{`
