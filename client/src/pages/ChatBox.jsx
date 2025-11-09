@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { 
     ImageIcon, SendHorizonal, ArrowLeft, MessageSquare, Smile, X, 
-    Globe, Search, Languages as LanguagesIcon, MessageSquare as MessageSquareIcon, Loader 
-} from 'lucide-react'; // Added translation-related icons
+    Globe, Search, Languages as LanguagesIcon, MessageSquare as MessageSquareIcon, Loader,
+    Circle, Clock // Added icons for status
+} from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/clerk-react'; 
@@ -190,11 +191,17 @@ const ChatBox = () => {
     const [languageSearchTerm, setLanguageSearchTerm] = useState('');
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     
+    // 🕒 LAST SEEN STATE
+    const [lastSeen, setLastSeen] = useState(null);
+    const [isUserOnline, setIsUserOnline] = useState(false);
+    const [connectionsWithStatus, setConnectionsWithStatus] = useState([]);
+
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null); 
     const pickerRef = useRef(null); 
     const emojiButtonRef = useRef(null); 
-    const dropdownRef = useRef(null); // Ref for language dropdown
+    const dropdownRef = useRef(null);
+    const eventSourceRef = useRef(null);
 
     // --- Data Fetching and Logic ---
 
@@ -249,6 +256,130 @@ const ChatBox = () => {
         };
     }, []);
 
+    // Format last seen time
+    const formatLastSeen = (lastSeenDate) => {
+        if (!lastSeenDate) return 'Never';
+        
+        const now = new Date();
+        const lastSeen = new Date(lastSeenDate);
+        const diffInMinutes = Math.floor((now - lastSeen) / (1000 * 60));
+        const diffInHours = Math.floor(diffInMinutes / 60);
+        const diffInDays = Math.floor(diffInHours / 24);
+
+        if (diffInMinutes < 1) return 'Just now';
+        if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+        if (diffInHours < 24) return `${diffInHours}h ago`;
+        if (diffInDays < 7) return `${diffInDays}d ago`;
+        
+        return lastSeen.toLocaleDateString();
+    };
+
+    // Fetch user's last seen information
+    const fetchUserLastSeen = async (targetUserId = userId) => {
+        try {
+            const token = await getToken();
+            const response = await api.get(`/api/messages/last-seen/${targetUserId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (response.data.success) {
+                if (targetUserId === userId) {
+                    setLastSeen(response.data.lastSeen);
+                    setIsUserOnline(response.data.isOnline);
+                }
+                return response.data;
+            }
+        } catch (error) {
+            console.error('Error fetching last seen:', error);
+        }
+        return null;
+    };
+
+    // Fetch multiple users' last seen status
+    const fetchUsersLastSeen = async (userIds) => {
+        try {
+            const token = await getToken();
+            const response = await api.post('/api/messages/last-seen/batch', 
+                { userIds },
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching users last seen:', error);
+            return null;
+        }
+    };
+
+    // Update connections with last seen data
+    const updateConnectionsWithStatus = async () => {
+        if (connections.length > 0) {
+            const userIds = connections.map(conn => conn._id);
+            const lastSeenData = await fetchUsersLastSeen(userIds);
+            
+            if (lastSeenData?.success) {
+                const updatedConnections = connections.map(conn => ({
+                    ...conn,
+                    lastSeen: lastSeenData.lastSeenData[conn._id]?.lastSeen,
+                    isOnline: lastSeenData.lastSeenData[conn._id]?.isOnline
+                }));
+                setConnectionsWithStatus(updatedConnections);
+            } else {
+                setConnectionsWithStatus(connections);
+            }
+        }
+    };
+
+    // Setup SSE for real-time online status updates
+    const setupSSE = useCallback(async () => {
+        if (!currentUser?.id) return;
+
+        try {
+            const token = await getToken();
+            
+            // Close existing connection if any
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+            }
+
+            eventSourceRef.current = new EventSource(`https://social-server-nine.vercel.app/api/messages/sse/${currentUser.id}?token=${token}`);
+
+            eventSourceRef.current.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'user_online' && data.userId === userId) {
+                        setIsUserOnline(true);
+                        setLastSeen(new Date());
+                        // Update connections list
+                        updateConnectionsWithStatus();
+                    } else if (data.type === 'user_offline' && data.userId === userId) {
+                        setIsUserOnline(false);
+                        setLastSeen(new Date());
+                        // Update connections list
+                        updateConnectionsWithStatus();
+                    } else if (data.type === 'user_online' || data.type === 'user_offline') {
+                        // Update connections list for any user status change
+                        updateConnectionsWithStatus();
+                    }
+                } catch (error) {
+                    console.error('Error parsing SSE data:', error);
+                }
+            };
+
+            eventSourceRef.current.onerror = (error) => {
+                console.error('SSE error:', error);
+                // Attempt reconnection after 5 seconds
+                setTimeout(() => {
+                    if (currentUser?.id) {
+                        setupSSE();
+                    }
+                }, 5000);
+            };
+
+        } catch (error) {
+            console.error('Error setting up SSE:', error);
+        }
+    }, [currentUser?.id, userId, getToken]);
 
     const fetchUserMessages = async () => {
         try {
@@ -270,10 +401,6 @@ const ChatBox = () => {
             
             // Check for sticker placeholder in text
             if (text.includes('[STICKER]')) {
-                // If text is only a sticker, handle the file part of the sticker here if needed, 
-                // but for this example, we'll assume STICKER is handled visually by the placeholder.
-                // In a real app, you'd send the sticker ID/URL instead of the placeholder text.
-                // For now, we'll just send the text, which is fine for demonstration.
                 formData.append('text', text.trim());
             } else {
                 formData.append('text', text.trim());
@@ -284,7 +411,7 @@ const ChatBox = () => {
             // Reset picker state after sending a message
             setShowEmojiPicker(false);
             
-            const { data } = await api.post('/api/message/send', formData, {
+            const { data } = await api.post('/api/messages/send', formData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -360,9 +487,14 @@ const ChatBox = () => {
     useEffect(() => {
         fetchUserMessages();
         setIsConnectionsListVisible(false);
+        fetchUserLastSeen();
+        updateConnectionsWithStatus();
 
         return () => {
             dispatch(resetMessages());
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+            }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId]);
@@ -371,12 +503,21 @@ const ChatBox = () => {
         if (connections.length > 0) {
             const connectedUser = connections.find(connection => connection._id === userId);
             setUser(connectedUser);
+            // Initialize connections with status
+            if (connectionsWithStatus.length === 0) {
+                updateConnectionsWithStatus();
+            }
         }
     }, [connections, userId]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
+
+    // Setup SSE when component mounts
+    useEffect(() => {
+        setupSSE();
+    }, [setupSSE]);
 
     const handleImageChange = (e) => {
         const file = e.target.files[0];
@@ -392,18 +533,21 @@ const ChatBox = () => {
 
     const ConnectionsList = () => (
         <div className='w-full md:w-80 border-r border-gray-200 bg-white h-full overflow-y-auto flex-shrink-0'>
-            <div className ='p-4 border-b border-gray-100 sticky top-0 bg-white z-5'>
+            <div className='p-4 border-b border-gray-100 sticky top-0 bg-white z-5'>
                 <h2 className='text-xl font-bold text-slate-800'>Connections</h2>
             </div>
             
-            {connections.length === 0 ? (
+            {(connectionsWithStatus.length > 0 ? connectionsWithStatus : connections).length === 0 ? (
                 <div className="text-center p-8 text-gray-500">
                     <MessageSquare className="w-8 h-8 mx-auto mb-2" />
                     <p className="text-sm">No connections found.</p>
                 </div>
             ) : (
-                connections.map((connection) => {
+                (connectionsWithStatus.length > 0 ? connectionsWithStatus : connections).map((connection) => {
                     const isSelected = connection._id === userId;
+                    const isOnline = connection.isOnline;
+                    const lastSeen = connection.lastSeen;
+                    
                     return (
                         <div
                             key={connection._id}
@@ -412,16 +556,36 @@ const ChatBox = () => {
                                 isSelected ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-gray-50 border-l-4 border-white'
                             }`}
                         >
-                            <img
-                                src={connection.profile_picture || '/default-avatar.png'}
-                                alt={connection.full_name}
-                                className='size-12 rounded-full object-cover flex-shrink-0'
-                                onError={(e) => { e.target.src = '/default-avatar.png'; }}
-                            />
-                            <div className='ml-3 overflow-hidden'>
+                            <div className="relative">
+                                <img
+                                    src={connection.profile_picture || '/default-avatar.png'}
+                                    alt={connection.full_name}
+                                    className='size-12 rounded-full object-cover flex-shrink-0'
+                                    onError={(e) => { e.target.src = '/default-avatar.png'; }}
+                                />
+                                {/* Online Status Indicator */}
+                                <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
+                                    isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                                }`} />
+                            </div>
+                            <div className='ml-3 overflow-hidden flex-1'>
                                 <p className='font-semibold text-slate-800 truncate'>{connection.full_name}</p>
                                 <p className='text-xs text-gray-500 truncate'>@{connection.username}</p>
-                                <p className='text-xs text-gray-400 mt-1 truncate'>...</p>
+                                <p className='text-xs text-gray-400 mt-1 truncate'>
+                                    {isOnline ? (
+                                        <span className="text-green-600 font-medium flex items-center gap-1">
+                                            <Circle className="w-2 h-2 fill-green-500" />
+                                            Online
+                                        </span>
+                                    ) : lastSeen ? (
+                                        <span className="flex items-center gap-1">
+                                            <Clock className="w-2.5 h-2.5" />
+                                            Last seen {formatLastSeen(lastSeen)}
+                                        </span>
+                                    ) : (
+                                        'Never seen'
+                                    )}
+                                </p>
                             </div>
                         </div>
                     );
@@ -591,15 +755,35 @@ const ChatBox = () => {
                         >
                             <ArrowLeft className="w-5 h-5 text-gray-700"/>
                         </button>
-                        <img 
-                            src={user.profile_picture || '/default-avatar.png'} 
-                            alt={user.full_name} 
-                            className="size-10 rounded-full object-cover border-2 border-indigo-300"
-                            onError={(e) => { e.target.src = '/default-avatar.png' }}
-                        />
+                        <div className="relative">
+                            <img 
+                                src={user.profile_picture || '/default-avatar.png'} 
+                                alt={user.full_name} 
+                                className="size-10 rounded-full object-cover border-2 border-indigo-300"
+                                onError={(e) => { e.target.src = '/default-avatar.png' }}
+                            />
+                            {/* Online Status Indicator */}
+                            <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
+                                isUserOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+                            }`} />
+                        </div>
                         <div>
                             <p className="font-semibold text-lg text-slate-800">{user.full_name}</p>
-                            <p className="text-xs text-gray-500 -mt-0.5">@{user.username}</p>
+                            <p className="text-xs text-gray-500 -mt-0.5 flex items-center gap-1">
+                                {isUserOnline ? (
+                                    <span className="text-green-600 font-medium flex items-center gap-1">
+                                        <Circle className="w-2 h-2 fill-green-500" />
+                                        Online
+                                    </span>
+                                ) : lastSeen ? (
+                                    <span className="text-gray-500 flex items-center gap-1">
+                                        <Clock className="w-3 h-3" />
+                                        Last seen {formatLastSeen(lastSeen)}
+                                    </span>
+                                ) : (
+                                    <span className="text-gray-500">Offline</span>
+                                )}
+                            </p>
                         </div>
                     </div>
 

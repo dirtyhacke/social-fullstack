@@ -3,7 +3,9 @@ import {
     getChatMessages, 
     sendMessage, 
     sseController,
-    getUserRecentMessages
+    getUserRecentMessages,
+    getUserLastSeen,
+    getUsersLastSeen
 } from '../controllers/messageController.js';
 import { upload } from '../configs/multer.js';
 import { protect } from '../middlewares/auth.js';
@@ -27,5 +29,9 @@ messageRouter.post('/get', protect, getChatMessages);
 
 // Recent messages endpoint
 messageRouter.get('/recent', protect, getUserRecentMessages);
+
+// Last seen endpoints
+messageRouter.get('/last-seen/:userId', protect, getUserLastSeen);
+messageRouter.post('/last-seen/batch', protect, getUsersLastSeen);
 
 export default messageRouter;

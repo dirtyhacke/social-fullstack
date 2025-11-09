@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Eye, MessageSquare, Bell, BellOff, ArrowRight } from 'lucide-react'; // Added ArrowRight
+import { Eye, MessageSquare, Bell, BellOff, ArrowRight, Wifi, WifiOff, Circle, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { useAuth, useUser } from '@clerk/clerk-react';
@@ -13,6 +13,65 @@ const Messages = () => {
   const { getToken } = useAuth();
   const eventSourceRef = useRef(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [connectionsWithStatus, setConnectionsWithStatus] = useState([]);
+
+  // Format last seen time
+  const formatLastSeen = (lastSeenDate) => {
+    if (!lastSeenDate) return 'Never';
+    
+    const now = new Date();
+    const lastSeen = new Date(lastSeenDate);
+    const diffInMinutes = Math.floor((now - lastSeen) / (1000 * 60));
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    const diffInDays = Math.floor(diffInHours / 24);
+
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    if (diffInDays < 7) return `${diffInDays}d ago`;
+    
+    return lastSeen.toLocaleDateString();
+  };
+
+  // Fetch multiple users' last seen status
+  const fetchUsersLastSeen = async (userIds) => {
+    try {
+      const token = await getToken();
+      const response = await api.post('/api/messages/last-seen/batch', 
+        { userIds },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching users last seen:', error);
+      return null;
+    }
+  };
+
+  // Update connections with last seen data
+  const updateConnectionsWithStatus = async () => {
+    if (connections.length > 0) {
+      const userIds = connections.map(conn => conn._id);
+      const lastSeenData = await fetchUsersLastSeen(userIds);
+      
+      if (lastSeenData?.success) {
+        const updatedConnections = connections.map(conn => ({
+          ...conn,
+          lastSeen: lastSeenData.lastSeenData[conn._id]?.lastSeen,
+          isOnline: lastSeenData.lastSeenData[conn._id]?.isOnline || onlineUsers.has(conn._id)
+        }));
+        setConnectionsWithStatus(updatedConnections);
+      } else {
+        // Fallback to basic online status
+        const updatedConnections = connections.map(conn => ({
+          ...conn,
+          isOnline: onlineUsers.has(conn._id)
+        }));
+        setConnectionsWithStatus(updatedConnections);
+      }
+    }
+  };
 
   // Function to show system notification
   const showNotification = (data) => {
@@ -52,7 +111,7 @@ const Messages = () => {
     }
   }
 
-  // Setup SSE for real-time messages
+  // Setup SSE for real-time messages and online status
   const setupSSE = async () => {
     if (!user?.id) return;
 
@@ -65,11 +124,13 @@ const Messages = () => {
         eventSourceRef.current.close();
       }
 
-      eventSourceRef.current = new EventSource(`https://social-server-nine.vercel.app/api/sse/${currentUserId}?token=${token}`);
+      // Use the correct endpoint
+      eventSourceRef.current = new EventSource(`https://social-server-nine.vercel.app/api/messages/sse/${currentUserId}?token=${token}`);
 
       eventSourceRef.current.onopen = () => {
         console.log('🔗 SSE connection opened for Messages page');
         setNotificationsEnabled(true);
+        toast.success('Real-time connection established');
       };
 
       eventSourceRef.current.onmessage = (event) => {
@@ -95,6 +156,50 @@ const Messages = () => {
             console.log('❤️ SSE heartbeat received in Messages');
           } else if (data.type === 'connected') {
             console.log('✅ SSE connected successfully in Messages');
+            // Initialize online users from server
+            if (data.onlineUsers) {
+              setOnlineUsers(new Set(data.onlineUsers));
+              updateConnectionsWithStatus();
+            }
+          } else if (data.type === 'user_online') {
+            // Update online status when user comes online
+            setOnlineUsers(prev => new Set(prev).add(data.userId));
+            console.log(`🟢 User ${data.userId} is online`);
+            
+            // Update connections with new status
+            updateConnectionsWithStatus();
+            
+            // Show toast for connections coming online
+            const connection = connections.find(conn => conn._id === data.userId);
+            if (connection) {
+              toast.success(`${connection.full_name} is now online`, {
+                duration: 3000,
+                icon: '🟢'
+              });
+            }
+          } else if (data.type === 'user_offline') {
+            // Update online status when user goes offline
+            setOnlineUsers(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(data.userId);
+              return newSet;
+            });
+            console.log(`🔴 User ${data.userId} is offline`);
+            
+            // Update connections with new status
+            updateConnectionsWithStatus();
+            
+            // Show toast for connections going offline
+            const connection = connections.find(conn => conn._id === data.userId);
+            if (connection) {
+              toast.error(`${connection.full_name} went offline`, {
+                duration: 3000,
+                icon: '🔴'
+              });
+            }
+          } else if (data.type === 'message_delivered') {
+            console.log('✅ Message delivered:', data.messageId);
+            toast.success('Message delivered', { duration: 2000 });
           }
         } catch (error) {
           console.log('❌ Error parsing SSE data in Messages:', error);
@@ -138,18 +243,51 @@ const Messages = () => {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
+      setOnlineUsers(new Set()); // Clear online status when disconnecting
+      setConnectionsWithStatus([]); // Clear connections status
       setNotificationsEnabled(false);
       toast.success('Notifications disabled');
     }
   }
 
+  // Check if a user is online
+  const isUserOnline = (userId) => {
+    return onlineUsers.has(userId);
+  };
+
+  // Get online connections count
+  const getOnlineConnectionsCount = () => {
+    if (connectionsWithStatus.length > 0) {
+      return connectionsWithStatus.filter(conn => conn.isOnline).length;
+    }
+    return connections.filter(conn => isUserOnline(conn._id)).length;
+  };
+
+  // Get offline connections count
+  const getOfflineConnectionsCount = () => {
+    if (connectionsWithStatus.length > 0) {
+      return connectionsWithStatus.filter(conn => !conn.isOnline).length;
+    }
+    return connections.filter(conn => !isUserOnline(conn._id)).length;
+  };
+
   // Request notification permission and setup SSE on mount
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "granted") {
       setupSSE();
+    } else {
+      // Still try to setup SSE for online status even if notifications are blocked
+      setupSSE();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Update connections status when connections change
+  useEffect(() => {
+    if (connections.length > 0) {
+      updateConnectionsWithStatus();
+    }
+  }, [connections]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -159,6 +297,9 @@ const Messages = () => {
       }
     };
   }, []);
+
+  // Display connections with status or fallback to basic connections
+  const displayConnections = connectionsWithStatus.length > 0 ? connectionsWithStatus : connections;
 
   return (
     <div className='min-h-screen relative bg-slate-50'>
@@ -197,14 +338,33 @@ const Messages = () => {
           <div className="mb-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-lg shadow-sm">
             <p className="text-blue-800 text-sm flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              **Live Connection Active** - You are ready for real-time messaging.
+              **Live Connection Active** - {getOnlineConnectionsCount()} of {connections.length} connections online
             </p>
           </div>
         )}
 
-        {/* Connected Users List (The main UI Improvement) */}
+        {/* Online Status Legend */}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-4 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+              <span>Online</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+              <span>Offline</span>
+            </div>
+          </div>
+          <div className="text-sm text-gray-500">
+            {getOnlineConnectionsCount()} online • {getOfflineConnectionsCount()} offline
+          </div>
+        </div>
+
+        {/* Connected Users List */}
         <div className='mb-8'>
-          <h2 className='text-xl font-semibold text-slate-700 mb-4'>Your Connections ({connections.length})</h2>
+          <h2 className='text-xl font-semibold text-slate-700 mb-4'>
+            Your Connections ({connections.length})
+          </h2>
           
           {connections.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-xl shadow-lg border border-gray-100">
@@ -213,63 +373,114 @@ const Messages = () => {
               <p className="text-gray-500 max-w-sm mx-auto">Connect with people on the main feed to start messaging them instantly!</p>
             </div>
           ) : (
-            // Grid Layout for better use of space
             <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-              {connections.map((user) => (
-                <div 
-                  key={user._id} 
-                  // Make the entire card clickable/interactive
-                  onClick={() => navigate(`/messages/${user._id}`)} 
-                  className='flex items-center p-4 bg-white shadow-lg rounded-xl transition-all duration-200 border border-gray-100 hover:shadow-xl hover:border-blue-300 cursor-pointer'
-                >
-                  {/* User Avatar */}
-                  <img 
-                    src={user.profile_picture || '/default-avatar.png'} 
-                    alt={user.full_name}
-                    className='rounded-full size-14 sm:size-16 object-cover flex-shrink-0 border-2 border-white shadow-md'
-                    onError={(e) => {
-                      e.target.src = '/default-avatar.png'
-                    }}
-                  />
-                  
-                  {/* User Info */}
-                  <div className='flex-1 ml-4 overflow-hidden'>
-                    <div className='flex items-center justify-between'>
-                      <p className='font-bold text-lg text-slate-800 truncate'>{user.full_name}</p>
-                      {/* Optional: Placeholder for Unread count */}
-                      {/* <span className='text-xs font-bold text-white bg-red-500 rounded-full h-5 w-5 flex items-center justify-center flex-shrink-0'>3</span> */}
+              {displayConnections.map((user) => {
+                const isOnline = user.isOnline !== undefined ? user.isOnline : isUserOnline(user._id);
+                const lastSeen = user.lastSeen;
+                
+                return (
+                  <div 
+                    key={user._id} 
+                    onClick={() => navigate(`/messages/${user._id}`)} 
+                    className='flex items-center p-4 bg-white shadow-lg rounded-xl transition-all duration-200 border border-gray-100 hover:shadow-xl hover:border-blue-300 cursor-pointer group relative'
+                  >
+                    {/* Online/Offline Status Badge */}
+                    <div className="absolute -top-1 -left-1 z-10">
+                      <div 
+                        className={`w-4 h-4 rounded-full border-2 border-white ${
+                          isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+                        }`}
+                        title={isOnline ? 'Online' : 'Offline'}
+                      />
                     </div>
-                    <p className='text-blue-500 text-sm font-medium'>@{user.username}</p>
-                    <p className='text-sm text-gray-600 mt-1 truncate'>{user.bio || 'No bio available'}</p>
-                  </div>
+                    
+                    {/* User Avatar */}
+                    <div className="relative">
+                      <img 
+                        src={user.profile_picture || '/default-avatar.png'} 
+                        alt={user.full_name}
+                        className='rounded-full size-14 sm:size-16 object-cover flex-shrink-0 border-2 border-white shadow-md'
+                        onError={(e) => {
+                          e.target.src = '/default-avatar.png'
+                        }}
+                      />
+                    </div>
+                    
+                    {/* User Info */}
+                    <div className='flex-1 ml-4 overflow-hidden'>
+                      <div className='flex items-center justify-between'>
+                        <p className='font-bold text-lg text-slate-800 truncate flex items-center gap-2'>
+                          {user.full_name}
+                          {isOnline ? (
+                            <span className="text-xs font-normal text-green-600 bg-green-50 px-2 py-1 rounded-full flex items-center gap-1">
+                              <Wifi className="w-3 h-3" />
+                              Live
+                            </span>
+                          ) : (
+                            <span className="text-xs font-normal text-gray-500 bg-gray-50 px-2 py-1 rounded-full flex items-center gap-1">
+                              <WifiOff className="w-3 h-3" />
+                              Offline
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <p className='text-blue-500 text-sm font-medium'>@{user.username}</p>
+                      <p className='text-sm text-gray-600 mt-1 truncate'>
+                        {isOnline ? (
+                          <span className="text-green-600 font-medium flex items-center gap-1">
+                            <Circle className="w-2 h-2 fill-green-500" />
+                            Online now
+                          </span>
+                        ) : lastSeen ? (
+                          <span className="text-gray-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            Last seen {formatLastSeen(lastSeen)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">Never seen</span>
+                        )}
+                      </p>
+                    </div>
 
-                  {/* Action Buttons (Combined into a single interactive end) */}
-                  <div className='ml-4 flex flex-col gap-2 items-end flex-shrink-0'>
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent card click event
-                        navigate(`/profile/${user._id}`);
-                      }} 
-                      className='size-8 flex items-center justify-center text-sm rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer'
-                      title="View Profile"
-                    >
-                      <Eye className="w-4 h-4"/>
-                    </button>
-                    <ArrowRight className="w-5 h-5 text-blue-500 group-hover:translate-x-1 transition-transform" />
+                    {/* Action Buttons */}
+                    <div className='ml-4 flex flex-col gap-2 items-end flex-shrink-0'>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/profile/${user._id}`);
+                        }} 
+                        className='size-8 flex items-center justify-center text-sm rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer'
+                        title="View Profile"
+                      >
+                        <Eye className="w-4 h-4"/>
+                      </button>
+                      <ArrowRight className="w-5 h-5 text-blue-500 group-hover:translate-x-1 transition-transform" />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Help Text - Made slightly more prominent */}
+        {/* Help Text */}
         <div className="mt-8 p-6 bg-white border-t-4 border-blue-500 rounded-lg shadow-md">
-          <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2"><MessageSquare className='w-5 h-5 text-blue-500'/> Chat Guide</h4>
+          <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+            <MessageSquare className='w-5 h-5 text-blue-500'/> Chat Guide
+          </h4>
           <ul className="text-sm text-slate-600 space-y-2">
-            <li>• Click on any **Connection Card** to jump directly into the chat.</li>
-            <li>• Toggle **Notifications ON** to receive system alerts for new messages.</li>
-            <li>• Live updates rely on an **SSE (Server-Sent Events) connection**, indicated by the "Live Connection Active" banner.</li>
+            <li className="flex items-start gap-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse mt-1.5 flex-shrink-0"></span>
+              <span><strong>Green dot</strong> indicates user is <strong>online</strong> and can receive messages instantly</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-2 h-2 bg-red-500 rounded-full mt-1.5 flex-shrink-0"></span>
+              <span><strong>Red dot</strong> indicates user is <strong>offline</strong> - they'll see messages when they return</span>
+            </li>
+            <li>• Click on any <strong>Connection Card</strong> to jump directly into the chat</li>
+            <li>• Toggle <strong>Notifications ON</strong> to receive system alerts for new messages</li>
+            <li>• You'll receive notifications when connections come online/go offline</li>
+            <li>• <strong>Last seen</strong> shows when the user was last active</li>
           </ul>
         </div>
       </div>
