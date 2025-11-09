@@ -1,32 +1,58 @@
-import React, { useState, useEffect } from 'react'
-import { assets } from '../assets/assets'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun, Check } from 'lucide-react'
-import { UserButton, useClerk } from '@clerk/clerk-react'
+import React, { useState, useEffect, useMemo } from 'react';
+import { assets } from '../assets/assets';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun, Check } from 'lucide-react';
+import { UserButton, useClerk } from '@clerk/clerk-react';
 import { useSelector } from 'react-redux';
 import ProfileModal from './ProfileModal';
 
+// --- STAR DATA GENERATION (for the welcome animation only) ---
+const STAR_POSITIONS = () => {
+    const arr = [];
+    // Generating more stars for the full screen background
+    for (let i = 0; i < 100; i++) {
+        arr.push({
+            // Coordinates based on a full screen context (approx 1440x900)
+            cx: Math.floor(Math.random() * 1440),
+            cy: Math.floor(Math.random() * 900), 
+            r: (Math.random() * 1.2 + 0.2).toFixed(2),
+            o: (Math.random() * 0.7 + 0.18).toFixed(2),
+            dur: 5 + Math.random() * 5,
+        });
+    }
+    return arr;
+};
+// -----------------------------------------------------------
+
+
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
-    const navigate = useNavigate()
-    const location = useLocation()
-    const user = useSelector((state) => state.user.value)
-    const { signOut } = useClerk()
+    const navigate = useNavigate();
+    const location = useLocation();
+    const user = useSelector((state) => state.user.value);
+    const { signOut } = useClerk();
     
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [showWelcome, setShowWelcome] = useState(false);
     const [welcomeText, setWelcomeText] = useState('');
 
+    const welcomeStarPositions = useMemo(() => STAR_POSITIONS(), []);
+
     useEffect(() => {
-        // Show welcome animation when user data is available
         if (user?.full_name) {
             setShowWelcome(true);
             animateWelcomeText(user.full_name);
             
+            document.body.style.overflow = 'hidden';
+
             const timer = setTimeout(() => {
                 setShowWelcome(false);
+                document.body.style.overflow = 'unset';
             }, 3000);
 
-            return () => clearTimeout(timer);
+            return () => {
+                clearTimeout(timer);
+                document.body.style.overflow = 'unset';
+            };
         }
     }, [user?.full_name]);
 
@@ -43,7 +69,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
             } else {
                 clearInterval(typingInterval);
             }
-        }, 60); // Adjust typing speed here
+        }, 60);
     }
 
     const handleNavigation = (path, customHandler = null) => {
@@ -70,91 +96,170 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     }
 
     const menuItems = [
-        {
-            icon: <Home className='w-5 h-5'/>,
-            name: "Home",
-            path: "/"
-        },
-        {
-            icon: <Users className='w-5 h-5'/>,
-            name: "Connections",
-            path: "/connections"
-        },
-        {
-            icon: <Compass className='w-5 h-5'/>,
-            name: "Discover",
-            path: "/discover"
-        },
-        {
-            icon: <MessageCircle className='w-5 h-5'/>,
-            name: "Messages",
-            path: "/messages"
-        },
+        { icon: <Home className='w-5 h-5'/>, name: "Home", path: "/" },
+        { icon: <Users className='w-5 h-5'/>, name: "Connections", path: "/connections" },
+        { icon: <Compass className='w-5 h-5'/>, name: "Discover", path: "/discover" },
+        { icon: <MessageCircle className='w-5 h-5'/>, name: "Messages", path: "/messages" },
         { isSeparator: true },
-        {
-            icon: <Shuffle className='w-5 h-5'/>,
-            name: "Random Chat",
-            path: "/random-chat",
-            onClick: handleRandomChat,
-        },
-        {
-            icon: <Bot className='w-5 h-5'/>,
-            name: "AI Chat Bot",
-            path: "/chat-bot",
-            onClick: handleChatBot,
-        },
-        {
-            icon: <GamepadIcon className='w-5 h-5'/>,
-            name: "Pixo Games",
-            path: "/pixo-games",
-            onClick: handlePixoGames,
-        },
-        {
-            icon: <Film className='w-5 h-5'/>,
-            name: "Pixo Music",
-            path: "/pixo-music",
-            onClick: handlePixoMovies,
-        },
+        { icon: <Shuffle className='w-5 h-5'/>, name: "Random Chat", path: "/random-chat", onClick: handleRandomChat, },
+        { icon: <Bot className='w-5 h-5'/>, name: "AI Chat Bot", path: "/chat-bot", onClick: handleChatBot, },
+        { icon: <GamepadIcon className='w-5 h-5'/>, name: "Pixo Games", path: "/pixo-games", onClick: handlePixoGames, },
+        { icon: <Film className='w-5 h-5'/>, name: "Pixo Music", path: "/pixo-music", onClick: handlePixoMovies, },
         { isSeparator: true },
-        {
-            icon: <User className='w-5 h-5'/>,
-            name: "Edit Profile",
-            onClick: handleEditProfile,
-            path: '#profile'
-        }
-    ]
+        { icon: <User className='w-5 h-5'/>, name: "Edit Profile", onClick: handleEditProfile, path: '#profile' }
+    ];
 
-    return (
-        <>
-            {/* Welcome Animation Overlay */}
-            {showWelcome && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-70 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl p-8 mx-4 max-w-md w-full shadow-2xl transform animate-scale-in">
-                        <div className="text-center">
-                            <div className="w-20 h-20 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
-                                <Check className="w-10 h-10 text-white" />
-                            </div>
-                            
-                            <h2 className="text-2xl font-bold text-gray-800 mb-2 min-h-[32px]">
-                                {welcomeText}
-                                <span className="ml-1 w-1 h-6 bg-indigo-600 inline-block animate-pulse"></span>
-                            </h2>
-                            
-                            <p className="text-gray-600 mb-4">
-                                Ready to connect with amazing people!
-                            </p>
-                            
-                            <div className="w-full bg-gray-200 rounded-full h-2 mt-6">
-                                <div 
-                                    className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-3000 ease-out"
-                                    style={{ width: '100%' }}
-                                ></div>
-                            </div>
+    // --- FIX: Return null early if the welcome screen is active ---
+    if (showWelcome) {
+        return (
+            <>
+                <style jsx="true">{`
+                    /* Global CSS definition for the moon rotation animation */
+                    .moon-rot-welcome { 
+                        animation: moon-rotate-welcome 90s linear infinite; 
+                        transform-box: fill-box;
+                        transform-origin: 50% 50%;
+                    }
+                    @keyframes moon-rotate-welcome { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+                    /* Add smooth fade-in animation */
+                    @keyframes fade-in {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+                    .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
+
+                    /* Define the custom floating animation for the Alien Head */
+                    @keyframes alien-float {
+                        0% { transform: translateY(0) rotate(0deg); }
+                        50% { transform: translateY(-10px) rotate(1deg); }
+                        100% { transform: translateY(0) rotate(0deg); }
+                    }
+
+                    .animate-alien-float {
+                        animation: alien-float 3s ease-in-out infinite;
+                    }
+
+                    /* Ensure cursor pulse is defined if not in global Tailwind config */
+                    @keyframes pulse {
+                        0%, 100% { opacity: 1; }
+                        50% { opacity: 0; }
+                    }
+                    .animate-pulse { animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+                `}</style>
+                
+                {/* Welcome Animation Overlay (FULLSCREEN) - Only render this part */}
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#02030a] animate-fade-in">
+                    
+                    {/* --- FULLSCREEN Animated Space Background (KEPT) --- */}
+                    <svg
+                        className="absolute inset-0 w-full h-full"
+                        viewBox="0 0 1440 900"
+                        preserveAspectRatio="xMidYMid slice"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden
+                    >
+                        <defs>
+                            <radialGradient id="nebulaWelcome" cx="50%" cy="50%">
+                                <stop offset="0%" stopColor="#08152e" />
+                                <stop offset="100%" stopColor="#02030a" />
+                            </radialGradient>
+                            <filter id="glowWelcome" x="-40%" y="-40%" width="200%" height="200%">
+                                <feGaussianBlur stdDeviation="6" result="blur" />
+                                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+                            </filter>
+                        </defs>
+
+                        <rect width="100%" height="100%" fill="url(#nebulaWelcome)" />
+
+                        {welcomeStarPositions.map((s, i) => (
+                            <circle
+                                key={`star-w-${i}`}
+                                cx={s.cx} cy={s.cy} r={s.r}
+                                fill={`rgba(255,255,255,${s.o})`}
+                            >
+                                <animate
+                                    attributeName="opacity"
+                                    values={`${s.o}; ${Math.max(0.12, Number(s.o) + 0.3)}; ${s.o}`}
+                                    dur={`${s.dur}s`}
+                                    repeatCount="indefinite"
+                                />
+                            </circle>
+                        ))}
+
+                        <g
+                            className="moon-rot-welcome"
+                            transform="translate(1000, 200)"
+                            filter="url(#glowWelcome)"
+                        >
+                            <circle cx="0" cy="0" r="150" fill="#dbe7f5" />
+                            <circle cx="-25" cy="-15" r="100" fill="#c9d8e8" opacity="0.82" />
+                        </g>
+                    </svg>
+                    {/* --- END SVG Background --- */}
+
+
+                    {/* Content Overlay */}
+                    <div className="relative z-10 text-center text-white max-w-xl w-full">
+
+                        {/* Alien Head Icon with Floating Animation */}
+                        <div className="w-24 h-24 flex items-center justify-center mx-auto mb-8 animate-alien-float">
+                            {/* Custom Alien Head SVG to match the cursor style (Cyan glow) */}
+                            <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                width="96" 
+                                height="96" 
+                                viewBox="0 0 32 32"
+                                className="text-cyan-400 filter drop-shadow-lg shadow-cyan-500/50"
+                            >
+                                {/* Triangle Head */}
+                                <polygon 
+                                    points="16,4 28,28 4,28" 
+                                    style={{fill:'none', stroke:'#00FFFF', strokeWidth:'1.5'}} 
+                                />
+                                {/* Eye/Cockpit */}
+                                <circle cx="16" cy="19" r="4" style={{fill:'#00FFFF'}} />
+                            </svg>
+                        </div>
+                        
+                        <h2 className="text-5xl font-extrabold mb-4 min-h-[50px] text-white tracking-wider">
+                            {welcomeText}
+                            <span className="ml-1 w-1 h-10 bg-cyan-400 inline-block animate-pulse"></span>
+                        </h2>
+                        
+                        <p className="text-indigo-200 mb-8 text-2xl font-light">
+                            Mission received. You are now connected to the Pixo network.
+                        </p>
+                        
+                        <div className="w-2/3 mx-auto bg-indigo-900/50 rounded-full h-2">
+                            <div 
+                                className="bg-gradient-to-r from-cyan-400 to-indigo-500 h-2 rounded-full transition-all duration-3000 ease-out"
+                                style={{ width: '100%' }}
+                            ></div>
                         </div>
                     </div>
                 </div>
-            )}
+                {showProfileModal && <ProfileModal setShowEdit={setShowProfileModal} />}
+            </>
+        );
+    }
+    // --- END FIX ---
 
+    return (
+        <>
+            <style jsx="true">{`
+                /* Global CSS definitions are necessary here for the entire component */
+                .moon-rot-welcome { animation: moon-rotate-welcome 90s linear infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+                @keyframes moon-rotate-welcome { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+                .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
+                @keyframes alien-float { 0% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(1deg); } 100% { transform: translateY(0) rotate(0deg); } }
+                .animate-alien-float { animation: alien-float 3s ease-in-out infinite; }
+                @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+                .animate-pulse { animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+            `}</style>
+
+            {/* --- Original Sidebar Content (ONLY renders if showWelcome is false) --- */}
             <div className={`fixed top-0 left-0 h-screen w-64 xl:w-72 bg-white border-r border-gray-200 flex flex-col justify-between z-[51] shadow-2xl overflow-y-auto
                 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
                 sm:translate-x-0 
@@ -172,7 +277,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                                 return <div key={index} className='h-px bg-gray-200 my-4 mx-2' />;
                             }
                             
-                            const isActive = item.path && location.pathname === item.path;
+                            const isActive = location.pathname === item.path;
                             
                             return (
                                 <div 
