@@ -8,3 +8,18 @@
 .no-scrollbar::-webkit-scrollbar{
   display: none;
 }
+
+@keyframes scale-in {
+    0% {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-scale-in {
+    animation: scale-in 0.5s ease-out;
+}

@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { assets } from '../assets/assets'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun } from 'lucide-react'
+import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun, Check } from 'lucide-react'
 import { UserButton, useClerk } from '@clerk/clerk-react'
 import { useSelector } from 'react-redux';
 import ProfileModal from './ProfileModal';
@@ -13,6 +13,38 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const { signOut } = useClerk()
     
     const [showProfileModal, setShowProfileModal] = useState(false);
+    const [showWelcome, setShowWelcome] = useState(false);
+    const [welcomeText, setWelcomeText] = useState('');
+
+    useEffect(() => {
+        // Show welcome animation when user data is available
+        if (user?.full_name) {
+            setShowWelcome(true);
+            animateWelcomeText(user.full_name);
+            
+            const timer = setTimeout(() => {
+                setShowWelcome(false);
+            }, 3000);
+
+            return () => clearTimeout(timer);
+        }
+    }, [user?.full_name]);
+
+    const animateWelcomeText = (fullName) => {
+        const text = `Welcome, ${fullName}!`;
+        let currentText = '';
+        let index = 0;
+
+        const typingInterval = setInterval(() => {
+            if (index < text.length) {
+                currentText += text[index];
+                setWelcomeText(currentText);
+                index++;
+            } else {
+                clearInterval(typingInterval);
+            }
+        }, 60); // Adjust typing speed here
+    }
 
     const handleNavigation = (path, customHandler = null) => {
         if (customHandler) {
@@ -94,6 +126,35 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
     return (
         <>
+            {/* Welcome Animation Overlay */}
+            {showWelcome && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-70 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl p-8 mx-4 max-w-md w-full shadow-2xl transform animate-scale-in">
+                        <div className="text-center">
+                            <div className="w-20 h-20 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                                <Check className="w-10 h-10 text-white" />
+                            </div>
+                            
+                            <h2 className="text-2xl font-bold text-gray-800 mb-2 min-h-[32px]">
+                                {welcomeText}
+                                <span className="ml-1 w-1 h-6 bg-indigo-600 inline-block animate-pulse"></span>
+                            </h2>
+                            
+                            <p className="text-gray-600 mb-4">
+                                Ready to connect with amazing people!
+                            </p>
+                            
+                            <div className="w-full bg-gray-200 rounded-full h-2 mt-6">
+                                <div 
+                                    className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-3000 ease-out"
+                                    style={{ width: '100%' }}
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className={`fixed top-0 left-0 h-screen w-64 xl:w-72 bg-white border-r border-gray-200 flex flex-col justify-between z-[51] shadow-2xl overflow-y-auto
                 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
                 sm:translate-x-0 
