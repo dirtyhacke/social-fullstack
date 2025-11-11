@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { assets } from '../assets/assets';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun, Check } from 'lucide-react';
+import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun } from 'lucide-react';
 import { UserButton, useClerk } from '@clerk/clerk-react';
 import { useSelector } from 'react-redux';
-import ProfileModal from './ProfileModal';
 
 // --- STAR DATA GENERATION (for the welcome animation only) ---
 const STAR_POSITIONS = () => {
@@ -24,14 +23,12 @@ const STAR_POSITIONS = () => {
 };
 // -----------------------------------------------------------
 
-
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const user = useSelector((state) => state.user.value);
     const { signOut } = useClerk();
     
-    const [showProfileModal, setShowProfileModal] = useState(false);
     const [showWelcome, setShowWelcome] = useState(false);
     const [welcomeText, setWelcomeText] = useState('');
 
@@ -88,8 +85,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const handlePixoGames = () => handleNavigation('/pixo-games', () => navigate('/pixo-games'));
     const handlePixoMovies = () => handleNavigation('/pixo-music', () => navigate('/pixo-music'));
     
-    const handleEditProfile = () => {
-        setShowProfileModal(true);
+    const handleViewProfile = () => {
+        navigate('/profile'); // Navigate to profile page normally
         if (window.innerWidth < 640) {
             setSidebarOpen(false);
         }
@@ -106,7 +103,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         { icon: <GamepadIcon className='w-5 h-5'/>, name: "Pixo Games", path: "/pixo-games", onClick: handlePixoGames, },
         { icon: <Film className='w-5 h-5'/>, name: "Pixo Music", path: "/pixo-music", onClick: handlePixoMovies, },
         { isSeparator: true },
-        { icon: <User className='w-5 h-5'/>, name: "Edit Profile", onClick: handleEditProfile, path: '#profile' }
+        { icon: <User className='w-5 h-5'/>, name: "Profile", onClick: handleViewProfile, path: '/profile' } // Changed path to '/profile'
     ];
 
     // --- FIX: Return null early if the welcome screen is active ---
@@ -239,7 +236,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                         </div>
                     </div>
                 </div>
-                {showProfileModal && <ProfileModal setShowEdit={setShowProfileModal} />}
             </>
         );
     }
@@ -310,7 +306,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 <div className='w-full border-t border-gray-200 p-4 flex flex-col gap-4 flex-shrink-0'> 
                     <div 
                         className='flex gap-3 items-center cursor-pointer p-2 rounded-lg hover:bg-gray-100 transition duration-200'
-                        onClick={handleEditProfile}
+                        onClick={handleViewProfile}
                     >
                         <UserButton />
                         <div>
@@ -334,8 +330,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                     </div>
                 </div>
             </div>
-
-            {showProfileModal && <ProfileModal setShowEdit={setShowProfileModal} />}
         </>
     )
 }
