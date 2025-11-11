@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { BadgeCheck, Heart, MessageCircle, Share2, Send, X, Edit, Trash2, MoreVertical, Loader2, Link, Shield } from 'lucide-react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { BadgeCheck, Heart, MessageCircle, Share2, Send, X, Edit, Trash2, MoreVertical, Loader2, Link, Shield, Play, Volume2, VolumeX } from 'lucide-react'
 import moment from 'moment'
 import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
@@ -8,7 +8,7 @@ import api from '../api/axios'
 import toast from 'react-hot-toast'
 
 // ----------------------------------------------------------------------
-// --- Post Modal Component (Enhanced with Protection) ---
+// --- Post Modal Component (Fixed Glitches) ---
 // ----------------------------------------------------------------------
 
 const PostModal = ({ 
@@ -32,11 +32,12 @@ const PostModal = ({
     const [editCommentText, setEditCommentText] = useState('');
     const [showMenu, setShowMenu] = useState(null);
     const [showPostOptionsMenu, setShowPostOptionsMenu] = useState(false);
+    const [playingVideo, setPlayingVideo] = useState(null);
+    const [mutedVideos, setMutedVideos] = useState({});
 
     const modalRef = useRef(null);
-    const imageRefs = useRef([]);
+    const videoRefs = useRef([]);
 
-    // Enhanced protection functions
     const preventDefaultActions = (e) => {
         e.preventDefault();
         return false;
@@ -57,78 +58,79 @@ const PostModal = ({
         pointerEvents: 'none'
     };
 
-    // Anti-screenshot protection
-    useEffect(() => {
-        if (modalRef.current) {
-            // Add protective overlay
-            const addProtectiveOverlay = () => {
-                const overlay = document.createElement('div');
-                overlay.id = 'post-modal-protection';
-                overlay.style.cssText = `
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: repeating-linear-gradient(
-                        45deg,
-                        transparent,
-                        transparent 5px,
-                        rgba(255,255,255,0.01) 5px,
-                        rgba(255,255,255,0.01) 10px
-                    );
-                    pointer-events: none;
-                    z-index: 10001;
-                    opacity: 0;
-                `;
-                document.body.appendChild(overlay);
-            };
-
-            // Block keyboard shortcuts
-            const handleKeyDown = (e) => {
-                if (
-                    e.key === 'PrintScreen' ||
-                    e.keyCode === 44 ||
-                    (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i')) ||
-                    e.key === 'F12' ||
-                    (e.ctrlKey && e.key === 'p')
-                ) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return false;
-                }
-            };
-
-            addProtectiveOverlay();
-            document.addEventListener('keydown', handleKeyDown);
-
-            return () => {
-                document.removeEventListener('keydown', handleKeyDown);
-                const overlay = document.getElementById('post-modal-protection');
-                if (overlay) {
-                    document.body.removeChild(overlay);
-                }
-            };
+    // Get media data
+    const getMediaData = () => {
+        if (post?.media_urls && post.media_urls.length > 0) {
+            return post.media_urls;
         }
+        else if (post?.image_urls && post.image_urls.length > 0) {
+            return post.image_urls.map(url => ({
+                url: url,
+                type: 'image',
+                filePath: ''
+            }));
+        }
+        return [];
+    };
+
+    const mediaData = getMediaData();
+
+    // Video control functions
+    const handleVideoPlay = (index) => {
+        setPlayingVideo(index);
+        videoRefs.current.forEach((video, i) => {
+            if (video && i !== index) {
+                video.pause();
+            }
+        });
+    };
+
+    const handleVideoPause = (index) => {
+        if (playingVideo === index) {
+            setPlayingVideo(null);
+        }
+    };
+
+    const toggleMute = (index, e) => {
+        e.stopPropagation();
+        setMutedVideos(prev => ({
+            ...prev,
+            [index]: !prev[index]
+        }));
+    };
+
+    // Close modal on ESC key
+    useEffect(() => {
+        const handleEscKey = (e) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        document.addEventListener('keydown', handleEscKey);
+        return () => {
+            document.removeEventListener('keydown', handleEscKey);
+        };
+    }, [onClose]);
+
+    // Pause all videos when modal closes
+    useEffect(() => {
+        return () => {
+            videoRefs.current.forEach(video => {
+                if (video) {
+                    video.pause();
+                }
+            });
+        };
     }, []);
 
-    // Protection Overlay Component
-    const ProtectionOverlay = () => (
-        <div 
-            style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                height: '100%',
-                background: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.02) 3px, rgba(255,255,255,0.02) 6px)',
-                pointerEvents: 'none',
-                zIndex: 1,
-                opacity: 0.2
-            }}
-            onContextMenu={preventDefaultActions}
-        />
-    );
+    // Prevent body scroll when modal is open
+    useEffect(() => {
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, []);
 
     const fetchComments = async () => {
         setIsFetchingComments(true)
@@ -243,26 +245,19 @@ const PostModal = ({
     return (
         <div 
             ref={modalRef}
-            className='fixed inset-0 bg-black bg-opacity-90 backdrop-blur-md flex items-start lg:items-center justify-center z-50 p-0 sm:p-4'
+            className='fixed inset-0 bg-black bg-opacity-90 backdrop-blur-md flex items-center justify-center z-50 p-4'
             onClick={onClose}
             onContextMenu={preventDefaultActions}
             style={{ WebkitUserSelect: 'none' }}
         >
-           
-
-            <ProtectionOverlay />
-            
             <div 
-                className='bg-white rounded-none sm:rounded-xl shadow-2xl w-full max-w-4xl h-full max-h-full sm:max-h-[90vh] flex flex-col lg:flex-row overflow-hidden relative'
+                className='bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col lg:flex-row overflow-hidden relative'
                 onClick={(e) => e.stopPropagation()} 
             >
                 
-                {/* 1. Post Content & Images */}
-                <div className='w-full lg:w-3/5 flex flex-col overflow-y-auto custom-scrollbar-lg border-b lg:border-r lg:border-b-0 border-gray-100'> 
-
-                    {/* Sticky Header */}
-                    <div className='sticky top-0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between'>
-                        {/* Protected User Info */}
+                {/* Post Content & Media - Fixed Layout */}
+                <div className='w-full lg:w-3/5 flex flex-col overflow-hidden border-b lg:border-r lg:border-b-0 border-gray-100'> 
+                    <div className='sticky top-0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0'>
                         <div 
                             className='flex items-center gap-3 cursor-pointer' 
                             onClick={()=> navigate('/profile/' + (post?.user?._id || ''))}
@@ -286,7 +281,6 @@ const PostModal = ({
                             </div>
                         </div>
 
-                        {/* Actions */}
                         <div className='flex items-center gap-2 relative'>
                             {isPostOwner && (
                                 <button
@@ -315,9 +309,7 @@ const PostModal = ({
                         </div>
                     </div>
                     
-                    {/* Protected Post Content */}
-                    <div className='p-4 sm:p-6 space-y-4' onContextMenu={preventDefaultActions}>
-                        
+                    <div className='flex-1 p-4 sm:p-6 space-y-4 overflow-y-auto' onContextMenu={preventDefaultActions}>
                         <div className='text-gray-400 text-xs'>
                             {moment(post?.createdAt).format('MMM D, YYYY HH:mm')}
                         </div>
@@ -331,25 +323,60 @@ const PostModal = ({
                             />
                         )}
 
-                        {/* Protected Images */}
-                        {post?.image_urls && post.image_urls.length > 0 && (
+                        {/* Media Container - Fixed Height */}
+                        {mediaData.length > 0 && (
                             <div 
-                                className={`grid gap-3 ${post.image_urls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}
+                                className={`grid gap-3 ${mediaData.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} overflow-hidden`}
                                 onContextMenu={preventDefaultActions}
                             >
-                                {post.image_urls.map((img, index) => (
-                                    <div key={index} className="relative">
-                                        <ProtectionOverlay />
-                                        <img
-                                            src={img}
-                                            ref={el => imageRefs.current[index] = el}
-                                            className='w-full rounded-lg shadow-md object-contain border border-gray-100 relative z-0'
-                                            alt={`Post image ${index + 1}`}
-                                            style={protectiveStyles}
-                                            onContextMenu={preventDefaultActions}
-                                            onDragStart={preventDefaultActions}
-                                            draggable={false}
-                                        />
+                                {mediaData.map((media, index) => (
+                                    <div key={index} className="relative overflow-hidden rounded-lg bg-black">
+                                        {media.type === 'image' ? (
+                                            <img
+                                                src={media.url}
+                                                className='w-full h-full max-h-[50vh] object-contain'
+                                                alt={`Post image ${index + 1}`}
+                                                style={protectiveStyles}
+                                                onContextMenu={preventDefaultActions}
+                                                onDragStart={preventDefaultActions}
+                                                draggable={false}
+                                            />
+                                        ) : (
+                                            <div className="relative w-full h-0 pb-[56.25%]"> {/* 16:9 aspect ratio */}
+                                                <video
+                                                    ref={el => {
+                                                        videoRefs.current[index] = el;
+                                                        if (el) {
+                                                            el.muted = mutedVideos[index] || false;
+                                                        }
+                                                    }}
+                                                    src={media.url}
+                                                    className='absolute inset-0 w-full h-full object-contain'
+                                                    controls
+                                                    style={protectiveStyles}
+                                                    onContextMenu={preventDefaultActions}
+                                                    onPlay={() => handleVideoPlay(index)}
+                                                    onPause={() => handleVideoPause(index)}
+                                                    playsInline
+                                                    preload="metadata"
+                                                >
+                                                    Your browser does not support the video tag.
+                                                </video>
+                                                <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                                                    VIDEO
+                                                </div>
+                                                <button
+                                                    onClick={(e) => toggleMute(index, e)}
+                                                    className="absolute top-2 right-2 bg-black/70 text-white p-1 rounded hover:bg-black/90 transition"
+                                                >
+                                                    {mutedVideos[index] ? (
+                                                        <VolumeX className="w-3 h-3" />
+                                                    ) : (
+                                                        <Volume2 className="w-3 h-3" />
+                                                    )}
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -357,16 +384,14 @@ const PostModal = ({
                     </div>
                 </div>
 
-                {/* 2. Comments Section */}
-                <div className='w-full lg:w-2/5 flex flex-col flex-shrink-0'>
-                    
+                {/* Comments Section - Fixed Height */}
+                <div className='w-full lg:w-2/5 flex flex-col flex-shrink-0 border-t lg:border-t-0 lg:border-l border-gray-100'>
                     <h3 className='font-bold text-gray-800 text-lg p-4 border-b border-gray-100 flex-shrink-0'>
                         Comments ({commentsCount})
                     </h3>
                     
-                    {/* Protected Comments List */}
                     <div 
-                        className='flex-1 p-4 space-y-4 overflow-y-auto custom-scrollbar'
+                        className='flex-1 p-4 space-y-4 overflow-y-auto'
                         onContextMenu={preventDefaultActions}
                     >
                         {isFetchingComments ? (
@@ -446,14 +471,13 @@ const PostModal = ({
                                 </div>
                             ))
                         ) : (
-                            <div className='text-center py-6 bg-gray-50 rounded-xl m-4'>
+                            <div className='text-center py-6 bg-gray-50 rounded-xl'>
                                 <p className='text-gray-500 text-sm'>No comments yet. Be the first to comment! 🚀</p>
                             </div>
                         )}
                     </div>
 
-                    {/* Comment Input */}
-                    <div className='p-4 border-t border-gray-100 flex-shrink-0 bg-white sticky bottom-0 z-20'>
+                    <div className='p-4 border-t border-gray-100 flex-shrink-0 bg-white sticky bottom-0'>
                         <div className='flex items-center gap-2'>
                             <img
                                 src={currentUser?.profile_picture || '/default-avatar.png'}
@@ -484,40 +508,12 @@ const PostModal = ({
                     </div>
                 </div>
             </div>
-
-            {/* Privacy Warning */}
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-red-500/20 backdrop-blur-sm text-white px-4 py-2 rounded-full text-xs border border-red-500/30">
-                <div className="flex items-center gap-2">
-                    <Shield className="w-3 h-3" />
-                    <span>Protected: Screenshots & downloads disabled</span>
-                </div>
-            </div>
-             
-             <style jsx="true">{`
-                .backdrop-blur-bg {
-                    backdrop-filter: blur(8px);
-                }
-                .custom-scrollbar-lg::-webkit-scrollbar {
-                    width: 8px; 
-                }
-                .custom-scrollbar-lg::-webkit-scrollbar-track {
-                    background: #f9f9f9;
-                    border-radius: 10px;
-                }
-                .custom-scrollbar-lg::-webkit-scrollbar-thumb {
-                    background: #e0e0e0;
-                    border-radius: 10px;
-                }
-                .custom-scrollbar-lg::-webkit-scrollbar-thumb:hover {
-                    background: #c0c0c0;
-                }
-             `}</style>
         </div>
     )
 }
 
 // ----------------------------------------------------------------------
-// --- Main PostCard Component (Enhanced with Protection) ---
+// --- Main PostCard Component with Auto Play/Pause ---
 // ----------------------------------------------------------------------
 
 const PostCard = ({ post, onEdit, onDelete }) => {
@@ -542,18 +538,21 @@ const PostCard = ({ post, onEdit, onDelete }) => {
     const [isFetchingComments, setIsFetchingComments] = useState(false)
     const [showPostMenu, setShowPostMenu] = useState(false) 
     const [showPostModal, setShowPostModal] = useState(false) 
+    const [playingVideo, setPlayingVideo] = useState(null)
+    const [mutedVideos, setMutedVideos] = useState({})
+    const [isVideoInView, setIsVideoInView] = useState(false)
 
     const currentUser = useSelector((state) => state.user.value)
     const { getToken } = useAuth()
     const navigate = useNavigate()
     const postCardRef = useRef(null)
+    const videoRefs = useRef([])
+    const observerRef = useRef(null)
 
     const isPostOwner = post?.user?._id === currentUser?._id;
 
-    // Enhanced protection functions
     const preventDefaultActions = (e) => {
         e.preventDefault();
-       
         return false;
     };
 
@@ -570,6 +569,121 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         WebkitTouchCallout: 'none',
         WebkitTapHighlightColor: 'transparent',
     };
+
+    // Get media data
+    const getMediaData = () => {
+        if (post?.media_urls && post.media_urls.length > 0) {
+            return post.media_urls;
+        }
+        else if (post?.image_urls && post.image_urls.length > 0) {
+            return post.image_urls.map(url => ({
+                url: url,
+                type: 'image',
+                filePath: ''
+            }));
+        }
+        return [];
+    };
+
+    const mediaData = getMediaData();
+
+    // Video control functions
+    const handleVideoPlay = useCallback((index) => {
+        setPlayingVideo(index);
+        videoRefs.current.forEach((video, i) => {
+            if (video && i !== index) {
+                video.pause();
+            }
+        });
+    }, []);
+
+    const handleVideoPause = useCallback((index) => {
+        if (playingVideo === index) {
+            setPlayingVideo(null);
+        }
+    }, [playingVideo]);
+
+    const handleVideoClick = useCallback((index, e) => {
+        e.stopPropagation();
+        const video = videoRefs.current[index];
+        if (video) {
+            if (video.paused) {
+                video.play().catch(console.error);
+            } else {
+                video.pause();
+            }
+        }
+    }, []);
+
+    const toggleMute = useCallback((index, e) => {
+        e.stopPropagation();
+        setMutedVideos(prev => ({
+            ...prev,
+            [index]: !prev[index]
+        }));
+    }, []);
+
+    // Auto-play/pause videos based on visibility
+    useEffect(() => {
+        if (!postCardRef.current || mediaData.filter(m => m.type === 'video').length === 0) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach(entry => {
+                    setIsVideoInView(entry.isIntersecting);
+                    
+                    if (entry.isIntersecting) {
+                        // Auto-play the first video when post comes into view
+                        const firstVideoIndex = mediaData.findIndex(m => m.type === 'video');
+                        if (firstVideoIndex !== -1) {
+                            const video = videoRefs.current[firstVideoIndex];
+                            if (video && video.paused) {
+                                // Only autoplay if user hasn't manually paused
+                                if (playingVideo === null) {
+                                    video.play().catch(console.error);
+                                }
+                            }
+                        }
+                    } else {
+                        // Pause all videos when post goes out of view
+                        videoRefs.current.forEach(video => {
+                            if (video && !video.paused) {
+                                video.pause();
+                            }
+                        });
+                        setPlayingVideo(null);
+                    }
+                });
+            },
+            {
+                root: null,
+                rootMargin: '0px',
+                threshold: 0.7 // 70% of the post must be visible to autoplay
+            }
+        );
+
+        observer.observe(postCardRef.current);
+        observerRef.current = observer;
+
+        return () => {
+            if (observerRef.current) {
+                observerRef.current.disconnect();
+            }
+        };
+    }, [mediaData, playingVideo]);
+
+    // Clean up videos when component unmounts
+    useEffect(() => {
+        return () => {
+            videoRefs.current.forEach(video => {
+                if (video) {
+                    video.pause();
+                    video.src = '';
+                    video.load();
+                }
+            });
+        };
+    }, []);
 
     // Add protection to post card
     useEffect(() => {
@@ -608,7 +722,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         };
     }, [showPostMenu]);
 
-    // Rest of your existing functions remain the same...
+    // Rest of your existing functions...
     const fetchSharesCount = async () => { 
         try {
             const token = await getToken();
@@ -799,10 +913,25 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         );
     }
 
+    // Calculate grid layout
+    const getGridClass = () => {
+        if (mediaData.length === 1) return 'grid-cols-1';
+        if (mediaData.length === 2) return 'grid-cols-2';
+        if (mediaData.length === 3) return 'grid-cols-2 grid-rows-2';
+        return 'grid-cols-2 grid-rows-2';
+    };
+
+    // Get media container height
+    const getMediaHeight = (index) => {
+        if (mediaData.length === 1) return 'h-96 sm:h-[500px]';
+        if (mediaData.length === 2) return 'h-48 sm:h-64';
+        return 'h-40 sm:h-48';
+    };
+
     return (
         <div 
             ref={postCardRef}
-            className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100 relative'
+            className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100 relative transition-all duration-300 overflow-hidden'
             onContextMenu={preventDefaultActions}
             style={{ WebkitUserSelect: 'none' }}>
 
@@ -821,7 +950,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                 />
             )}
 
-            {/* Protected User Info Header */}
+            {/* User Info Header */}
             <div className='flex items-center justify-between'>
                 <div 
                     onClick={()=> navigate('/profile/' + (post?.user?._id || ''))} 
@@ -881,7 +1010,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                 )}
             </div>
             
-            {/* Protected Content */}
+            {/* Content */}
             {post?.content && (
                 <div
                     className='text-gray-800 text-base leading-relaxed whitespace-pre-line cursor-pointer hover:bg-gray-50 p-2 -m-2 rounded-lg transition'
@@ -892,37 +1021,91 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                 />
             )}
 
-            {/* Protected Images */}
-            {post?.image_urls && post.image_urls.length > 0 && (
+            {/* Media - Auto Play/Pause */}
+            {mediaData.length > 0 && (
                 <div 
-                    className={`grid gap-2 cursor-pointer ${
-                        post.image_urls.length === 1 ? 'grid-cols-1' :
-                        post.image_urls.length === 2 ? 'grid-cols-2' :
-                        'grid-cols-2 grid-rows-2'
-                    }`}
+                    className={`grid gap-2 cursor-pointer ${getGridClass()} overflow-hidden rounded-lg`}
                     onClick={() => setShowPostModal(true)}
                     onContextMenu={preventDefaultActions}
                 >
-                    {post.image_urls.slice(0, 4).map((img, index) => (
-                        <div key={index} className="relative">
-                            <img
-                                src={img}
-                                className={`w-full object-cover rounded-lg shadow-sm transition-transform duration-300 hover:scale-[1.01] ${
-                                    post.image_urls.length === 1 ? 'h-auto max-h-96' :
-                                    post.image_urls.length === 2 ? 'h-48 sm:h-64' :
-                                    'h-40 sm:h-48'
-                                }`}
-                                alt={`Post image ${index + 1}`}
-                                style={protectiveStyles}
-                                onContextMenu={preventDefaultActions}
-                                onDragStart={preventDefaultActions}
-                                draggable={false}
-                            />
+                    {mediaData.slice(0, 4).map((media, index) => (
+                        <div 
+                            key={index} 
+                            className={`relative overflow-hidden rounded-lg ${getMediaHeight(index)}`}
+                        >
+                            {media.type === 'image' ? (
+                                <img
+                                    src={media.url}
+                                    className='w-full h-full object-cover transition-transform duration-300 hover:scale-105'
+                                    alt={`Post image ${index + 1}`}
+                                    style={protectiveStyles}
+                                    onContextMenu={preventDefaultActions}
+                                    onDragStart={preventDefaultActions}
+                                    draggable={false}
+                                />
+                            ) : (
+                                <div className="relative w-full h-full overflow-hidden rounded-lg bg-black">
+                                    <video
+                                        ref={el => {
+                                            videoRefs.current[index] = el;
+                                            if (el) {
+                                                el.muted = mutedVideos[index] || false;
+                                            }
+                                        }}
+                                        className="w-full h-full object-cover"
+                                        style={protectiveStyles}
+                                        onContextMenu={preventDefaultActions}
+                                        onPlay={() => handleVideoPlay(index)}
+                                        onPause={() => handleVideoPause(index)}
+                                        playsInline
+                                        preload="metadata"
+                                        muted={mutedVideos[index] || false}
+                                    >
+                                        <source src={media.url} type="video/mp4" />
+                                        <source src={media.url} type="video/webm" />
+                                        <source src={media.url} type="video/ogg" />
+                                        Your browser does not support the video tag.
+                                    </video>
+                                    
+                                    {/* Play/Pause Overlay */}
+                                    {playingVideo !== index && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity duration-300">
+                                            <div className="bg-black/60 rounded-full p-3 sm:p-4 hover:bg-black/80 transition">
+                                                <Play className="w-6 h-6 sm:w-8 sm:h-8 text-white fill-white" />
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Video Badge */}
+                                    <div className="absolute top-2 right-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                                        VIDEO
+                                    </div>
+
+                                    {/* Mute/Unmute Button */}
+                                    <button
+                                        onClick={(e) => toggleMute(index, e)}
+                                        className="absolute top-2 left-2 bg-black/70 text-white p-1.5 rounded hover:bg-black/90 transition"
+                                    >
+                                        {mutedVideos[index] ? (
+                                            <VolumeX className="w-3 h-3 sm:w-4 sm:h-4" />
+                                        ) : (
+                                            <Volume2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                                        )}
+                                    </button>
+
+                                    {/* Auto-play indicator */}
+                                    {isVideoInView && playingVideo === null && (
+                                        <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs">
+                                            Auto-play
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ))}
-                    {post.image_urls.length > 4 && (
+                    {mediaData.length > 4 && (
                          <div className='w-full h-40 sm:h-48 bg-gray-200 rounded-lg flex items-center justify-center text-lg font-bold text-gray-600'>
-                            +{post.image_urls.length - 4} more
+                            +{mediaData.length - 4} more
                          </div>
                     )}
                 </div>
@@ -1059,23 +1242,6 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                     )}
                 </div>
             )}
-
-            <style jsx="true">{`
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: #f1f1f1;
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: #ccc;
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: #a8a8a8;
-                }
-            `}</style>
         </div>
     )
 }

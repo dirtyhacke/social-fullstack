@@ -1,4 +1,4 @@
-import fs from "fs";
+// controllers/postController.js
 import imagekit from "../configs/imageKit.js";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
@@ -8,11 +8,12 @@ import Share from "../models/Share.js";
 // Add Post
 export const addPost = async (req, res) => {
     try {
-        const userId = req.userId; // Changed from req.auth()
+        const userId = req.userId;
         const { content, post_type } = req.body;
-        const images = req.files;
+        const mediaFiles = req.files;
 
         console.log('➕ Add Post - User:', userId);
+        console.log('📁 Media files received:', mediaFiles?.length);
 
         // Verify user exists
         const user = await User.findById(userId);
@@ -20,40 +21,85 @@ export const addPost = async (req, res) => {
             return res.json({ success: false, message: "User not found" });
         }
 
-        let image_urls = [];
+        let media_urls = [];
 
-        if (images && images.length) {
-            image_urls = await Promise.all(
-                images.map(async (image) => {
-                    const fileBuffer = fs.readFileSync(image.path);
+        if (mediaFiles && mediaFiles.length) {
+            media_urls = await Promise.all(
+                mediaFiles.map(async (file) => {
+                    console.log('📤 Uploading media:', file.originalname, 'Type:', file.mimetype);
+                    
+                    if (!file.buffer) {
+                        console.log('❌ No buffer found for file:', file.originalname);
+                        throw new Error('Invalid file buffer');
+                    }
+
                     const response = await imagekit.upload({
-                        file: fileBuffer,
-                        fileName: image.originalname,
+                        file: file.buffer,
+                        fileName: file.originalname,
                         folder: "posts",
                     });
 
-                    const url = imagekit.url({
-                        path: response.filePath,
-                        transformation: [
-                            { quality: 'auto' },
-                            { format: 'webp' },
-                            { width: '1280' }
-                        ]
-                    });
-                    return url;
+                    console.log('✅ Media uploaded to ImageKit:', response.filePath);
+
+                    // Determine file type
+                    const fileType = file.mimetype.startsWith('image/') ? 'image' : 'video';
+                    
+                    // Generate URL with transformations for images, original for videos
+                    let url;
+                    if (fileType === 'image') {
+                        url = imagekit.url({
+                            path: response.filePath,
+                            transformation: [
+                                { quality: 'auto' },
+                                { format: 'webp' },
+                                { width: '1280' }
+                            ]
+                        });
+                    } else {
+                        // For videos, use the original URL
+                        url = response.url;
+                    }
+                    
+                    return {
+                        url: url,
+                        type: fileType,
+                        filePath: response.filePath
+                    };
                 })
-            );
+            ).catch(error => {
+                console.log('❌ Error uploading media:', error);
+                throw error;
+            });
+        }
+
+        // Determine post type automatically if not provided
+        let finalPostType = post_type;
+        if (!finalPostType) {
+            const hasImages = media_urls.some(media => media.type === 'image');
+            const hasVideos = media_urls.some(media => media.type === 'video');
+            const hasText = content && content.trim().length > 0;
+
+            if (hasText && hasImages && hasVideos) finalPostType = 'text_with_media';
+            else if (hasText && hasImages) finalPostType = 'text_with_image';
+            else if (hasText && hasVideos) finalPostType = 'text_with_video';
+            else if (hasImages && hasVideos) finalPostType = 'media';
+            else if (hasImages) finalPostType = 'image';
+            else if (hasVideos) finalPostType = 'video';
+            else if (hasText) finalPostType = 'text';
+            else finalPostType = 'text';
         }
 
         await Post.create({
-            user: userId, // Use Clerk userId directly
-            content,
-            image_urls,
-            post_type
+            user: userId,
+            content: content || "",
+            media_urls,
+            post_type: finalPostType
         });
+        
+        console.log('✅ Post created successfully with', media_urls.length, 'media files');
         res.json({ success: true, message: "Post created successfully" });
     } catch (error) {
-        console.log(error);
+        console.log('💥 Error in addPost:', error);
         res.json({ success: false, message: error.message });
     }
 }
@@ -61,7 +107,7 @@ export const addPost = async (req, res) => {
 // Get Posts
 export const getFeedPosts = async (req, res) => {
     try {
-        const userId = req.userId; // Changed from req.auth()
+        const userId = req.userId;
 
         console.log('📝 Get Feed Posts - User:', userId);
 
@@ -87,7 +133,7 @@ export const getFeedPosts = async (req, res) => {
 // Like Post
 export const likePost = async (req, res) => {
     try {
-        const userId = req.userId; // Changed from req.auth()
+        const userId = req.userId;
         const { postId } = req.body;
 
         console.log('❤️ Like Post - User:', userId, 'Post:', postId);
@@ -106,11 +152,11 @@ export const likePost = async (req, res) => {
         if (post.likes_count.includes(userId)) {
             post.likes_count = post.likes_count.filter(likeUserId => likeUserId !== userId);
             await post.save();
-            res.json({ success: true, message: 'Post unliked' });
+            res.json({ success: true, message: 'Post unliked', liked: false });
         } else {
             post.likes_count.push(userId);
             await post.save();
-            res.json({ success: true, message: 'Post liked' });
+            res.json({ success: true, message: 'Post liked', liked: true });
         }
 
     } catch (error) {
@@ -134,7 +180,7 @@ export const getCommentsCount = async (req, res) => {
 // Add comment to a post
 export const addComment = async (req, res) => {
     try {
-        const userId = req.userId; // Changed from req.auth()
+        const userId = req.userId;
         const { postId, content } = req.body;
 
         console.log('💬 Add Comment - User:', userId, 'Post:', postId, 'Content:', content);
@@ -152,7 +198,7 @@ export const addComment = async (req, res) => {
         }
 
         await Comment.create({
-            user: userId, // Use Clerk userId directly
+            user: userId,
             post: postId,
             content
         });
@@ -182,7 +228,7 @@ export const getSharesCount = async (req, res) => {
 // Share a post
 export const sharePost = async (req, res) => {
     try {
-        const userId = req.userId; // Changed from req.auth()
+        const userId = req.userId;
         const { postId } = req.body;
 
         console.log('🔄 Share Post - User:', userId, 'Post:', postId);
@@ -207,7 +253,7 @@ export const sharePost = async (req, res) => {
 
         // Create share record
         await Share.create({
-            user: userId, // Use Clerk userId directly
+            user: userId,
             post: postId
         });
 
@@ -227,7 +273,6 @@ export const getPostComments = async (req, res) => {
         const { postId } = req.params;
         console.log('🔍 Fetching comments for post:', postId);
         
-        // Get comments without populate first
         const comments = await Comment.find({ post: postId }).sort({ createdAt: -1 });
         console.log('📝 Found comments:', comments.length);
         
@@ -236,7 +281,6 @@ export const getPostComments = async (req, res) => {
             comments.map(async (comment) => {
                 try {
                     const user = await User.findById(comment.user);
-                    console.log('👤 Found user for comment:', user ? user.full_name : 'User not found');
                     
                     return {
                         _id: comment._id,
@@ -272,10 +316,6 @@ export const getPostComments = async (req, res) => {
         );
 
         console.log('✅ Final populated comments:', populatedComments.length);
-        populatedComments.forEach(comment => {
-            console.log(`   - ${comment.user.full_name}: ${comment.content}`);
-        });
-
         res.json({ success: true, comments: populatedComments });
     } catch (error) {
         console.log('💥 Error in getPostComments:', error);
@@ -286,7 +326,7 @@ export const getPostComments = async (req, res) => {
 // Update comment
 export const updateComment = async (req, res) => {
     try {
-        const userId = req.userId; // Changed from req.auth()
+        const userId = req.userId;
         const { commentId } = req.params;
         const { content } = req.body;
 
@@ -315,7 +355,7 @@ export const updateComment = async (req, res) => {
 // Delete comment
 export const deleteComment = async (req, res) => {
     try {
-        const userId = req.userId; // Changed from req.auth()
+        const userId = req.userId;
         const { commentId } = req.params;
 
         console.log('🗑️ Delete Comment - User:', userId, 'Comment:', commentId);

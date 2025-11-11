@@ -16,6 +16,10 @@ import { connections, setupSSE } from './controllers/messageController.js';
 import musicRoutes from './routes/musicRoutes.js'
 import musicLikesRoutes from './routes/musicLikesRoutes.js';
 
+import groupRoutes from './routes/groups.js';
+
+import musicPlaylistRoutes from './routes/musicPlaylistRoutes.js';
+
 const app = express();
 
 global.connections = connections;
@@ -49,6 +53,9 @@ app.use('/api/random-chat', randomChatRouter);
 app.use('/api/ai', aiRoutes);
 app.use('/api/music', musicRoutes); // ✅ FIXED: Added forward slash
 app.use('/api/music-likes', musicLikesRoutes);
+app.use('/api/groups', groupRoutes);
+app.use('/api/music-playlist', musicPlaylistRoutes);
+
 // Test endpoint
 app.get('/api/test', (req, res) => {
     res.json({ success: true, message: 'Server is working!' });

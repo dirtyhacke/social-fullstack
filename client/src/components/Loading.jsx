@@ -123,7 +123,18 @@ export default function Loading({ height = "100vh" }) {
             }}>{l}</span>
           ))}
         </div>
-        <p className="pixo-msg" style={{ marginTop: 12 }}> Phantom access granted… PIXO sees everything but knows nothing.... </p>
+        <p
+  className="pixo-msg"
+  style={{
+    marginTop: 12,
+    textAlign: "center",
+    fontSize: "clamp(12px, 2.5vw, 16px)", // responsive text size
+    padding: "0 10px", // adds spacing for small screens
+  }}
+>
+  Phantom access granted… PIXO sees everything but knows nothing....
+</p>
+
       </div>
 
       <style>{`

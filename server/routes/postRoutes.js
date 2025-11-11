@@ -1,3 +1,4 @@
+// routes/post.js
 import express from 'express';
 import { 
     addPost, 
@@ -11,7 +12,7 @@ import {
     updateComment,
     deleteComment
 } from '../controllers/postController.js';
-import { upload } from '../configs/multer.js';
+import { mediaUpload } from '../configs/multer.js';
 import { protect } from '../middlewares/auth.js';
 
 const postRouter = express.Router();
@@ -20,7 +21,7 @@ const postRouter = express.Router();
 postRouter.use(protect);
 
 // Now all routes below will be protected
-postRouter.post('/add', upload.array('images', 4), addPost);
+postRouter.post('/add', mediaUpload, addPost); // Changed to mediaUpload
 postRouter.get('/feed', getFeedPosts);
 postRouter.post('/like', likePost);
 

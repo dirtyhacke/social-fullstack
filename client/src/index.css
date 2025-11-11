@@ -23,3 +23,44 @@
 .animate-scale-in {
     animation: scale-in 0.5s ease-out;
 }
+
+/* Add to your global CSS or style tag */
+.message-bubble {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  transition: all 0.2s ease;
+}
+
+.message-bubble:hover {
+  transform: translateY(-1px);
+}
+
+.message-bubble:active {
+  transform: translateY(0px);
+}
+
+.long-press-active {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+  transform: scale(0.98) !important;
+}
+
+.swipe-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.swipe-left .swipe-indicator {
+  left: -30px;
+  opacity: 1;
+}
+
+.swipe-right .swipe-indicator {
+  right: -30px;
+  opacity: 1;
+}

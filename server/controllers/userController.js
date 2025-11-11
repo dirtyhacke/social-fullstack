@@ -3,11 +3,7 @@ import { inngest } from "../inngest/index.js"
 import Connection from "../models/Connection.js"
 import Post from "../models/Post.js"
 import User from "../models/User.js"
-import fs from 'fs'
 import { clerkClient } from "@clerk/express";
-
-
-
 
 // Get User Data using userId
 export const getUserData = async (req, res) => {
@@ -24,7 +20,7 @@ export const getUserData = async (req, res) => {
     }
 }
 
-//  Update User Data
+// Update User Data
 export const updateUserData = async (req, res) => {
     try {
         const { userId } = req.auth()
@@ -49,13 +45,27 @@ export const updateUserData = async (req, res) => {
             full_name
         }
 
-        const profile = req.files.profile && req.files.profile[0]
-        const cover = req.files.cover && req.files.cover[0]
+        // ✅ FIX: Use memory storage properly (no file paths)
+        const profile = req.files?.profile?.[0]
+        const cover = req.files?.cover?.[0]
+
+        console.log('📁 Profile file:', profile ? `Exists (${profile.mimetype}, ${profile.size} bytes)` : 'Not provided');
+        console.log('📁 Cover file:', cover ? `Exists (${cover.mimetype}, ${cover.size} bytes)` : 'Not provided');
 
         if(profile){
-            const buffer = fs.readFileSync(profile.path)
+            // ✅ FIX: Use buffer instead of file path for memory storage
+            if (!profile.buffer) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid profile picture upload - no file data'
+                });
+            }
+            
+            // Convert buffer to base64 for ImageKit
+            const fileBase64 = profile.buffer.toString('base64');
+            
             const response = await imagekit.upload({
-                file: buffer,
+                file: fileBase64, // Use base64 string
                 fileName: profile.originalname,
             })
 
@@ -69,14 +79,30 @@ export const updateUserData = async (req, res) => {
             })
             updatedData.profile_picture = url;
 
-            const blob = await fetch(url).then(res => res.blob());
-            await clerkClient.users.updateUserProfileImage(userId, { file: blob });
+            // Update Clerk profile picture
+            try {
+                const blob = await fetch(url).then(res => res.blob());
+                await clerkClient.users.updateUserProfileImage(userId, { file: blob });
+                console.log('✅ Clerk profile picture updated');
+            } catch (clerkError) {
+                console.log('⚠️ Could not update Clerk profile picture:', clerkError.message);
+            }
         }
 
         if(cover){
-            const buffer = fs.readFileSync(cover.path)
+            // ✅ FIX: Use buffer instead of file path for memory storage
+            if (!cover.buffer) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid cover photo upload - no file data'
+                });
+            }
+            
+            // Convert buffer to base64 for ImageKit
+            const fileBase64 = cover.buffer.toString('base64');
+            
             const response = await imagekit.upload({
-                file: buffer,
+                file: fileBase64, // Use base64 string
                 fileName: cover.originalname,
             })
 
@@ -89,6 +115,7 @@ export const updateUserData = async (req, res) => {
                 ]
             })
             updatedData.cover_photo = url;
+            console.log('✅ Cover photo uploaded');
         }
 
         const user = await User.findByIdAndUpdate(userId, updatedData, {new : true})
@@ -97,7 +124,7 @@ export const updateUserData = async (req, res) => {
 
     } catch (error) {
         console.log(error);
-        res.json({success: false, message: error.message})
+        res.status(500).json({success: false, message: error.message})
     }
 }
 
@@ -203,10 +230,15 @@ export const sendConnectionRequest = async (req, res) => {
                 to_user_id: id
             })
 
-            await inngest.send({
-                name: 'app/connection-request',
-                data: {connectionId: newConnection._id}
-            })
+            // ✅ Handle Inngest errors gracefully
+            try {
+                await inngest.send({
+                    name: 'app/connection-request',
+                    data: {connectionId: newConnection._id}
+                })
+            } catch (inngestError) {
+                console.log('⚠️ Inngest error (connection still created):', inngestError.message);
+            }
 
             return res.json({success: true, message: 'Connection request sent successfully'})
         }else if(connection && connection.status === 'accepted'){
@@ -271,7 +303,6 @@ export const acceptConnectionRequest = async (req, res) => {
         res.json({success: false, message: error.message})
     }
 }
-
 
 // Get User Profiles
 export const getUserProfiles = async (req, res) =>{

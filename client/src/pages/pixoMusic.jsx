@@ -11,8 +11,9 @@ import {
   Loader,
   Music,
   ListMusic,
-  Shuffle,
-  TrendingUp
+  Plus,
+  Trash2,
+  Clock
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import ErrorBoundary from '../components/ErrorBoundary';
@@ -41,6 +42,8 @@ function PixoMusic() {
     const [trendingSongs, setTrendingSongs] = useState([]);
     const [likedSongs, setLikedSongs] = useState([]);
     const [userLikedSongs, setUserLikedSongs] = useState([]);
+    const [userPlaylistSongs, setUserPlaylistSongs] = useState([]);
+    const [playlistSongIds, setPlaylistSongIds] = useState([]);
     
     const audioRef = useRef(new Audio());
     const progressRef = useRef(null);
@@ -49,21 +52,61 @@ function PixoMusic() {
     const BACKEND_API = 'https://social-server-nine.vercel.app/api';
     const user = useSelector((state) => state.user.value);
 
-    // Load trending songs and liked songs on component mount
+    // Initialize component
     useEffect(() => {
-        console.log('🎵 Component mounted, loading trending songs...');
+        console.log('🎵 Component mounted, initializing...');
         loadTrendingSongs();
         if (user?._id) {
             loadLikedSongs();
+            loadPlaylistSongs();
         }
     }, [user?._id]);
+
+    // Load user's playlist songs
+    const loadPlaylistSongs = async () => {
+        if (!user?._id) return;
+        
+        try {
+            console.log('📋 Loading playlist songs for user:', user._id);
+            const response = await fetch(`${BACKEND_API}/music-playlist/user/${user._id}`);
+            
+            console.log('📋 Playlist response status:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log('📋 Playlist response data:', data);
+            
+            if (data.success) {
+                setUserPlaylistSongs(data.playlistSongs);
+                const playlistSongIds = data.playlistSongs.map(song => song.songId);
+                setPlaylistSongIds(playlistSongIds);
+                
+                // Also populate the local playlist for playback
+                const localPlaylist = data.playlistSongs.map(song => ({
+                    id: song.songId,
+                    title: song.name,
+                    artist: song.primaryArtists,
+                    cover: song.image,
+                    duration: song.duration,
+                    audioUrl: song.downloadUrl
+                }));
+                setPlaylist(localPlaylist);
+                console.log('✅ Loaded playlist songs:', data.playlistSongs.length);
+            }
+        } catch (err) {
+            console.error('❌ Failed to load playlist songs:', err);
+            setError('Failed to load playlist: ' + err.message);
+        }
+    };
 
     // Load user's liked songs
     const loadLikedSongs = async () => {
         if (!user?._id) return;
         
         try {
-            console.log('❤️ Loading liked songs for user:', user._id);
             const response = await fetch(`${BACKEND_API}/music-likes/user/${user._id}`);
             
             if (!response.ok) {
@@ -71,14 +114,11 @@ function PixoMusic() {
             }
             
             const data = await response.json();
-            console.log('❤️ Liked songs response:', data);
             
             if (data.success) {
                 setUserLikedSongs(data.likedSongs);
-                // Create a set of liked song IDs for quick lookup
                 const likedSongIds = data.likedSongs.map(song => song.songId);
                 setLikedSongs(likedSongIds);
-                console.log('✅ Loaded liked songs:', likedSongIds.length);
             }
         } catch (err) {
             console.error('❌ Failed to load liked songs:', err);
@@ -97,7 +137,6 @@ function PixoMusic() {
             
             if (isCurrentlyLiked) {
                 // Unlike song
-                console.log('❤️ Unliking song:', song.name);
                 const response = await fetch(`${BACKEND_API}/music-likes/unlike`, {
                     method: 'POST',
                     headers: {
@@ -114,13 +153,11 @@ function PixoMusic() {
                 if (data.success) {
                     setLikedSongs(prev => prev.filter(id => id !== song.id));
                     setUserLikedSongs(prev => prev.filter(s => s.songId !== song.id));
-                    console.log('✅ Song unliked');
                 } else {
                     setError(data.error || 'Failed to unlike song');
                 }
             } else {
                 // Like song
-                console.log('❤️ Liking song:', song.name);
                 const response = await fetch(`${BACKEND_API}/music-likes/like`, {
                     method: 'POST',
                     headers: {
@@ -137,7 +174,6 @@ function PixoMusic() {
                 if (data.success) {
                     setLikedSongs(prev => [...prev, song.id]);
                     setUserLikedSongs(prev => [...prev, data.likedSong]);
-                    console.log('✅ Song liked');
                 } else {
                     setError(data.error || 'Failed to like song');
                 }
@@ -148,7 +184,129 @@ function PixoMusic() {
         }
     };
 
-    // Helper function to safely extract artist text from various data structures
+    // Add song to playlist (with database storage) - UPDATED WITH BETTER ERROR HANDLING
+    const addToPlaylist = async (song) => {
+        if (!song?.id) {
+            setError('Cannot add invalid song to playlist');
+            return;
+        }
+
+        if (!user?._id) {
+            setError('Please login to add songs to playlist');
+            return;
+        }
+
+        try {
+            console.log('📋 Adding song to playlist:', song.name);
+            console.log('📋 User ID:', user._id);
+            console.log('📋 Request URL:', `${BACKEND_API}/music-playlist/add`);
+            
+            const response = await fetch(`${BACKEND_API}/music-playlist/add`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId: user._id,
+                    song: song
+                })
+            });
+
+            console.log('📋 Response status:', response.status);
+            console.log('📋 Response ok:', response.ok);
+            
+            // Check if response is JSON
+            const contentType = response.headers.get('content-type');
+            console.log('📋 Content type:', contentType);
+            
+            if (!response.ok) {
+                // Try to get error message from response
+                let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorData.message || errorMessage;
+                } catch (e) {
+                    // Response is not JSON, use status text
+                }
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+            console.log('📋 Response data:', data);
+            
+            if (data.success) {
+                // Update local state
+                setPlaylistSongIds(prev => [...prev, song.id]);
+                setUserPlaylistSongs(prev => [...prev, data.playlistSong]);
+                
+                // Also update the local playlist for immediate playback
+                const songToAdd = {
+                    id: song.id,
+                    title: song.name || 'Unknown Song',
+                    artist: song.primaryArtists || 'Unknown Artist',
+                    cover: song.image || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop',
+                    duration: song.duration || '3:45',
+                    audioUrl: song.downloadUrl
+                };
+                
+                setPlaylist(prev => {
+                    const exists = prev.find(s => s.id === songToAdd.id);
+                    if (exists) return prev;
+                    return [...prev, songToAdd];
+                });
+                
+                console.log('✅ Song added to playlist successfully');
+            } else {
+                throw new Error(data.error || 'Failed to add song to playlist');
+            }
+        } catch (err) {
+            console.error('📋 Add to playlist error:', err);
+            console.error('📋 Error details:', {
+                message: err.message,
+                stack: err.stack
+            });
+            setError('Failed to add song to playlist: ' + err.message);
+        }
+    };
+
+    // Remove song from playlist
+    const removeFromPlaylist = async (songId) => {
+        if (!user?._id) {
+            setError('Please login to remove songs from playlist');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${BACKEND_API}/music-playlist/remove`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId: user._id,
+                    songId: songId
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.success) {
+                // Update local state
+                setPlaylistSongIds(prev => prev.filter(id => id !== songId));
+                setUserPlaylistSongs(prev => prev.filter(s => s.songId !== songId));
+                
+                // Also update the local playlist
+                setPlaylist(prev => prev.filter(song => song.id !== songId));
+            } else {
+                setError(data.error || 'Failed to remove song from playlist');
+            }
+        } catch (err) {
+            console.error('📋 Remove from playlist error:', err);
+            setError('Failed to remove song from playlist');
+        }
+    };
+
+    // Helper function to safely extract artist text
     const getArtistText = (artistData) => {
         if (!artistData) return 'Unknown Artist';
         
@@ -157,7 +315,6 @@ function PixoMusic() {
         }
         
         if (typeof artistData === 'object') {
-            // Handle object structure: {primary, featured, all, etc.}
             if (artistData.primary) {
                 return artistData.primary;
             } else if (artistData.all) {
@@ -165,7 +322,6 @@ function PixoMusic() {
             } else if (artistData.featured) {
                 return artistData.featured;
             } else {
-                // Convert all object values to string
                 const values = Object.values(artistData).filter(val => val && typeof val === 'string');
                 return values.length > 0 ? values.join(', ') : 'Various Artists';
             }
@@ -174,10 +330,9 @@ function PixoMusic() {
         return String(artistData);
     };
 
-    // Load trending songs with better error handling
+    // Load trending songs
     const loadTrendingSongs = async () => {
         try {
-            console.log('🎵 Starting to load trending songs...');
             setIsLoading(true);
             const response = await fetch(`${BACKEND_API}/music/trending`);
             
@@ -186,38 +341,33 @@ function PixoMusic() {
             }
             
             const data = await response.json();
-            console.log('🎵 Trending API response:', data);
             
             if (data.success && Array.isArray(data.songs)) {
-                // Process songs with safe artist extraction
                 const processedSongs = data.songs.map(song => ({
                     ...song,
                     primaryArtists: getArtistText(song.primaryArtists || song.artists)
                 }));
                 
-                console.log('✅ Setting trending songs:', processedSongs.length);
                 setTrendingSongs(processedSongs);
             } else {
-                console.warn('⚠️ Unexpected trending response format:', data);
                 setTrendingSongs([]);
             }
         } catch (err) {
             console.error('❌ Trending songs error:', err);
-            setError('Failed to load trending songs: ' + err.message);
+            setError('Failed to load trending songs');
             setTrendingSongs([]);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // Search for songs with better error handling
+    // Search for songs
     const searchSongs = async (query) => {
         if (!query?.trim()) {
             setError('Please enter a search query');
             return;
         }
         
-        console.log('🔍 Starting search for:', query);
         setIsLoading(true);
         setError('');
         setSearchResults([]);
@@ -230,12 +380,8 @@ function PixoMusic() {
             }
             
             const data = await response.json();
-            console.log('📦 Search API response:', data);
             
             if (data.success && Array.isArray(data.songs)) {
-                console.log('✅ Processing search results:', data.songs.length, 'songs');
-                
-                // Validate and clean song data with safe artist extraction
                 const validSongs = data.songs.filter(song => 
                     song && song.id && song.name
                 ).map(song => ({
@@ -252,12 +398,10 @@ function PixoMusic() {
                 setActiveTab('search');
                 
                 if (validSongs.length === 0) {
-                    setError('No valid songs found in search results');
-                } else {
-                    console.log('✅ Search results set successfully');
+                    setError('No songs found');
                 }
             } else {
-                throw new Error(data.error || 'Invalid response format from server');
+                throw new Error(data.error || 'Invalid response format');
             }
             
         } catch (err) {
@@ -269,26 +413,21 @@ function PixoMusic() {
         }
     };
 
-    // Play selected song with better error handling
+    // Play selected song
     const playSong = async (song, index = null) => {
         if (!song?.id) {
             setError('Invalid song data');
             return;
         }
 
-        console.log('🎵 Attempting to play song:', song.name);
-        
         try {
             setIsLoading(true);
             
-            // Use the downloadUrl directly from search results
             const audioUrl = song.downloadUrl;
             
             if (!audioUrl) {
                 throw new Error('This song is not available for streaming');
             }
-
-            console.log('🎵 Using audio URL:', audioUrl);
 
             // Stop current audio safely
             if (audioRef.current) {
@@ -303,7 +442,6 @@ function PixoMusic() {
             // Play the audio
             await audioRef.current.play();
             
-            // Create song data safely
             const fullSongData = {
                 id: song.id,
                 title: song.name || 'Unknown Title',
@@ -318,8 +456,6 @@ function PixoMusic() {
             setIsPlaying(true);
             setError('');
             
-            console.log('✅ Song started playing:', song.name);
-            
         } catch (err) {
             console.error('❌ Play error:', err);
             setError('Cannot play song: ' + err.message);
@@ -327,64 +463,6 @@ function PixoMusic() {
         } finally {
             setIsLoading(false);
         }
-    };
-
-    // Add song to playlist safely
-    const addToPlaylist = (song) => {
-        if (!song?.id) {
-            setError('Cannot add invalid song to playlist');
-            return;
-        }
-
-        const songToAdd = {
-            id: song.id,
-            title: song.name || 'Unknown Song',
-            artist: song.primaryArtists || 'Unknown Artist',
-            cover: song.image || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop',
-            duration: song.duration || '3:45',
-            audioUrl: song.downloadUrl
-        };
-        
-        setPlaylist(prev => {
-            const exists = prev.find(s => s.id === songToAdd.id);
-            if (exists) {
-                setError('Song already in playlist');
-                return prev;
-            }
-            return [...prev, songToAdd];
-        });
-    };
-
-    // Add all searched songs to playlist safely
-    const addAllToPlaylist = () => {
-        if (searchResults.length === 0) {
-            setError('No songs to add to playlist');
-            return;
-        }
-
-        const songsToAdd = searchResults
-            .filter(song => song?.id && song.downloadUrl)
-            .map(song => ({
-                id: song.id,
-                title: song.name || 'Unknown Song',
-                artist: song.primaryArtists || 'Unknown Artist',
-                cover: song.image || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop',
-                duration: song.duration || '3:45',
-                audioUrl: song.downloadUrl
-            }));
-        
-        setPlaylist(prev => {
-            const newSongs = songsToAdd.filter(song => 
-                !prev.find(existing => existing.id === song.id)
-            );
-            
-            if (newSongs.length === 0) {
-                setError('All songs are already in playlist');
-                return prev;
-            }
-            
-            return [...prev, ...newSongs];
-        });
     };
 
     // Format duration safely
@@ -520,25 +598,6 @@ function PixoMusic() {
         { name: "Bollywood", query: "Bollywood" }
     ];
 
-    // Cat Loading Animation Component
-    const CatLoadingAnimation = () => (
-        <div className="flex flex-col items-center justify-center py-12">
-            <div className="relative w-32 h-32 mb-8">
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="animate-bounce">
-                        <div className="text-6xl">🐱</div>
-                    </div>
-                </div>
-                <div className="absolute -top-4 left-8 animate-pulse text-2xl">🎵</div>
-                <div className="absolute -top-2 right-6 animate-pulse text-2xl delay-300">🎶</div>
-            </div>
-            <div className="text-center">
-                <p className="text-purple-200 text-lg mb-2">Loading awesome music...</p>
-                <p className="text-purple-300 text-sm">Our cat is fetching your tunes! 🎵</p>
-            </div>
-        </div>
-    );
-
     // Safe image renderer
     const SafeImage = ({ src, alt, className, fallback = 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=300&h=300&fit=crop' }) => {
         const [imgSrc, setImgSrc] = useState(src || fallback);
@@ -557,7 +616,7 @@ function PixoMusic() {
         );
     };
 
-    // Safe text renderer to prevent object rendering
+    // Safe text renderer
     const SafeText = ({ children, className = '' }) => {
         let text = children;
         
@@ -569,14 +628,14 @@ function PixoMusic() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-800 text-white p-4 sm:p-6">
+        <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 text-white p-4">
             <div className="max-w-7xl mx-auto">
                 {/* Header & Search */}
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 gap-4">
                     <div className="flex items-center gap-3">
                         <Music className="w-8 h-8 text-pink-400" />
                         <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                            Pixo Music 🎵
+                            Pixo Music
                         </h1>
                     </div>
                     
@@ -587,14 +646,14 @@ function PixoMusic() {
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search for songs..."
-                                className="w-full pl-10 pr-4 py-2 bg-purple-800/50 border border-purple-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent"
+                                placeholder="Search for songs, artists..."
+                                className="w-full pl-10 pr-4 py-3 bg-purple-800 border border-purple-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400"
                             />
                         </div>
                         <button 
                             type="submit"
                             disabled={isLoading}
-                            className="px-6 py-2 bg-pink-500 hover:bg-pink-400 disabled:bg-pink-700 rounded-lg transition flex items-center gap-2 justify-center"
+                            className="px-6 py-3 bg-pink-500 hover:bg-pink-400 disabled:bg-pink-700 rounded-lg transition flex items-center gap-2 justify-center"
                         >
                             {isLoading ? <Loader className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                             {isLoading ? 'Searching...' : 'Search'}
@@ -605,23 +664,29 @@ function PixoMusic() {
                 {/* Error Message */}
                 {error && (
                     <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded-lg text-red-200">
-                        {error}
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                            {error}
+                        </div>
                     </div>
                 )}
 
                 {/* User Info */}
                 {user && (
-                    <div className="mb-4 p-3 bg-purple-700/30 rounded-lg">
+                    <div className="mb-6 p-4 bg-purple-800 rounded-lg">
                         <p className="text-purple-200 text-sm">
-                            Welcome, <span className="font-semibold">{user.full_name}</span>! 
-                            {likedSongs.length > 0 && ` You have ${likedSongs.length} liked songs`}
+                            Welcome, <span className="font-semibold text-white">{user.full_name}</span>! 
+                            {likedSongs.length > 0 && ` ❤️ ${likedSongs.length} liked songs`}
+                            {userPlaylistSongs.length > 0 && ` 📋 ${userPlaylistSongs.length} in playlist`}
                         </p>
                     </div>
                 )}
 
                 {/* Quick Search Suggestions */}
                 <div className="mb-8">
-                    <h3 className="text-lg font-semibold mb-3 text-purple-200">Try these: 🎶</h3>
+                    <h3 className="text-lg font-semibold mb-3 text-purple-200">
+                        Try these popular searches:
+                    </h3>
                     <div className="flex flex-wrap gap-2">
                         {featuredSongs.map((song, index) => (
                             <button
@@ -641,39 +706,28 @@ function PixoMusic() {
 
                 {/* Tabs */}
                 <div className="flex gap-4 mb-6 border-b border-purple-600">
-                    <button
-                        onClick={() => setActiveTab('search')}
-                        className={`pb-2 px-4 transition ${
-                            activeTab === 'search' 
-                                ? 'border-b-2 border-pink-400 text-pink-400' 
-                                : 'text-purple-300 hover:text-purple-200'
-                        }`}
-                    >
-                        <Search className="w-4 h-4 inline mr-2" />
-                        Search Results
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('trending')}
-                        className={`pb-2 px-4 transition ${
-                            activeTab === 'trending' 
-                                ? 'border-b-2 border-pink-400 text-pink-400' 
-                                : 'text-purple-300 hover:text-purple-200'
-                        }`}
-                    >
-                        <TrendingUp className="w-4 h-4 inline mr-2" />
-                        Trending
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('liked')}
-                        className={`pb-2 px-4 transition ${
-                            activeTab === 'liked' 
-                                ? 'border-b-2 border-pink-400 text-pink-400' 
-                                : 'text-purple-300 hover:text-purple-200'
-                        }`}
-                    >
-                        <Heart className="w-4 h-4 inline mr-2" />
-                        Liked Songs
-                    </button>
+                    {[
+                        { id: 'search', icon: Search, label: 'Search Results' },
+                        { id: 'trending', icon: Music, label: 'Trending' },
+                        { id: 'liked', icon: Heart, label: 'Liked Songs' },
+                        { id: 'saved-playlist', icon: ListMusic, label: 'Saved Playlist' }
+                    ].map((tab) => {
+                        const Icon = tab.icon;
+                        return (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`pb-3 px-4 transition ${
+                                    activeTab === tab.id 
+                                        ? 'border-b-2 border-pink-400 text-pink-400' 
+                                        : 'text-purple-300 hover:text-purple-200'
+                                }`}
+                            >
+                                <Icon className="w-4 h-4 inline mr-2" />
+                                {tab.label}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -681,16 +735,16 @@ function PixoMusic() {
                     <div className="xl:col-span-2 space-y-6">
                         {/* Now Playing */}
                         {currentSong && (
-                            <div className="bg-purple-800/50 rounded-2xl p-6 backdrop-blur-sm border border-purple-600">
+                            <div className="bg-purple-800 rounded-2xl p-6 border border-purple-600">
                                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                                     <Music className="w-5 h-5 text-pink-400" />
-                                    Now Playing 🎵
+                                    Now Playing
                                 </h2>
                                 <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 mb-6">
                                     <SafeImage 
                                         src={currentSong.cover} 
                                         alt="Album Cover" 
-                                        className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl shadow-lg object-cover"
+                                        className="w-24 h-24 sm:w-32 sm:h-32 rounded-xl object-cover"
                                     />
                                     <div className="text-center sm:text-left flex-1">
                                         <h3 className="text-xl sm:text-2xl font-bold mb-2">
@@ -699,7 +753,10 @@ function PixoMusic() {
                                         <p className="text-purple-200 mb-3">
                                             <SafeText>{currentSong.artist}</SafeText>
                                         </p>
-                                        <p className="text-purple-300 text-sm mb-4">{currentSong.duration}</p>
+                                        <p className="text-purple-300 text-sm mb-4 flex items-center gap-1">
+                                            <Clock className="w-3 h-3" />
+                                            {currentSong.duration}
+                                        </p>
                                         {currentSong.id && (
                                             <button 
                                                 onClick={() => toggleLikeSong({
@@ -756,7 +813,10 @@ function PixoMusic() {
                                         disabled={!currentSong}
                                         className="p-3 sm:p-4 rounded-full bg-pink-500 hover:bg-pink-400 disabled:bg-pink-700 transition"
                                     >
-                                        {isPlaying ? <Pause className="w-6 h-6 sm:w-8 sm:h-8" /> : <Play className="w-6 h-6 sm:w-8 sm:h-8" />}
+                                        {isPlaying ? 
+                                            <Pause className="w-6 h-6 sm:w-8 sm:h-8" /> : 
+                                            <Play className="w-6 h-6 sm:w-8 sm:h-8" />
+                                        }
                                     </button>
                                     <button 
                                         onClick={nextSong}
@@ -766,35 +826,44 @@ function PixoMusic() {
                                         <SkipForward className="w-5 h-5 sm:w-6 sm:h-6" />
                                     </button>
                                 </div>
+
+                                {/* Volume Control */}
+                                <div className="flex items-center gap-3 mt-4 justify-center">
+                                    <Volume2 className="w-4 h-4 text-purple-300" />
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        value={volume}
+                                        onChange={handleVolumeChange}
+                                        className="w-32 h-1 bg-purple-600 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-300"
+                                    />
+                                </div>
                             </div>
                         )}
 
                         {/* Content Area */}
-                        <div className="bg-purple-800/50 rounded-2xl p-6 backdrop-blur-sm border border-purple-600">
-                            {/* Loading Animation */}
-                            {isLoading && <CatLoadingAnimation />}
+                        <div className="bg-purple-800 rounded-2xl p-6 border border-purple-600">
+                            {/* Loading State */}
+                            {isLoading && (
+                                <div className="flex justify-center items-center py-12">
+                                    <Loader className="w-8 h-8 animate-spin text-pink-400" />
+                                    <span className="ml-3 text-purple-200">Loading...</span>
+                                </div>
+                            )}
 
                             {/* Search Results */}
                             {!isLoading && activeTab === 'search' && searchResults.length > 0 && (
                                 <>
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h3 className="text-xl font-bold flex items-center gap-2">
-                                            <Search className="w-5 h-5 text-pink-400" />
-                                            Search Results ({searchResults.length})
-                                        </h3>
-                                        <button 
-                                            onClick={addAllToPlaylist}
-                                            className="px-3 py-1 bg-green-500 hover:bg-green-400 rounded-lg transition text-sm flex items-center gap-2"
-                                        >
-                                            <Shuffle className="w-3 h-3" />
-                                            Add All
-                                        </button>
-                                    </div>
+                                    <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                                        <Search className="w-5 h-5 text-pink-400" />
+                                        Search Results ({searchResults.length})
+                                    </h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {searchResults.map((song, index) => (
                                             <div 
                                                 key={`${song.id}-${index}`}
-                                                className="bg-purple-700/30 rounded-xl p-4 hover:bg-purple-700/50 transition border border-purple-600/50"
+                                                className="bg-purple-700 rounded-lg p-4 hover:bg-purple-600 transition border border-purple-600"
                                             >
                                                 <div className="flex items-center space-x-3 mb-3">
                                                     <SafeImage 
@@ -809,7 +878,10 @@ function PixoMusic() {
                                                         <p className="text-purple-200 text-xs truncate">
                                                             <SafeText>{song.primaryArtists}</SafeText>
                                                         </p>
-                                                        <p className="text-purple-300 text-xs">{song.duration}</p>
+                                                        <p className="text-purple-300 text-xs flex items-center gap-1">
+                                                            <Clock className="w-2 h-2" />
+                                                            {song.duration}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">
@@ -823,10 +895,11 @@ function PixoMusic() {
                                                     </button>
                                                     <button 
                                                         onClick={() => addToPlaylist(song)}
-                                                        className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition text-xs flex items-center gap-1 justify-center"
+                                                        disabled={playlistSongIds.includes(song.id)}
+                                                        className="px-3 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-700 disabled:opacity-50 rounded-lg transition text-xs flex items-center gap-1 justify-center"
                                                     >
-                                                        <ListMusic className="w-3 h-3" />
-                                                        Add
+                                                        <Plus className="w-3 h-3" />
+                                                        {playlistSongIds.includes(song.id) ? 'Added' : 'Add'}
                                                     </button>
                                                     <button 
                                                         onClick={(e) => {
@@ -854,15 +927,15 @@ function PixoMusic() {
                             {/* Trending Songs */}
                             {!isLoading && activeTab === 'trending' && trendingSongs.length > 0 && (
                                 <>
-                                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                        <TrendingUp className="w-5 h-5 text-pink-400" />
+                                    <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                                        <Music className="w-5 h-5 text-pink-400" />
                                         Trending Now ({trendingSongs.length})
                                     </h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {trendingSongs.map((song, index) => (
                                             <div 
                                                 key={`${song.id}-${index}`}
-                                                className="bg-purple-700/30 rounded-xl p-4 hover:bg-purple-700/50 transition border border-purple-600/50"
+                                                className="bg-purple-700 rounded-lg p-4 hover:bg-purple-600 transition border border-purple-600"
                                             >
                                                 <div className="flex items-center space-x-3 mb-3">
                                                     <SafeImage 
@@ -877,7 +950,10 @@ function PixoMusic() {
                                                         <p className="text-purple-200 text-xs truncate">
                                                             <SafeText>{song.primaryArtists}</SafeText>
                                                         </p>
-                                                        <p className="text-purple-300 text-xs">{song.duration}</p>
+                                                        <p className="text-purple-300 text-xs flex items-center gap-1">
+                                                            <Clock className="w-2 h-2" />
+                                                            {song.duration}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 <div className="flex gap-2">
@@ -891,10 +967,11 @@ function PixoMusic() {
                                                     </button>
                                                     <button 
                                                         onClick={() => addToPlaylist(song)}
-                                                        className="px-3 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition text-xs flex items-center gap-1 justify-center"
+                                                        disabled={playlistSongIds.includes(song.id)}
+                                                        className="px-3 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-700 disabled:opacity-50 rounded-lg transition text-xs flex items-center gap-1 justify-center"
                                                     >
-                                                        <ListMusic className="w-3 h-3" />
-                                                        Add
+                                                        <Plus className="w-3 h-3" />
+                                                        {playlistSongIds.includes(song.id) ? 'Added' : 'Add'}
                                                     </button>
                                                     <button 
                                                         onClick={(e) => {
@@ -922,13 +999,12 @@ function PixoMusic() {
                             {/* Liked Songs */}
                             {!isLoading && activeTab === 'liked' && (
                                 <>
-                                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                    <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
                                         <Heart className="w-5 h-5 text-red-400" />
                                         Your Liked Songs ({userLikedSongs.length})
                                     </h3>
                                     {userLikedSongs.length === 0 ? (
                                         <div className="text-center py-8 text-purple-300">
-                                            <div className="text-4xl mb-4">💔</div>
                                             <p>No liked songs yet</p>
                                             <p className="text-sm mt-2">
                                                 {user ? 'Start liking songs to see them here!' : 'Please login to like songs'}
@@ -939,7 +1015,7 @@ function PixoMusic() {
                                             {userLikedSongs.map((song, index) => (
                                                 <div 
                                                     key={`${song.songId}-${index}`}
-                                                    className="bg-purple-700/30 rounded-xl p-4 hover:bg-purple-700/50 transition border border-purple-600/50"
+                                                    className="bg-purple-700 rounded-lg p-4 hover:bg-purple-600 transition border border-purple-600"
                                                 >
                                                     <div className="flex items-center space-x-3 mb-3">
                                                         <SafeImage 
@@ -954,9 +1030,9 @@ function PixoMusic() {
                                                             <p className="text-purple-200 text-xs truncate">
                                                                 <SafeText>{song.primaryArtists}</SafeText>
                                                             </p>
-                                                            <p className="text-purple-300 text-xs">{song.duration}</p>
-                                                            <p className="text-purple-400 text-xs">
-                                                                Liked on {new Date(song.likedAt).toLocaleDateString()}
+                                                            <p className="text-purple-300 text-xs flex items-center gap-1">
+                                                                <Clock className="w-2 h-2" />
+                                                                {song.duration}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -1007,10 +1083,78 @@ function PixoMusic() {
                                 </>
                             )}
 
+                            {/* Saved Playlist */}
+                            {!isLoading && activeTab === 'saved-playlist' && (
+                                <>
+                                    <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                                        <ListMusic className="w-5 h-5 text-green-400" />
+                                        Your Saved Playlist ({userPlaylistSongs.length})
+                                    </h3>
+                                    {userPlaylistSongs.length === 0 ? (
+                                        <div className="text-center py-8 text-purple-300">
+                                            <p>No songs in your saved playlist</p>
+                                            <p className="text-sm mt-2">Add songs to your playlist to see them here!</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {userPlaylistSongs.map((song, index) => (
+                                                <div 
+                                                    key={`${song.songId}-${index}`}
+                                                    className="bg-purple-700 rounded-lg p-4 hover:bg-purple-600 transition border border-purple-600"
+                                                >
+                                                    <div className="flex items-center space-x-3 mb-3">
+                                                        <SafeImage 
+                                                            src={song.image} 
+                                                            alt={song.name}
+                                                            className="w-12 h-12 rounded-lg object-cover"
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <h4 className="font-medium truncate text-sm">
+                                                                <SafeText>{song.name}</SafeText>
+                                                            </h4>
+                                                            <p className="text-purple-200 text-xs truncate">
+                                                                <SafeText>{song.primaryArtists}</SafeText>
+                                                            </p>
+                                                            <p className="text-purple-300 text-xs flex items-center gap-1">
+                                                                <Clock className="w-2 h-2" />
+                                                                {song.duration}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button 
+                                                            onClick={() => playSong({
+                                                                id: song.songId,
+                                                                name: song.name,
+                                                                primaryArtists: song.primaryArtists,
+                                                                image: song.image,
+                                                                duration: song.duration,
+                                                                downloadUrl: song.downloadUrl
+                                                            })}
+                                                            disabled={isLoading || !song.downloadUrl}
+                                                            className="flex-1 px-3 py-2 bg-pink-500 hover:bg-pink-400 disabled:bg-pink-700 rounded-lg transition text-xs flex items-center gap-1 justify-center"
+                                                        >
+                                                            <Play className="w-3 h-3" />
+                                                            Play
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => removeFromPlaylist(song.songId)}
+                                                            className="px-3 py-2 bg-red-500 hover:bg-red-400 rounded-lg transition text-xs flex items-center gap-1 justify-center"
+                                                        >
+                                                            <Trash2 className="w-3 h-3" />
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
                             {/* No Results */}
                             {!isLoading && activeTab === 'search' && searchResults.length === 0 && searchQuery && (
                                 <div className="text-center py-8 text-purple-300">
-                                    <div className="text-4xl mb-4">😿</div>
                                     <p>No songs found for "{searchQuery}"</p>
                                     <p className="text-sm mt-2">Try searching for something else!</p>
                                 </div>
@@ -1018,21 +1162,20 @@ function PixoMusic() {
                         </div>
                     </div>
 
-                    {/* Playlist */}
-                    <div className="bg-purple-800/50 rounded-2xl p-6 backdrop-blur-sm border border-purple-600">
-                        <div className="flex justify-between items-center mb-4">
+                    {/* Playlist Sidebar */}
+                    <div className="bg-purple-800 rounded-2xl p-6 border border-purple-600 h-fit">
+                        <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold flex items-center gap-2">
                                 <ListMusic className="w-5 h-5 text-pink-400" />
-                                Your Playlist
+                                Current Playlist
                             </h3>
-                            <span className="text-sm text-purple-200 bg-purple-700 px-2 py-1 rounded">
+                            <span className="text-sm text-purple-200 bg-purple-700 px-3 py-1 rounded">
                                 {playlist.length} songs
                             </span>
                         </div>
                         
                         {playlist.length === 0 ? (
                             <div className="text-center py-8 text-purple-300">
-                                <div className="text-4xl mb-4">🎵</div>
                                 <p>Your playlist is empty</p>
                                 <p className="text-sm mt-2">Search for songs and add them to your playlist!</p>
                             </div>
@@ -1045,22 +1188,17 @@ function PixoMusic() {
                                             setCurrentSongIndex(index);
                                             playSong(song, index);
                                         }}
-                                        className={`flex items-center space-x-3 p-3 rounded-lg hover:bg-purple-700/50 transition cursor-pointer border ${
+                                        className={`flex items-center space-x-3 p-3 rounded-lg hover:bg-purple-700 transition cursor-pointer border ${
                                             index === currentSongIndex && currentSong 
-                                                ? 'bg-purple-700/70 border-pink-400' 
-                                                : 'border-purple-600/50'
+                                                ? 'bg-purple-700 border-pink-400' 
+                                                : 'border-purple-600'
                                         }`}
                                     >
-                                        <div className="relative">
-                                            <SafeImage 
-                                                src={song.cover} 
-                                                alt={song.title}
-                                                className="w-10 h-10 rounded object-cover"
-                                            />
-                                            {index === currentSongIndex && currentSong && isPlaying && (
-                                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-pink-500 rounded-full animate-pulse"></div>
-                                            )}
-                                        </div>
+                                        <SafeImage 
+                                            src={song.cover} 
+                                            alt={song.title}
+                                            className="w-10 h-10 rounded object-cover"
+                                        />
                                         <div className="flex-1 min-w-0">
                                             <h4 className="font-medium text-sm truncate">
                                                 <SafeText>{song.title}</SafeText>
@@ -1069,7 +1207,9 @@ function PixoMusic() {
                                                 <SafeText>{song.artist}</SafeText>
                                             </p>
                                         </div>
-                                        <span className="text-purple-200 text-xs">{song.duration}</span>
+                                        <span className="text-purple-200 text-xs">
+                                            {song.duration}
+                                        </span>
                                     </div>
                                 ))}
                             </div>
