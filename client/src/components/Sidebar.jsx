@@ -103,7 +103,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         { icon: <GamepadIcon className='w-5 h-5'/>, name: "Pixo Games", path: "/pixo-games", onClick: handlePixoGames, },
         { icon: <Film className='w-5 h-5'/>, name: "Pixo Music", path: "/pixo-music", onClick: handlePixoMovies, },
         { isSeparator: true },
-        { icon: <User className='w-5 h-5'/>, name: "Profile", onClick: handleViewProfile, path: '/profile' } // Changed path to '/profile'
+        { icon: <User className='w-5 h-5'/>, name: "My Profile", onClick: handleViewProfile, path: '/profile' } // Changed path to '/profile'
     ];
 
     // --- FIX: Return null early if the welcome screen is active ---
@@ -264,7 +264,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 <div className='w-full'>
                     <div onClick={() => navigate('/')} className='flex items-center gap-3 p-4 border-b border-gray-100 cursor-pointer'>
                         <img src={assets.logo} className='w-10' alt="Pixo Logo" />
-                        <h1 className='text-xl font-bold text-indigo-700'>Pixo</h1>
+                        <h1 className='text-xl font-bold text-green-700'>Pixo</h1>
                     </div>
                     
                     <div className='px-4 pt-4 space-y-1.5'>
@@ -281,22 +281,22 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                                     onClick={() => handleNavigation(item.path, item.onClick)}
                                     className={`flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all duration-200 group
                                                 ${isActive 
-                                                    ? 'bg-indigo-50 text-indigo-700 font-bold shadow-sm'
-                                                    : 'hover:bg-gray-100 text-gray-700 hover:text-indigo-600 font-medium'
+                                                    ? 'bg-green-50 text-green-700 font-bold shadow-sm'
+                                                    : 'hover:bg-gray-100 text-gray-700 hover:text-green-600 font-medium'
                                                 } 
                                                 active:scale-[0.98]`}
                                 >
-                                    <div className={`${isActive ? 'text-indigo-600' : 'text-gray-500 group-hover:text-indigo-500'} transition-colors`}>
+                                    <div className={`${isActive ? 'text-green-600' : 'text-gray-500 group-hover:text-green-500'} transition-colors`}>
                                         {item.icon}
                                     </div>
-                                    <p className={`transition-colors ${isActive ? 'text-indigo-800 font-bold' : 'text-gray-700 group-hover:text-indigo-700'}`}>{item.name}</p>
+                                    <p className={`transition-colors ${isActive ? 'text-green-800 font-bold' : 'text-gray-700 group-hover:text-green-700'}`}>{item.name}</p>
                                 </div>
                             )
                         })}
                     </div>
 
                     <div className='mt-6 px-4'>
-                        <Link to='/create-post' className='flex items-center justify-center gap-3 w-full py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-700 hover:to-purple-800 active:scale-[0.98] transition-all duration-200 text-white font-bold shadow-lg hover:shadow-xl'>
+                        <Link to='/create-post' className='flex items-center justify-center gap-3 w-full py-3 rounded-xl bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 active:scale-[0.98] transition-all duration-200 text-white font-bold shadow-lg hover:shadow-xl'>
                             <CirclePlus className='w-5 h-5'/>
                             Create New Post
                         </Link>
