@@ -18,4 +18,4 @@ const shareSchema = new mongoose.Schema({
 // Prevent duplicate shares
 shareSchema.index({ user: 1, post: 1 }, { unique: true });
 
-export default mongoose.model('Share', shareSchema);
+export default mongoose.model('Share', shareSchema); 
