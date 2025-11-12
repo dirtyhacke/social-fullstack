@@ -172,7 +172,7 @@ const realTranslate = async (text, targetLang) => {
     }
 };
 
-// 🆕 Enhanced Custom Hooks
+// Enhanced Custom Hooks
 const useChatSounds = () => {
     const [soundsEnabled, setSoundsEnabled] = useState(() => {
         return localStorage.getItem('chatSoundsEnabled') !== 'false';
@@ -202,7 +202,7 @@ const useChatSounds = () => {
     return { playSound, soundsEnabled, toggleSounds };
 };
 
-// 🆕 Enhanced Swipe Hook with Visual Feedback
+// Enhanced Swipe Hook with Visual Feedback
 const useSwipe = (onSwipeLeft, onSwipeRight) => {
     const [touchStart, setTouchStart] = useState(null);
     const [touchEnd, setTouchEnd] = useState(null);
@@ -268,7 +268,7 @@ const useSwipe = (onSwipeLeft, onSwipeRight) => {
     };
 };
 
-// 🆕 Fixed Long Press Hook with Better State Management
+// Fixed Long Press Hook with Better State Management
 const useLongPress = (onLongPress, onClick, { shouldPreventDefault = true, delay = 600 } = {}) => {
     const [longPressTriggered, setLongPressTriggered] = useState(false);
     const [isPressing, setIsPressing] = useState(false);
@@ -328,7 +328,7 @@ const isTouchEvent = (event) => {
     return "touches" in event;
 };
 
-// 🆕 FIXED WebRTC Hook with Proper Two-Way Communication
+// Fixed WebRTC Hook with Proper Two-Way Communication
 const useWebRTC = (userId, currentUser) => {
     const [localStream, setLocalStream] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
@@ -647,7 +647,7 @@ const ChatBox = () => {
     });
     const [isLoading, setIsLoading] = useState(false);
     
-    // 🆕 Fixed State Management for Message Actions
+    // Fixed State Management for Message Actions
     const [showMessageActions, setShowMessageActions] = useState(null);
     const [selectedMessage, setSelectedMessage] = useState(null);
     const [showClearChatConfirm, setShowClearChatConfirm] = useState(false);
@@ -655,7 +655,7 @@ const ChatBox = () => {
     const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
     const [longPressActive, setLongPressActive] = useState(false);
 
-    // 🆕 FIXED: Enhanced Call States - BOTH USERS WILL SEE THE CALL
+    // FIXED: Enhanced Call States - BOTH USERS WILL SEE THE CALL
     const { 
         incomingCall, 
         activeCall, 
@@ -663,13 +663,13 @@ const ChatBox = () => {
         setActiveCall
     } = callContext || {};
 
-    // 🆕 Local call states for UI within this chat
+    // Local call states for UI within this chat
     const [isCalling, setIsCalling] = useState(false);
     const [localCallStatus, setLocalCallStatus] = useState('idle');
     const [callDuration, setCallDuration] = useState(0);
     const [callStartTime, setCallStartTime] = useState(null);
 
-    // 🆕 FIXED WebRTC Integration with proper parameters
+    // FIXED WebRTC Integration with proper parameters
     const {
         localStream,
         remoteStream,
@@ -710,7 +710,7 @@ const ChatBox = () => {
     const { playSound, soundsEnabled, toggleSounds } = useChatSounds();
     const currentTheme = CHAT_THEMES.find(theme => theme.id === selectedTheme) || CHAT_THEMES[0];
 
-    // 🆕 FIXED: Enhanced Call Timer
+    // FIXED: Enhanced Call Timer
     useEffect(() => {
         if (activeCall && activeCall.status === 'connected') {
             setCallStartTime(new Date());
@@ -735,7 +735,7 @@ const ChatBox = () => {
         };
     }, [activeCall]);
 
-    // 🆕 FIXED: Initialize media when call starts with proper cleanup
+    // FIXED: Initialize media when call starts with proper cleanup
     useEffect(() => {
         let mounted = true;
 
@@ -763,23 +763,21 @@ const ChatBox = () => {
         };
     }, [activeCall, initializeMedia, createPeerConnection, stopMedia]);
 
-    // 🆕 FIXED: Handle incoming calls and automatically show call interface for BOTH users
+    // FIXED: Handle incoming calls and automatically show call interface for BOTH users
     useEffect(() => {
         if (incomingCall && incomingCall.fromUserId === userId) {
             console.log('📞 Incoming call detected for this chat:', incomingCall);
-            // The incoming call modal will automatically show via ChatIncomingCallModal component
         }
     }, [incomingCall, userId]);
 
-    // 🆕 FIXED: Handle active calls and show interface for BOTH users
+    // FIXED: Handle active calls and show interface for BOTH users
     useEffect(() => {
         if (activeCall) {
             console.log('📞 Active call detected:', activeCall);
-            // The active call interface will automatically show via ActiveCallInterface component
         }
     }, [activeCall]);
 
-    // 🆕 Fixed Format Last Seen with Date
+    // Fixed Format Last Seen with Date
     const formatLastSeen = (lastSeenDate) => {
         if (!lastSeenDate) return 'Never';
         
@@ -803,7 +801,7 @@ const ChatBox = () => {
         });
     };
 
-    // 🆕 Fixed Clear Chat Function
+    // Fixed Clear Chat Function
     const clearChat = async () => {
         try {
             setIsDeleting(true);
@@ -834,7 +832,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 Fixed Delete Single Message Function
+    // Fixed Delete Single Message Function
     const deleteMessage = async (messageId) => {
         if (!messageId) {
             toast.error('Invalid message');
@@ -874,7 +872,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 FIXED: Enhanced Handle Long Press on Message
+    // FIXED: Enhanced Handle Long Press on Message
     const handleLongPress = (message, event) => {
         if (!message || !message._id) return;
         
@@ -889,7 +887,7 @@ const ChatBox = () => {
         playSound('action');
     };
 
-    // 🆕 FIXED: Handle Click on Message (for normal click)
+    // FIXED: Handle Click on Message (for normal click)
     const handleMessageClick = (message, event) => {
         if (longPressActive) {
             setLongPressActive(false);
@@ -899,7 +897,7 @@ const ChatBox = () => {
         console.log('Message clicked:', message);
     };
 
-    // 🆕 FIXED: Handle Swipe to Reply
+    // FIXED: Handle Swipe to Reply
     const handleSwipeToReply = (message) => {
         if (!message) return;
         handleReply(message);
@@ -947,7 +945,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 FIXED: Close message actions when clicking outside
+    // FIXED: Close message actions when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (messageActionsRef.current && !messageActionsRef.current.contains(event.target)) {
@@ -1027,7 +1025,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 FIXED: Enhanced sendVoiceMessage function
+    // FIXED: Enhanced sendVoiceMessage function
     const sendVoiceMessage = async (audioBlob) => {
         try {
             const token = await getToken();
@@ -1069,7 +1067,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 FIXED: Enhanced Typing Indicator
+    // FIXED: Enhanced Typing Indicator
     const handleTyping = useCallback(() => {
         // Clear existing timeout
         if (typingTimeoutRef.current) {
@@ -1099,7 +1097,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 FIXED: Reply/Mention Functionality
+    // FIXED: Reply/Mention Functionality
     const handleReply = (message) => {
         if (!message) return;
         setReplyingTo(message);
@@ -1111,7 +1109,7 @@ const ChatBox = () => {
         setReplyingTo(null);
     };
 
-    // 🆕 FIXED: Enhanced Call Functions with WebRTC - BOTH USERS WILL SEE THE CALL
+    // FIXED: Enhanced Call Functions with WebRTC - BOTH USERS WILL SEE THE CALL
     const initiateCall = async (type) => {
         if (!isUserOnline) {
             toast.error('User is offline. Cannot start call.');
@@ -1140,7 +1138,7 @@ const ChatBox = () => {
                 });
 
                 if (response.data.success) {
-                    // 🆕 FIXED: Set active call for BOTH USERS
+                    // FIXED: Set active call for BOTH USERS
                     if (setActiveCall) {
                         setActiveCall({
                             callId: response.data.callId,
@@ -1151,7 +1149,7 @@ const ChatBox = () => {
                             status: 'calling',
                             startedAt: new Date().toISOString(),
                             isInitiator: true,
-                            // 🆕 ADDED: Make sure both users can see this call
+                            // ADDED: Make sure both users can see this call
                             fromUserId: currentUser?.id,
                             fromUserName: currentUser?.fullName || currentUser?.username,
                             fromUserAvatar: currentUser?.imageUrl
@@ -1189,14 +1187,14 @@ const ChatBox = () => {
                 });
 
                 if (response.data.success) {
-                    // 🆕 FIXED: Move call from incoming to active - BOTH USERS SEE THE CALL
+                    // FIXED: Move call from incoming to active - BOTH USERS SEE THE CALL
                     if (setActiveCall && setIncomingCall) {
                         setActiveCall({
                             ...incomingCall,
                             status: 'connected',
                             connectedAt: new Date().toISOString(),
                             isInitiator: false,
-                            // 🆕 ADDED: Ensure proper user identification
+                            // ADDED: Ensure proper user identification
                             toUserId: currentUser?.id,
                             toUserName: currentUser?.fullName || currentUser?.username,
                             toUserAvatar: currentUser?.imageUrl
@@ -1274,7 +1272,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 Enhanced Call Controls with WebRTC
+    // Enhanced Call Controls with WebRTC
     const toggleMute = () => {
         toggleMicrophone();
         toast.info(isMicOn ? 'Microphone muted' : 'Microphone unmuted');
@@ -1347,7 +1345,7 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 FIXED: Enhanced SSE Setup with proper call synchronization
+    // FIXED: Enhanced SSE Setup with proper call synchronization
     const setupSSE = useCallback(async () => {
         if (!currentUser?.id) return;
 
@@ -1436,7 +1434,7 @@ const ChatBox = () => {
                             if (isCalling) {
                                 setLocalCallStatus('connected');
                                 setIsCalling(false);
-                                // 🆕 FIXED: Set active call for BOTH users when call is accepted
+                                // FIXED: Set active call for BOTH users when call is accepted
                                 if (setActiveCall) {
                                     setActiveCall(prev => ({
                                         ...prev,
@@ -1469,7 +1467,7 @@ const ChatBox = () => {
                             }
                             break;
 
-                        // 🆕 FIXED: Handle call connected event for BOTH users
+                        // FIXED: Handle call connected event for BOTH users
                         case 'call_connected':
                             console.log('🔗 Call connected via SSE:', data);
                             if (setActiveCall && data.callId === activeCall?.callId) {
@@ -1516,7 +1514,42 @@ const ChatBox = () => {
         }
     };
 
-    // 🆕 FIXED: Enhanced sendMessage function with proper image handling
+    // 🆕 FIXED: Enhanced image change handler with better error handling
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                toast.error('Please select a valid image file (JPEG, PNG, GIF, etc.)');
+                return;
+            }
+
+            // Validate file size (max 5MB)
+            const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+            if (file.size > maxSize) {
+                toast.error('Image size should be less than 5MB');
+                return;
+            }
+
+            console.log('✅ Image selected:', file.name, file.type, file.size);
+            
+            // 🆕 FIXED: Create a new File object with proper metadata
+            const imageFile = new File([file], file.name, {
+                type: file.type,
+                lastModified: file.lastModified
+            });
+            
+            setImage(imageFile);
+            toast.success('Image added - click send to share');
+            
+            // Auto-focus input after image selection
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 100);
+        }
+    };
+
+    // 🆕 FIXED: Enhanced sendMessage function with better FormData handling
     const sendMessage = async () => {
         try {
             if (!text.trim() && !image) {
@@ -1539,9 +1572,9 @@ const ChatBox = () => {
             
             if (image) {
                 if (image instanceof File) {
-                    // 🆕 FIXED: Proper image file handling
                     console.log('🖼️ Sending image:', image.name, image.type, image.size);
-                    formData.append('image', image);
+                    // 🆕 FIXED: Append the file with proper field name
+                    formData.append('image', image, image.name);
                 } else {
                     toast.error('Invalid image file');
                     return;
@@ -1552,12 +1585,19 @@ const ChatBox = () => {
                 formData.append('reply_to', replyingTo._id);
             }
 
+            // 🆕 FIXED: Log FormData contents for debugging
+            console.log('📤 FormData contents:');
+            for (let [key, value] of formData.entries()) {
+                console.log(`${key}:`, value);
+            }
+
             setShowEmojiPicker(false);
             setIsLoading(true);
 
             const { data } = await api.post('/api/messages/send', formData, {
                 headers: { 
                     Authorization: `Bearer ${token}`,
+                    'Content-Type': 'multipart/form-data', // 🆕 ADDED: Explicit content type
                 }
             });
 
@@ -1575,7 +1615,14 @@ const ChatBox = () => {
             }
         } catch (error) {
             console.error('❌ Error sending message:', error);
-            toast.error(error.response?.data?.message || error.message || 'Failed to send message');
+            // 🆕 FIXED: Better error handling
+            if (error.response?.status === 413) {
+                toast.error('Image file too large. Please select a smaller image.');
+            } else if (error.response?.data?.message) {
+                toast.error(error.response.data.message);
+            } else {
+                toast.error(error.message || 'Failed to send message');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -1744,35 +1791,7 @@ const ChatBox = () => {
           .catch(error => console.error("Error fetching stickers:", error));
     }, []);
 
-    // 🆕 FIXED: Enhanced image change handler
-    const handleImageChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            // Validate file type
-            if (!file.type.startsWith('image/')) {
-                toast.error('Please select a valid image file (JPEG, PNG, GIF, etc.)');
-                return;
-            }
-
-            // Validate file size (max 5MB)
-            const maxSize = 5 * 1024 * 1024; // 5MB in bytes
-            if (file.size > maxSize) {
-                toast.error('Image size should be less than 5MB');
-                return;
-            }
-
-            console.log('✅ Image selected:', file.name, file.type, file.size);
-            setImage(file);
-            toast.success('Image added - click send to share');
-            
-            // Auto-focus input after image selection
-            setTimeout(() => {
-                inputRef.current?.focus();
-            }, 100);
-        }
-    };
-
-    // 🆕 Settings Dropdown Component
+    // Settings Dropdown Component
     const SettingsDropdown = () => (
         <div 
             ref={settingsRef}
@@ -1845,7 +1864,7 @@ const ChatBox = () => {
         </div>
     );
 
-    // 🆕 FIXED: Message Actions Component
+    // FIXED: Message Actions Component
     const MessageActions = ({ message, position }) => {
         const isOwnMessage = message.from_user_id?._id === currentUser?.id;
 
@@ -1890,7 +1909,7 @@ const ChatBox = () => {
         );
     };
 
-    // 🆕 Clear Chat Confirmation Modal
+    // Clear Chat Confirmation Modal
     const ClearChatConfirmation = () => (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
@@ -1936,7 +1955,7 @@ const ChatBox = () => {
         </div>
     );
 
-    // 🆕 FIXED: Incoming Call Modal for this specific chat - NOW SHOWS FOR RECEIVER
+    // FIXED: Incoming Call Modal for this specific chat - NOW SHOWS FOR RECEIVER
     const ChatIncomingCallModal = () => {
         // Only show if the incoming call is for this chat user
         const isCallForThisChat = incomingCall && incomingCall.fromUserId === userId;
@@ -1984,9 +2003,9 @@ const ChatBox = () => {
         );
     };
 
-    // 🆕 FIXED: Enhanced Active Call Interface with REAL WebRTC - NOW SHOWS FOR BOTH USERS
+    // FIXED: Enhanced Active Call Interface with REAL WebRTC - NOW SHOWS FOR BOTH USERS
     const ActiveCallInterface = () => {
-        // 🆕 FIXED: Show active call interface for BOTH users involved in the call
+        // FIXED: Show active call interface for BOTH users involved in the call
         const isCallWithThisUser = activeCall && 
             (activeCall.toUserId === userId || activeCall.fromUserId === userId || 
              activeCall.toUserId === currentUser?.id || activeCall.fromUserId === currentUser?.id);
@@ -1999,7 +2018,7 @@ const ChatBox = () => {
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         };
 
-        // 🆕 Determine which user is which in the call
+        // Determine which user is which in the call
         const isInitiator = activeCall.isInitiator;
         const otherUserName = isInitiator ? activeCall.toUserName : activeCall.fromUserName;
         const otherUserAvatar = isInitiator ? activeCall.toUserAvatar : activeCall.fromUserAvatar;
@@ -2115,7 +2134,7 @@ const ChatBox = () => {
                     )}
                 </div>
 
-                {/* 🆕 Enhanced Call Controls with REAL functionality */}
+                {/* Enhanced Call Controls with REAL functionality */}
                 <div className="absolute bottom-8 flex flex-col items-center gap-6">
                     {/* Primary Call Controls */}
                     <div className="flex gap-6">
@@ -2196,7 +2215,7 @@ const ChatBox = () => {
                             <div className={`flex items-center gap-2 text-sm ${isCameraOn ? 'text-green-400' : 'text-red-400'}`}>
                                 <div className={`w-2 h-2 rounded-full ${isCameraOn ? 'bg-green-400' : 'bg-red-400'}`}></div>
                                 Camera {isCameraOn ? 'On' : 'Off'}
-                            </div>
+                        </div>
                         )}
                         <div className="flex items-center gap-2 text-sm text-blue-400">
                             <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
@@ -2208,20 +2227,20 @@ const ChatBox = () => {
         );
     };
 
-    // 🆕 FIXED: Enhanced Message Bubble Component
+    // FIXED: Enhanced Message Bubble Component
     const MessageBubble = ({ message, isSent }) => {
         const [translatedText, setTranslatedText] = useState(null);
         const [isTranslating, setIsTranslating] = useState(false);
         const [viewMode, setViewMode] = useState('original');
         const [showActions, setShowActions] = useState(false);
 
-        // 🆕 FIXED: Enhanced swipe for reply
+        // FIXED: Enhanced swipe for reply
         const swipeHandlers = useSwipe(
             () => !isSent && handleSwipeToReply(message),
             () => {} // Right swipe can be used for other actions
         );
 
-        // 🆕 FIXED: Enhanced long press with better state management
+        // FIXED: Enhanced long press with better state management
         const longPressHandlers = useLongPress(
             (event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -2297,7 +2316,7 @@ const ChatBox = () => {
                 <div className='max-w-[85%] md:max-w-[70%]'>
                     <div className={`flex flex-col ${isSent ? 'items-end' : 'items-start'}`}>
                         
-                        {/* 🆕 FIXED: Reply Preview */}
+                        {/* FIXED: Reply Preview */}
                         {repliedMessage && (
                             <div className={`flex items-center gap-2 mb-1 text-xs text-gray-500 max-w-full ${
                                 isSent ? 'flex-row-reverse' : 'flex-row'
@@ -2340,14 +2359,14 @@ const ChatBox = () => {
                             }}
                         >
                             
-                            {/* 🆕 Swipe Indicator for Reply */}
+                            {/* Swipe Indicator for Reply */}
                             {swipeHandlers.swipeDirection === 'left' && !isSent && (
                                 <div className="absolute -left-8 top-1/2 transform -translate-y-1/2 text-indigo-500">
                                     <Reply className="w-5 h-5" />
                                 </div>
                             )}
                             
-                            {/* 🆕 FIXED: Message Actions */}
+                            {/* FIXED: Message Actions */}
                             {showActions && (
                                 <button
                                     onClick={() => {
@@ -2439,7 +2458,7 @@ const ChatBox = () => {
                     </div>
                 </div>
 
-                {/* 🆕 FIXED: Message Actions Popup */}
+                {/* FIXED: Message Actions Popup */}
                 {showMessageActions === message._id && (
                     <MessageActions 
                         message={message} 
@@ -2535,19 +2554,19 @@ const ChatBox = () => {
         
         return (
             <div className={`flex flex-col flex-1 h-full ${currentTheme.bgColor} ${currentTheme.textColor}`}>
-                {/* Chat Header */}
+                {/* Chat Header - FIXED: Better mobile layout */}
                 <div className={`sticky top-0 z-20 flex items-center justify-between p-3 sm:p-4 ${currentTheme.bgColor} shadow-md border-b border-gray-100 flex-shrink-0`}>
                     
                     {/* User Info */}
-                    <div className='flex items-center gap-3'>
+                    <div className='flex items-center gap-3 flex-1 min-w-0'>
                         <button 
                             onClick={() => setIsConnectionsListVisible(true)} 
-                            className='p-2 rounded-full hover:bg-gray-100 transition-colors md:hidden' 
+                            className='p-2 rounded-full hover:bg-gray-100 transition-colors md:hidden flex-shrink-0' 
                             title="Back to Connections"
                         >
                             <ArrowLeft className="w-5 h-5 text-gray-700"/>
                         </button>
-                        <div className="relative">
+                        <div className="relative flex-shrink-0">
                             <img 
                                 src={user.profile_picture || '/default-avatar.png'} 
                                 alt={user.full_name} 
@@ -2575,7 +2594,7 @@ const ChatBox = () => {
                                     <span className="text-gray-500 truncate">Offline</span>
                                 )}
                             </p>
-                            {/* 🆕 Enhanced Typing Indicator */}
+                            {/* Enhanced Typing Indicator */}
                             {isTyping && (
                                 <div className="text-xs text-indigo-600 font-medium mt-1 flex items-center gap-2 truncate">
                                     <div className="flex gap-1">
@@ -2589,11 +2608,11 @@ const ChatBox = () => {
                         </div>
                     </div>
 
-                    {/* Right Side Buttons */}
-                    <div className="flex items-center gap-2">
-                        {/* 🆕 Call Buttons */}
+                    {/* Right Side Buttons - FIXED: Better mobile layout */}
+                    <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                        {/* Call Buttons */}
                         {isUserOnline && !activeCall && (
-                            <div className="flex gap-1 mr-2">
+                            <div className="flex gap-1 mr-1 sm:mr-2">
                                 <button
                                     onClick={() => initiateCall('voice')}
                                     disabled={isCalling}
@@ -2613,16 +2632,16 @@ const ChatBox = () => {
                             </div>
                         )}
 
-                        {/* Language Selector */}
+                        {/* Language Selector - FIXED: Better mobile layout */}
                         <div className="relative" ref={dropdownRef}>
                             <button
                                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-100/80 border border-gray-200 text-gray-600 text-sm font-medium transition-colors hover:bg-gray-200/80"
+                                className="flex items-center gap-1 px-2 py-1.5 sm:px-3 sm:py-1.5 rounded-xl bg-gray-100/80 border border-gray-200 text-gray-600 text-sm font-medium transition-colors hover:bg-gray-200/80"
                                 title="Select Target Translation Language"
                             >
                                 <LanguagesIcon className="w-4 h-4 text-indigo-500 flex-shrink-0" />
                                 <span className="hidden sm:inline truncate">Translate to:</span>
-                                <span className="truncate max-w-[80px] font-bold text-slate-800">{currentLangName}</span>
+                                <span className="truncate max-w-[60px] sm:max-w-[80px] font-bold text-slate-800">{currentLangName}</span>
                             </button>
                                     
                             {isDropdownOpen && (
@@ -2676,7 +2695,7 @@ const ChatBox = () => {
                     </div>
                 </div>
 
-                {/* Message Area */}
+                {/* Message Area - FIXED: Better scrolling */}
                 <div className={`flex-1 p-4 overflow-y-auto space-y-2 ${currentTheme.bgColor === 'bg-gray-900' ? 'bg-gray-800' : 'bg-gray-100'}`}>
                     {isLoading ? (
                         <div className="flex justify-center items-center h-32">
@@ -2708,10 +2727,10 @@ const ChatBox = () => {
                     )}
                 </div>
 
-                {/* Message Input */}
+                {/* Message Input - FIXED: Better mobile layout */}
                 <div className={`sticky bottom-0 z-10 ${currentTheme.bgColor} p-4 shadow-xl flex-shrink-0 border-t border-gray-200`}>
                     
-                    {/* 🆕 FIXED: Reply Preview Bar */}
+                    {/* FIXED: Reply Preview Bar */}
                     {replyingTo && (
                         <div className="max-w-xl mx-auto mb-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-center justify-between">
                             <div className="flex items-center gap-2 text-sm text-indigo-800 flex-1 min-w-0">
@@ -2753,11 +2772,11 @@ const ChatBox = () => {
                         </div>
                     )}
 
-                    {/* Emoji Picker */}
+                    {/* Emoji Picker - FIXED: Better positioning */}
                     {showEmojiPicker && (
                         <div 
                             ref={pickerRef}
-                            className='absolute bottom-full left-1/2 transform -translate-x-1/2 w-full max-w-xl p-2 z-30'
+                            className='absolute bottom-full left-4 right-4 sm:left-1/2 sm:transform sm:-translate-x-1/2 w-auto max-w-xl p-2 z-30'
                         >
                             <div className='bg-white border border-gray-200 rounded-xl shadow-2xl h-80 flex flex-col'>
                                 <div className='flex justify-between items-center p-3 border-b border-gray-100'>
@@ -2822,7 +2841,7 @@ const ChatBox = () => {
                         </div>
                     )}
                     
-                    {/* 🆕 FIXED: Enhanced Image Preview */}
+                    {/* FIXED: Enhanced Image Preview */}
                     {image && (
                         <div className='max-w-xl mx-auto mb-3 p-3 bg-indigo-50 border border-indigo-200 rounded-lg'>
                             <div className='flex items-center justify-between'>
@@ -2848,37 +2867,37 @@ const ChatBox = () => {
                         </div>
                     )}
 
-                    {/* Input Row */}
-                    <div className='flex items-center gap-2 p-2 bg-white w-full max-w-xl mx-auto border border-gray-300 rounded-full shadow-lg'>
+                    {/* Input Row - FIXED: Better mobile layout */}
+                    <div className='flex items-center gap-1 sm:gap-2 p-2 bg-white w-full max-w-xl mx-auto border border-gray-300 rounded-full shadow-lg'>
                       
                         {/* Emoji/Sticker Button */}
                         <button
                             ref={emojiButtonRef}
                             onClick={() => setShowEmojiPicker(prev => !prev)}
-                            className={`flex-shrink-0 size-10 flex items-center justify-center rounded-full transition ${showEmojiPicker ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:text-indigo-500'}`}
+                            className={`flex-shrink-0 size-8 sm:size-10 flex items-center justify-center rounded-full transition ${showEmojiPicker ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:text-indigo-500'}`}
                             title="Select Emoji or Sticker"
                         >
-                            <Smile className='size-5'/>
+                            <Smile className='size-4 sm:size-5'/>
                         </button>
 
                         {/* Voice Message Button */}
                         <button
                             onClick={isRecording ? stopRecording : startRecording}
                             disabled={isLoading}
-                            className={`flex-shrink-0 size-10 flex items-center justify-center rounded-full transition ${
+                            className={`flex-shrink-0 size-8 sm:size-10 flex items-center justify-center rounded-full transition ${
                                 isRecording 
                                     ? 'bg-red-100 text-red-600 animate-pulse' 
                                     : 'text-gray-400 hover:text-red-500 disabled:opacity-50'
                             }`}
                             title={isRecording ? 'Stop Recording' : 'Record Voice Message'}
                         >
-                            {isRecording ? <Square className='size-5' /> : <Mic className='size-5' />}
+                            {isRecording ? <Square className='size-4 sm:size-5' /> : <Mic className='size-4 sm:size-5' />}
                         </button>
 
                         <input 
                             type="text" 
                             ref={inputRef} 
-                            className='flex-1 py-2 px-3 outline-none text-slate-700 placeholder:text-gray-400 bg-transparent'
+                            className='flex-1 py-2 px-2 sm:px-3 outline-none text-slate-700 placeholder:text-gray-400 bg-transparent text-sm sm:text-base'
                             placeholder='Type a message...'
                             onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -2892,10 +2911,10 @@ const ChatBox = () => {
                             disabled={isLoading}
                         />
 
-                        {/* 🆕 FIXED: Enhanced Image Upload */}
+                        {/* FIXED: Enhanced Image Upload */}
                         <label htmlFor="image" className='flex-shrink-0'>
-                            <div className={`p-2 cursor-pointer rounded-full hover:bg-gray-100 transition-colors ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`} title="Add Image">
-                                <ImageIcon className='size-5 text-indigo-500'/>
+                            <div className={`p-1.5 sm:p-2 cursor-pointer rounded-full hover:bg-gray-100 transition-colors ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`} title="Add Image">
+                                <ImageIcon className='size-4 sm:size-5 text-indigo-500'/>
                             </div>
                             <input 
                                 type="file" 
@@ -2912,7 +2931,7 @@ const ChatBox = () => {
                         <button 
                             onClick={sendMessage} 
                             disabled={(!text.trim() && !image) || isLoading}
-                            className={`flex-shrink-0 cursor-pointer text-white p-3 rounded-full transition-all ${
+                            className={`flex-shrink-0 cursor-pointer text-white p-2 sm:p-3 rounded-full transition-all ${
                                 (!text.trim() && !image) || isLoading
                                     ? 'bg-gray-400 cursor-not-allowed' 
                                     : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'
@@ -2920,9 +2939,9 @@ const ChatBox = () => {
                             title="Send"
                         >
                             {isLoading ? (
-                                <Loader className="size-4 animate-spin" />
+                                <Loader className="size-3 sm:size-4 animate-spin" />
                             ) : (
-                                <SendHorizonal size={18}/>
+                                <SendHorizonal size={16} className="sm:size-5"/>
                             )}
                         </button>
                     </div>
@@ -2931,7 +2950,7 @@ const ChatBox = () => {
         );
     };
 
-    // Main Render
+    // Main Render - FIXED: Better responsive layout
     return (
         <div className='flex h-screen overflow-hidden bg-white'>
             {/* Connections List */}
@@ -2958,13 +2977,13 @@ const ChatBox = () => {
                 />
             )}
 
-            {/* 🆕 Clear Chat Confirmation Modal */}
+            {/* Clear Chat Confirmation Modal */}
             {showClearChatConfirm && <ClearChatConfirmation />}
 
-            {/* 🆕 Incoming Call Modal - NOW SHOWS FOR RECEIVER */}
+            {/* Incoming Call Modal - NOW SHOWS FOR RECEIVER */}
             <ChatIncomingCallModal />
 
-            {/* 🆕 Active Call Interface - NOW SHOWS FOR BOTH USERS */}
+            {/* Active Call Interface - NOW SHOWS FOR BOTH USERS */}
             {activeCall && activeCall.status === 'connected' && <ActiveCallInterface />}
         </div>
     );
