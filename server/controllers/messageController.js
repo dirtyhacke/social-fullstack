@@ -664,41 +664,79 @@ export const sendVoiceMessage = async (req, res) => {
 };
 
 // Send Message (Keep your existing ImageKit logic)
+// FIXED: Send Message with proper memory storage handling
 export const sendMessage = async (req, res) => {
     try {
         const { userId } = req.auth();
         const { to_user_id, text, reply_to } = req.body;
         const image = req.file;
 
+        console.log('📨 Send message request received');
+        console.log('👤 From user:', userId);
+        console.log('👥 To user:', to_user_id);
+        console.log('📝 Text:', text);
+        console.log('🖼️ Image file present:', !!image);
+        console.log('🔁 Reply to:', reply_to);
+
+        if (!to_user_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'Recipient user ID is required'
+            });
+        }
+
+        if (!text && !image) {
+            return res.status(400).json({
+                success: false,
+                message: 'Message text or image is required'
+            });
+        }
+
         let media_url = '';
         let message_type = image ? 'image' : 'text';
 
-        if(message_type === 'image'){
-            // Use your existing ImageKit logic
-            const fileBuffer = fs.readFileSync(image.path);
-            const response = await imagekit.upload({
-                file: fileBuffer,
-                fileName: image.originalname,
-            });
-            media_url = imagekit.url({
-                path: response.filePath,
-                transformation: [
-                    {quality: 'auto'},
-                    {format: 'webp'},
-                    {width: '1280'}
-                ]
-            });
-            
-            // Clean up temp file
-            fs.unlinkSync(image.path);
+        // Handle image upload
+        if (image) {
+            try {
+                console.log('🖼️ Processing image upload...');
+                console.log('📁 Image details:', {
+                    originalname: image.originalname,
+                    mimetype: image.mimetype,
+                    size: image.size,
+                    buffer: image.buffer ? `Present (${image.buffer.length} bytes)` : 'Missing'
+                });
+
+                // 🆕 FIXED: Use image.buffer directly (memory storage)
+                if (!image.buffer) {
+                    throw new Error('Image buffer is missing');
+                }
+
+                const response = await imagekit.upload({
+                    file: image.buffer, // Use buffer directly
+                    fileName: image.originalname || `image-${Date.now()}.jpg`,
+                    folder: '/chat-images',
+                    useUniqueFileName: true
+                });
+
+                media_url = response.url;
+                console.log('✅ Image uploaded to ImageKit:', media_url);
+
+            } catch (uploadError) {
+                console.log('❌ Image upload failed:', uploadError);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Failed to upload image: ' + uploadError.message
+                });
+            }
         }
 
+        // Create message data
         const messageData = {
             from_user_id: userId,
             to_user_id,
-            text,
+            text: text || '',
             message_type,
-            media_url
+            media_url: media_url || undefined
         };
 
         // Add reply reference if provided
@@ -706,6 +744,9 @@ export const sendMessage = async (req, res) => {
             messageData.reply_to = reply_to;
         }
 
+        console.log('💾 Saving message to database:', messageData);
+
+        // Create message in database
         const message = await Message.create(messageData);
 
         // Populate user data for the response
@@ -720,6 +761,8 @@ export const sendMessage = async (req, res) => {
             await Message.findByIdAndUpdate(message._id, { delivered: true });
             messageWithUserData.delivered = true;
         }
+
+        console.log('✅ Message saved successfully:', messageWithUserData._id);
 
         res.json({ 
             success: true, 
@@ -757,8 +800,11 @@ export const sendMessage = async (req, res) => {
         }
 
     } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
+        console.log('❌ Error in sendMessage:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
     }
 }
 
