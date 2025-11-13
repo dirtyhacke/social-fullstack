@@ -7,19 +7,25 @@ import { inngest } from "../inngest/index.js";
 export const addUserStory = async (req, res) => {
     try {
         const { userId } = req.auth();
-        const { content, media_type, background_color } = req.body;
+        const { 
+            content, 
+            media_type, 
+            background_color,
+            music_data,
+            music_duration,
+            music_position,
+            show_lyrics,
+            hide_watermark,
+            favorite_part_start,
+            card_size,
+            card_style
+        } = req.body;
+        
         const media = req.file;
         let media_url = '';
 
         console.log('📝 Creating story for user:', userId);
-        console.log('📦 Media type:', media_type);
-        console.log('📁 File received:', media ? {
-            originalname: media.originalname,
-            mimetype: media.mimetype,
-            size: media.size,
-            buffer: media.buffer ? `Buffer(${media.buffer.length} bytes)` : 'No buffer',
-            path: media.path // This will be undefined with memory storage
-        } : 'No file');
+        console.log('🎵 Music data:', music_data ? 'Yes' : 'No');
 
         // ✅ FIX: Use memory storage properly (media.buffer instead of media.path)
         if ((media_type === 'image' || media_type === 'video') && media) {
@@ -45,17 +51,53 @@ export const addUserStory = async (req, res) => {
             console.log('✅ Media uploaded:', media_url);
         }
 
+        // Parse music data if provided
+        let parsedMusicData = null;
+        if (music_data) {
+            try {
+                parsedMusicData = typeof music_data === 'string' ? JSON.parse(music_data) : music_data;
+                console.log('🎵 Parsed music data:', {
+                    name: parsedMusicData.name,
+                    artist: parsedMusicData.artist,
+                    duration: parsedMusicData.duration
+                });
+            } catch (parseError) {
+                console.error('❌ Error parsing music data:', parseError);
+                parsedMusicData = null;
+            }
+        }
+
+        // Parse music position
+        let parsedMusicPosition = { x: 50, y: 20 };
+        if (music_position) {
+            try {
+                parsedMusicPosition = typeof music_position === 'string' ? JSON.parse(music_position) : music_position;
+            } catch (error) {
+                console.error('❌ Error parsing music position:', error);
+            }
+        }
+
         // Create story
         console.log('💾 Saving story to database...');
-        const story = await Story.create({
+        const storyData = {
             user: userId,
             content,
             media_url,
             media_type,
-            background_color
-        });
+            background_color,
+            music_data: parsedMusicData,
+            music_position: parsedMusicPosition,
+            show_lyrics: show_lyrics === 'true',
+            hide_watermark: hide_watermark === 'true',
+            favorite_part_start: parseInt(favorite_part_start) || 0,
+            card_size: card_size || 'medium',
+            card_style: card_style || 'default'
+        };
+
+        const story = await Story.create(storyData);
 
         console.log('✅ Story created with ID:', story._id);
+        console.log('🎵 Music attached:', !!parsedMusicData);
 
         // ✅ Handle story deletion (make Inngest optional)
         console.log('⏰ Setting up story deletion...');
@@ -86,7 +128,14 @@ export const addUserStory = async (req, res) => {
                 content: story.content,
                 media_url: story.media_url,
                 media_type: story.media_type,
-                background_color: story.background_color
+                background_color: story.background_color,
+                music_data: story.music_data,
+                music_position: story.music_position,
+                show_lyrics: story.show_lyrics,
+                hide_watermark: story.hide_watermark,
+                card_size: story.card_size,
+                card_style: story.card_style,
+                favorite_part_start: story.favorite_part_start
             }
         });
 
@@ -126,8 +175,8 @@ export const getStories = async (req, res) => {
             return res.status(404).json({
                 success: false,
                 message: 'User not found'
-            });
-        }
+            }
+        )}
 
         // User connections and followings 
         const userIds = [userId, ...user.connections, ...user.following];
