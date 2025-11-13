@@ -211,14 +211,33 @@ const StoriesBar = () => {
                 </button>
             )}
 
-            {/* Container for horizontal scrolling */}
+            {/* Container for horizontal scrolling - scrollbar hidden but content remains scrollable */}
             <div 
                 ref={scrollContainerRef}
-                className='overflow-x-auto px-4 scrollbar-hide'
+                className="overflow-x-auto px-4 scrollbar-hide"
                 onScroll={checkScrollPosition}
+                style={{
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS
+                    cursor: 'grab', // Show grab cursor on desktop
+                }}
             >
+                {/* Hide scrollbar for Webkit browsers */}
+                <style jsx>{`
+                    div::-webkit-scrollbar {
+                        display: none;
+                        width: 0;
+                        height: 0;
+                        background: transparent;
+                    }
+                    div:active {
+                        cursor: grabbing;
+                    }
+                `}</style>
+                
                 {/* Flex container for all story cards */}
-                <div className='flex gap-4 pb-5'>
+                <div className='flex gap-4 pb-5 select-none'> {/* select-none prevents text selection during drag */}
                     
                     {/* Add Story Card - Green Theme */}
                     <div 
