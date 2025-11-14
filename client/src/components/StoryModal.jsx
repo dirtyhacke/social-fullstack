@@ -57,6 +57,13 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         // Clean up preview URLs to prevent memory leaks
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
+            setPreviewUrl(null);
+        }
+        
+        // Clear all intervals
+        if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
         }
     };
 
@@ -99,7 +106,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         };
     }, []);
 
-    // CLOSE MODAL HANDLER
+    // CLOSE MODAL HANDLER - FIXED: Ensure music stops when modal closes
     const handleCloseModal = () => {
         console.log('🚪 Closing modal and stopping all audio...');
         cleanupAll();
@@ -113,6 +120,12 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                 playSongPreview(selectedMusic);
             }, 500);
         }
+        
+        // Cleanup when component unmounts or dependencies change
+        return () => {
+            // Don't stop music here as it would interrupt playback during normal usage
+            // Music is only stopped when modal closes completely
+        };
     }, [selectedMusic, mode, previewUrl]);
 
     // SMOOTH DRAGGING IMPLEMENTATION
@@ -722,6 +735,8 @@ const StoryModal = ({setShowModal, fetchStories}) => {
             })
 
             if (data.success){
+                // Cleanup before closing
+                cleanupAll();
                 setShowModal(false)
                 toast.success("Story created successfully! 🎉")
                 fetchStories()

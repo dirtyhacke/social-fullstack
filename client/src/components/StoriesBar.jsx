@@ -13,7 +13,11 @@ const StoriesBar = () => {
 
     const [stories, setStories] = useState([])
     const [showModal, setShowModal] = useState(false)
-    const [viewStory, setViewStory] = useState(null)
+    
+    // CHANGED: Use new state structure for StoryViewer
+    const [isViewingStories, setIsViewingStories] = useState(false)
+    const [currentStoryIndex, setCurrentStoryIndex] = useState(0)
+    
     const [viewedStories, setViewedStories] = useState(new Set())
     const [showLeftArrow, setShowLeftArrow] = useState(false)
     const [showRightArrow, setShowRightArrow] = useState(false)
@@ -98,14 +102,34 @@ const StoriesBar = () => {
         }
     }
 
+    // CHANGED: Updated handleStoryView to work with new StoryViewer
     const handleStoryView = (story) => {
-        // Mark story as viewed
-        const newViewedStories = new Set(viewedStories)
-        newViewedStories.add(story._id)
-        setViewedStories(newViewedStories)
-        saveViewedStories(newViewedStories)
+        // Find the index of the clicked story
+        const storyIndex = stories.findIndex(s => s._id === story._id)
         
-        setViewStory(story)
+        if (storyIndex !== -1) {
+            // Mark story as viewed
+            const newViewedStories = new Set(viewedStories)
+            newViewedStories.add(story._id)
+            setViewedStories(newViewedStories)
+            saveViewedStories(newViewedStories)
+            
+            // Open StoryViewer at the correct index
+            setCurrentStoryIndex(storyIndex)
+            setIsViewingStories(true)
+        }
+    }
+
+    // CHANGED: Handle when StoryViewer closes
+    const handleStoryViewerClose = () => {
+        setIsViewingStories(false)
+        // Optionally mark the current story as viewed when viewer closes
+        if (stories[currentStoryIndex]) {
+            const newViewedStories = new Set(viewedStories)
+            newViewedStories.add(stories[currentStoryIndex]._id)
+            setViewedStories(newViewedStories)
+            saveViewedStories(newViewedStories)
+        }
     }
 
     const StoryCard = ({ story }) => {
@@ -261,17 +285,14 @@ const StoriesBar = () => {
 
             {/* Modals */}
             {showModal && <StoryModal setShowModal={setShowModal} fetchStories={fetchStories}/>}
-            {viewStory && (
+            
+            {/* CHANGED: Updated StoryViewer with new props */}
+            {isViewingStories && (
                 <StoryViewer 
-                    viewStory={viewStory} 
-                    setViewStory={setViewStory}
-                    onStoryView={() => {
-                        // Mark story as viewed when viewer closes
-                        const newViewedStories = new Set(viewedStories)
-                        newViewedStories.add(viewStory._id)
-                        setViewedStories(newViewedStories)
-                        saveViewedStories(newViewedStories)
-                    }}
+                    stories={stories}
+                    currentStoryIndex={currentStoryIndex}
+                    setCurrentStoryIndex={setCurrentStoryIndex}
+                    setViewStory={setIsViewingStories}
                 />
             )}
         </div>
