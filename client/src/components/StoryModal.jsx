@@ -51,34 +51,59 @@ const StoryModal = ({setShowModal, fetchStories}) => {
     // COMPREHENSIVE CLEANUP FUNCTION
     const cleanupAll = () => {
         console.log('🧹 Cleaning up all resources...');
-        stopSongPreview();
+        
+        // Stop and completely destroy audio
+        if (audioRef.current) {
+            console.log('🔇 Stopping and destroying audio...');
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+            audioRef.current.src = '';
+            audioRef.current.load(); // Force reload to clear buffer
+            // Remove all event listeners
+            audioRef.current.onerror = null;
+            audioRef.current.oncanplaythrough = null;
+            audioRef.current.ontimeupdate = null;
+            audioRef.current.onplay = null;
+            audioRef.current.onpause = null;
+            audioRef.current.onended = null;
+        }
+        
+        // Clear progress interval
+        if (progressIntervalRef.current) {
+            clearInterval(progressIntervalRef.current);
+            progressIntervalRef.current = null;
+        }
+        
+        // Stop camera
         stopCamera();
         
-        // Clean up preview URLs to prevent memory leaks
+        // Clean up preview URLs
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
             setPreviewUrl(null);
         }
         
-        // Clear all intervals
-        if (progressIntervalRef.current) {
-            clearInterval(progressIntervalRef.current);
-            progressIntervalRef.current = null;
-        }
+        // Reset audio states
+        setIsPlaying(false);
+        setPlayingSong(null);
+        setAudioProgress(0);
+        setCurrentLyric("");
     };
 
-    // Initialize audio element
+    // Initialize audio element - ONLY when modal is open
     useEffect(() => {
-        audioRef.current = new Audio()
-        audioRef.current.volume = 0.5
+        // Create new audio element when modal opens
+        audioRef.current = new Audio();
+        audioRef.current.volume = 0.5;
         
         loadTrendingSongs();
         
-        // Cleanup on unmount
+        // Cleanup when modal closes
         return () => {
+            console.log('🚪 Modal unmounting - cleaning up everything');
             cleanupAll();
-        }
-    }, [])
+        };
+    }, []); // Empty dependency array - only run on mount/unmount
 
     // Handle escape key and background click
     useEffect(() => {
@@ -94,15 +119,12 @@ const StoryModal = ({setShowModal, fetchStories}) => {
             }
         };
 
-        // Add event listeners
         document.addEventListener('keydown', handleEscapeKey);
         document.addEventListener('click', handleBackgroundClick);
 
-        // Cleanup
         return () => {
             document.removeEventListener('keydown', handleEscapeKey);
             document.removeEventListener('click', handleBackgroundClick);
-            cleanupAll();
         };
     }, []);
 
@@ -120,12 +142,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                 playSongPreview(selectedMusic);
             }, 500);
         }
-        
-        // Cleanup when component unmounts or dependencies change
-        return () => {
-            // Don't stop music here as it would interrupt playback during normal usage
-            // Music is only stopped when modal closes completely
-        };
     }, [selectedMusic, mode, previewUrl]);
 
     // SMOOTH DRAGGING IMPLEMENTATION
@@ -324,15 +340,11 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         try {
             const audio = audioRef.current;
             
-            // Reset audio
+            // Reset audio completely
             audio.pause();
-            audio.currentTime = favoritePartStart; // Start from favorite part
+            audio.currentTime = favoritePartStart;
             audio.volume = 0.5;
-            
-            // Set CORS
             audio.crossOrigin = 'anonymous';
-            
-            // Set source
             audio.src = song.downloadUrl;
             
             // Clear previous event listeners
@@ -340,17 +352,8 @@ const StoryModal = ({setShowModal, fetchStories}) => {
             audio.oncanplaythrough = null;
             audio.ontimeupdate = null;
 
-            // Add event listeners
             audio.onerror = (e) => {
                 console.error('🎵 Audio error:', e);
-                if (audio.error?.code === 4) {
-                    audio.crossOrigin = null;
-                    audio.src = song.downloadUrl;
-                    audio.load();
-                    audio.play().catch(err => {
-                        console.error('🎵 Retry failed:', err);
-                    });
-                }
             };
 
             audio.oncanplaythrough = async () => {
@@ -361,11 +364,10 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                     
                     setIsPlaying(true);
                     
-                    // Start progress tracking for selected duration
+                    // Start progress tracking
                     progressIntervalRef.current = setInterval(() => {
                         const currentTime = audio.currentTime - favoritePartStart;
                         if (audio.ended || currentTime >= selectedDuration) {
-                            // Loop the audio from favorite part (Instagram style)
                             audio.currentTime = favoritePartStart;
                             audio.play();
                             setAudioProgress(0);
@@ -373,7 +375,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                         } else {
                             const progress = (currentTime / selectedDuration) * 100;
                             setAudioProgress(progress);
-                            // Update lyrics based on current time
                             if (showLyrics) {
                                 setCurrentLyric(getLyricsForTime(audio.currentTime));
                             }
@@ -385,7 +386,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                 }
             };
 
-            // Load the audio
             audio.load();
             
         } catch (error) {
@@ -399,7 +399,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         if (audioRef.current) {
             audioRef.current.pause();
             audioRef.current.currentTime = 0;
-            audioRef.current.src = ''; // Clear source to stop completely
+            audioRef.current.src = '';
         }
         
         setIsPlaying(false);
