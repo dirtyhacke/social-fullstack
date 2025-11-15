@@ -1,154 +1,131 @@
 import React from "react";
 
 /**
- * Loading.jsx
- * Moon slightly lower, router lights blinking, moving background stars, and small network icon above PIXO name.
+ * SiteLoadingV2.jsx
+ * A clean, simple, full-screen loading page maintaining the dark, high-tech aesthetic
+ * with a PIXO logo and tired character.
+ * The cat and rat animation has been removed as requested.
  */
 
-export default function Loading({ height = "100vh" }) {
+export default function SiteLoadingV2({ height = "100vh" }) {
   const letters = ["P", "I", "X", "O"];
 
-  const STAR_POSITIONS = React.useMemo(() => {
-    const arr = [];
-    for (let i = 0; i < 80; i++) {
-      arr.push({
-        cx: Math.floor(Math.random() * 1440),
-        cy: Math.floor(Math.random() * 900),
-        r: (Math.random() * 1.2 + 0.2).toFixed(2),
-        o: (Math.random() * 0.7 + 0.18).toFixed(2),
-        dur: 5 + Math.random() * 5
-      });
-    }
-    return arr;
-  }, []);
+  // Classy color palette
+  const accentColor = "#40e0d0"; // Mint/Teal
+  const gradientStart = "#40e0d0";
+  const gradientEnd = "#7fffd4"; // Aquamarine
 
   return (
-    <div style={{ height }} className="relative overflow-hidden bg-[#02030a] text-white flex items-center justify-center">
-      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-        <defs>
-          <radialGradient id="nebulaMoon" cx="35%" cy="25%">
-            <stop offset="0%" stopColor="#061022" />
-            <stop offset="35%" stopColor="#030816" />
-            <stop offset="75%" stopColor="#00040a" />
-            <stop offset="100%" stopColor="#000006" />
-          </radialGradient>
-          <filter id="softGlowSm" x="-40%" y="-40%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="4" result="blur2" />
-            <feMerge>
-              <feMergeNode in="blur2" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
+    <div
+      style={{ height }}
+      className="relative overflow-hidden bg-[#1a1a2e] text-white flex flex-col items-center justify-center p-6"
+    >
+      {/* Background Grid - Dark and Subtle (Full Screen) */}
+      <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: "linear-gradient(to right, #333 1px, transparent 1px), linear-gradient(to bottom, #333 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
 
-        <rect width="100%" height="100%" fill="url(#nebulaMoon)" />
+      {/* Content Area - Centered (z-20 ensures it's above the grid) */}
+      <div className="z-20 relative flex flex-col items-center justify-center pointer-events-none w-full max-w-lg p-6">
 
-        {STAR_POSITIONS.map((s, i) => (
-          <circle key={`star-${i}`} cx={s.cx} cy={s.cy} r={s.r} fill={`rgba(255,255,255,${s.o})`}>
-            <animate attributeName="cx" values={`${s.cx};${s.cx+Math.random()*40-20};${s.cx}`} dur={`${s.dur}s`} repeatCount="indefinite" />
-            <animate attributeName="cy" values={`${s.cy};${s.cy+Math.random()*40-20};${s.cy}`} dur={`${s.dur}s`} repeatCount="indefinite" />
-            <animate attributeName="opacity" values={`${s.o}; ${Math.max(0.12, Number(s.o) + 0.3)}; ${s.o}`} dur={`${s.dur}s`} repeatCount="indefinite" />
-          </circle>
-        ))}
+        {/* --- CARTOON CHARACTER (TOP) --- */}
+        <div className="mb-8" style={{ transformOrigin: 'center' }}>
+          <svg width="60" height="60" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Sleeping Blob Body - Mint/Teal */}
+            <path d="M50 85 C 30 95, 15 70, 20 50 C 30 30, 70 30, 80 50 C 85 70, 70 95, 50 85 Z" fill={accentColor} />
+            
+            {/* Network Cable (held in hand) - Mint/Teal - Cable is now static */}
+            <path d="M78 50 C 75 40, 85 30, 80 20" stroke={accentColor} strokeWidth="4" strokeLinecap="round" fill="none" />
+            
+            {/* Tired Eyes - Darker color on Mint/Teal body */}
+            <path d="M40 52 L 45 52" stroke="#1f2937" strokeWidth="2" strokeLinecap="round" />
+            <path d="M55 52 L 60 52" stroke="#1f2937" strokeWidth="2" strokeLinecap="round" />
+            
+            {/* Dark Circles/Bags - Subtle darker mint outline */}
+            <path d="M38 52 C 40 54, 45 54, 47 52" stroke="#008080" strokeOpacity="0.5" strokeWidth="1" fill="none" strokeLinecap="round"/>
+            <path d="M53 52 C 55 54, 60 54, 62 52" stroke="#008080" strokeOpacity="0.5" strokeWidth="1" fill="none" strokeLinecap="round"/>
 
-        <g className="moon-rot" transform="translate(220,270)" style={{ transformOrigin: '220px 220px' }} filter="url(#softGlowSm)">
-          <circle cx="0" cy="0" r="120" fill="#dbe7f5" />
-          <circle cx="-18" cy="-12" r="90" fill="#c9d8e8" opacity="0.82" />
-          <g fill="#98a9bb" opacity="0.95">
-            <ellipse cx="-40" cy="-10" rx="12" ry="8" />
-            <ellipse cx="10" cy="20" rx="18" ry="12" />
-            <ellipse cx="40" cy="-30" rx="9" ry="6" />
-            <ellipse cx="-5" cy="-45" rx="7" ry="5" />
-            <ellipse cx="60" cy="10" rx="14" ry="9" />
-          </g>
-        </g>
-      </svg>
+            {/* Zzz's (floating) - Mint/Teal */}
+            <text x="35" y="30" fontSize="12" fill={accentColor} className="zzz-float" style={{ transformOrigin: '35px 30px', animationDelay: '0s' }}>Z</text>
+            <text x="45" y="25" fontSize="12" fill={accentColor} className="zzz-float" style={{ transformOrigin: '45px 25px', animationDelay: '0.6s' }}>z</text>
+            <text x="55" y="20" fontSize="12" fill={accentColor} className="zzz-float" style={{ transformOrigin: '55px 20px', animationDelay: '1.2s' }}>z</text>
+          </svg>
+        </div>
+        {/* --- END CARTOON CHARACTER --- */}
 
-      <div className="absolute inset-0 flex items-start justify-center pointer-events-none z-30">
-        <svg width="86%" height="360" viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="cableMoon" x1="0" x2="1">
-              <stop offset="0%" stopColor="#9fb9d9" />
-              <stop offset="50%" stopColor="#e6eef7" />
-              <stop offset="100%" stopColor="#9fb9d9" />
-            </linearGradient>
-            <filter id="pulseGlow" x="-40%" y="-40%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="6"/>
-              <feMerge><feMergeNode /><feMergeNode in="SourceGraphic"/></feMerge>
-            </filter>
-          </defs>
 
-          <path id="spaceCable" d="M120 140 C 300 60, 520 60, 740 110" stroke="url(#cableMoon)" strokeWidth="6" fill="none" strokeLinecap="round" opacity="0.98"/>
-
-          <g>
-            <circle r="7.2" fill="#eaf7ff" filter="url(#pulseGlow)">
-              <animateMotion dur="3.2s" repeatCount="indefinite" path="M120 140 C 300 60, 520 60, 740 110" />
-            </circle>
-          </g>
-
-          {/* realistic router with blinking lights */}
-          <g transform="translate(740,110)">
-            <rect x="-20" y="-16" width="60" height="40" rx="6" fill="#1a1f27" stroke="#cdd6e0" strokeOpacity="0.25" filter="url(#pulseGlow)" />
-            <circle cx="12" cy="0" r="4" fill="#00ffea">
-              <animate attributeName="opacity" values="1;0.2;1" dur="1.2s" repeatCount="indefinite" />
-            </circle>
-            <circle cx="-12" cy="0" r="4" fill="#ffec00">
-              <animate attributeName="opacity" values="1;0.2;1" dur="1.4s" repeatCount="indefinite" />
-            </circle>
-            <rect x="-18" y="-14" width="36" height="2" fill="#4f5d6c" />
-          </g>
-        </svg>
-      </div>
-
-      {/* PIXO logo & mini animation with top center network icon */}
-      <div className="z-40 relative flex flex-col items-center justify-center pointer-events-none px-4">
-        <svg width="24" height="24" className="mb-2 animate-ping" viewBox="0 0 24 24" fill="none" stroke="#00faff" strokeWidth="2">
-          <path d="M12 18a3 3 0 100-6 3 3 0 000 6z" />
-          <path d="M12 6v2M6.343 9.343l1.414 1.414M17.243 9.343l-1.414 1.414M4 12h2M18 12h2M6.343 14.657l1.414-1.414M17.243 14.657l-1.414-1.414M12 16v2" />
-        </svg>
-        <div className="flex items-center gap-4 select-none" style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+        {/* --- PIXO LOGO --- */}
+        <div className="flex items-center gap-4 select-none mb-8">
           {letters.map((l, idx) => (
             <span key={l} className="pixo-letter" style={{
-              background: 'linear-gradient(90deg,#f1f7ff,#d8e8ff)',
+              background: `linear-gradient(90deg, ${gradientStart}, ${gradientEnd})`, // Mint gradient
               WebkitBackgroundClip: 'text',
               backgroundClip: 'text',
               color: 'transparent',
               fontWeight: 900,
-              fontSize: 'clamp(2rem, 6.1vw, 4rem)',
+              fontSize: 'clamp(3rem, 7.5vw, 5rem)',
               lineHeight: 1,
               display: 'inline-block',
-              transformOrigin: 'center',
-              willChange: 'transform, filter',
-              animationDelay: `${idx * 0.08}s`,
+              willChange: 'transform, filter, opacity',
+              // Staggering the animation start
+              animationDelay: `${idx * 0.1}s`,
             }}>{l}</span>
           ))}
         </div>
-        <p
-  className="pixo-msg"
-  style={{
-    marginTop: 12,
-    textAlign: "center",
-    fontSize: "clamp(12px, 2.5vw, 16px)", // responsive text size
-    padding: "0 10px", // adds spacing for small screens
-  }}
->
-  Phantom access granted… PIXO sees everything but knows nothing....
-</p>
-
+        {/* --- END PIXO LOGO --- */}
+        
+        <p className="mt-4 text-sm text-gray-400">LOADING. STAND BY...</p>
       </div>
+      
+      {/* The cat/rat animation block has been completely removed. */}
 
+
+      {/* --- CSS STYLES AND ANIMATIONS --- */}
       <style>{`
-        .moon-rot { animation: moon-rotate 60s linear infinite; transform-box: fill-box; }
-        @keyframes moon-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        /* PIXO Letter Animation (Staggered Loop) */
+        .pixo-letter { 
+          animation: staggeredLoop 1.5s ease-in-out infinite; 
+          opacity: 0;
+        }
 
-        .pixo-letter { animation: pixo-ripple 3.2s ease-in-out infinite; }
-        @keyframes pixo-ripple { 0% { transform: translateY(0) scale(1); opacity: 0.94; } 45% { transform: translateY(-6px) scale(1.035); opacity: 1; } 100% { transform: translateY(0) scale(1); opacity: 0.94; } }
+        /* Staggered Loop Animation (Faster Speed) */
+        @keyframes staggeredLoop {
+          /* Disappear/Start State */
+          0%, 10% { 
+            transform: translateY(20px) scale(0.8) skewX(0deg); 
+            opacity: 0;
+          }
+          /* Fast Appear (Reveal) */
+          20% { 
+            transform: translateY(0) scale(1) skewX(0deg); 
+            opacity: 1;
+          }
+          /* Hold and Subtle Scan Shift */
+          50% { 
+            transform: translateX(2px) skewX(1deg); 
+            opacity: 0.95; 
+          }
+          /* Hold and Return to Center */
+          80% { 
+            transform: translateY(0) scale(1) skewX(0deg); 
+            opacity: 1;
+          }
+          /* Fast Disappear (Reset for loop) */
+          90%, 100% {
+            transform: translateY(20px) scale(0.8) skewX(0deg);
+            opacity: 0;
+          }
+        }
 
-        .pixo-msg { color: #dfeeff; opacity: 0.92; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; letter-spacing: 1.5px; font-size: clamp(0.9rem, 2.2vw, 1rem); animation: msgPulse 2.8s ease-in-out infinite; }
-        @keyframes msgPulse { 0% { opacity: 0.88; transform: translateY(0px); } 50% { opacity: 1; transform: translateY(-4px); } 100% { opacity: 0.88; transform: translateY(0px); } }
-
-        .animate-ping { animation: ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite; }
-        @keyframes ping { 0% { transform: scale(0.7); opacity: 0.5; } 50% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.7); opacity: 0.5; } }
+        /* Character Animations */
+        /* Zzz's Animation */
+        .zzz-float { 
+          animation: zzz-float 2.5s ease-out infinite;
+          opacity: 0;
+        }
+        @keyframes zzz-float {
+          0% { transform: translateY(0) scale(1); opacity: 0; }
+          40% { opacity: 1; }
+          100% { transform: translateY(-20px) scale(1.2); opacity: 0; }
+        }
       `}</style>
     </div>
   );
