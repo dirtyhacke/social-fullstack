@@ -325,10 +325,10 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                                 rounded-full object-cover
                             `}
                         />
-                         {/* Playing indicator dot */}
+                         {/* Playing indicator dot 
                         <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
                             <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                        </div>
+                        </div> */}
                     </div>
                     
                     {/* Song Info */}
@@ -342,12 +342,12 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                     </div>
                     
                     {/* Progress Bar */}
-                    <div className='absolute bottom-0 left-0 right-0 h-[2px] bg-white/30 overflow-hidden'>
+                    {/*<div className='absolute bottom-0 left-0 right-0 h-[2px] bg-white/30 overflow-hidden'>
                         <div 
                             className='h-full bg-green-400 transition-all duration-100 ease-linear' 
                             style={{ width: `${audioProgress}%` }}
                         />
-                    </div>
+                    </div>*/}
                 </div>
             </div>
         );
