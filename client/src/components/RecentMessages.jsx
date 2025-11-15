@@ -60,7 +60,7 @@ const RecentMessages = () => {
             }
 
             // ✅ FIXED: Use correct backend URL (port 4000)
-            const backendUrl = 'https://social-server-nine.vercel.app';
+            const backendUrl = 'https://pixo-toj7.onrender.com';
             eventSourceRef.current = new EventSource(
                 `${backendUrl}/api/sse/${currentUserId}?token=${token}`
             );
