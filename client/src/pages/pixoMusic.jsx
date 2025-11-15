@@ -49,7 +49,7 @@ function PixoMusic() {
     const progressRef = useRef(null);
 
     // Your backend API base URL
-    const BACKEND_API = 'https://social-server-nine.vercel.app/api';
+    const BACKEND_API = 'https://pixo-toj7.onrender.com/api';
     const user = useSelector((state) => state.user.value);
 
     // Initialize component

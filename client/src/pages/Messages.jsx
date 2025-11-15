@@ -543,7 +543,7 @@ const Messages = () => {
                 eventSourceRef.current.close();
             }
 
-            const sseUrl = `https://social-server-nine.vercel.app/api/messages/sse/${currentUserId}?token=${token}`;
+            const sseUrl = `https://pixo-toj7.onrender.com/api/messages/sse/${currentUserId}?token=${token}`;
             eventSourceRef.current = new EventSource(sseUrl);
 
             eventSourceRef.current.onopen = () => {

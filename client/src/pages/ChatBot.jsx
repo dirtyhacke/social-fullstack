@@ -223,7 +223,7 @@ const ChatBot = () => {
         try {
             setApiStatus('checking');
             const token = await getToken();
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://social-server-nine.vercel.app';
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://pixo-toj7.onrender.com';
             
             const response = await fetch(`${backendUrl}/api/ai/status`, {
                 headers: {
@@ -260,7 +260,7 @@ const ChatBot = () => {
 
         try {
             const token = await getToken();
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://social-server-nine.vercel.app';
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || 'https://pixo-toj7.onrender.com';
             
             const response = await fetch(`${backendUrl}/api/ai/chat`, {
                 method: 'POST',

@@ -1356,7 +1356,7 @@ const ChatBox = () => {
                 eventSourceRef.current.close();
             }
 
-            const sseUrl = `https://social-server-nine.vercel.app/api/messages/sse/${currentUser.id}?token=${token}`;
+            const sseUrl = `https://pixo-toj7.onrender.com/api/messages/sse/${currentUser.id}?token=${token}`;
             
             eventSourceRef.current = new EventSource(sseUrl);
 

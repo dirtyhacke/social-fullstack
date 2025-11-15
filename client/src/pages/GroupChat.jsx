@@ -50,7 +50,7 @@ const GroupChat = () => {
                 eventSource.close();
             }
 
-            const sseUrl = `https://social-server-nine.vercel.app/api/sse/${currentUser.id}`;
+            const sseUrl = `https://pixo-toj7.onrender.com/api/sse/${currentUser.id}`;
             const newEventSource = new EventSource(sseUrl, {
                 withCredentials: true
             });

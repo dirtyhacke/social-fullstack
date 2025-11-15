@@ -141,7 +141,7 @@ const App = () => {
             eventSourceRef.current.close()
           }
 
-          const backendUrl = 'http://localhost:4000';
+          const backendUrl = 'https://pixo-toj7.onrender.com';
           eventSourceRef.current = new EventSource(`${backendUrl}/api/sse/${user.id}?token=${token}`)
 
           eventSourceRef.current.onopen = () => {
