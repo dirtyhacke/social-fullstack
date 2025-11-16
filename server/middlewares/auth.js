@@ -1,4 +1,5 @@
 import User from '../models/User.js';
+import { clerkClient } from '@clerk/clerk-sdk-node';
 
 export const protect = async (req, res, next) => {
     try {
@@ -25,7 +26,6 @@ export const protect = async (req, res, next) => {
         try {
             console.log('🛡️ Attempting to decode JWT token...');
             
-            // Split the JWT token into parts
             const tokenParts = token.split('.');
             console.log('🛡️ Token parts count:', tokenParts.length);
             
@@ -34,10 +34,7 @@ export const protect = async (req, res, next) => {
                 return res.status(401).json({ success: false, message: 'not authenticated' });
             }
 
-            // Decode the payload (second part)
             const payloadBase64 = tokenParts[1];
-            
-            // Base64 decode the payload
             const payloadJson = Buffer.from(payloadBase64, 'base64').toString('utf8');
             console.log('🛡️ Decoded payload JSON:', payloadJson);
             
@@ -49,22 +46,85 @@ export const protect = async (req, res, next) => {
             
             if (!userId) {
                 console.log('❌ Protect: No user ID (sub) found in token payload');
-                console.log('❌ Protect: Available payload keys:', Object.keys(payloadObj));
                 return res.status(401).json({ success: false, message: 'not authenticated' });
             }
             
-            // Verify user exists in database
+            // Check if user exists in database
             console.log('🛡️ Checking if user exists in database:', userId);
-            const user = await User.findById(userId);
-            if (!user) {
-                console.log('❌ Protect: User not found in database for ID:', userId);
-                return res.status(401).json({ success: false, message: 'not authenticated' });
-            }
+            let user = await User.findById(userId);
             
-            console.log('✅ Protect: User found in database:', user.full_name);
+            if (!user) {
+                console.log('🔄 Protect: User not found in database, creating new user...');
+                
+                try {
+                    // Fetch user details from Clerk
+                    const clerkUser = await clerkClient.users.getUser(userId);
+                    console.log('🔄 Protect: Clerk user data fetched:', clerkUser.id);
+                    
+                    // Extract user information
+                    const email = clerkUser.emailAddresses[0]?.emailAddress;
+                    const firstName = clerkUser.firstName || '';
+                    const lastName = clerkUser.lastName || '';
+                    const fullName = `${firstName} ${lastName}`.trim() || 'User';
+                    const username = clerkUser.username || email?.split('@')[0] || `user_${userId.slice(-8)}`;
+                    
+                    console.log('🔄 Protect: Creating user with data:', {
+                        email,
+                        fullName,
+                        username
+                    });
+                    
+                    // Try to create user, but handle duplicate key errors gracefully
+                    try {
+                        user = await User.create({
+                            _id: userId,
+                            email: email,
+                            full_name: fullName,
+                            username: username,
+                        });
+                        console.log('✅ Protect: New user created successfully:', user._id);
+                    } catch (createError) {
+                        // Handle duplicate key error (race condition)
+                        if (createError.code === 11000 || createError.code === 11001) {
+                            console.log('🔄 Protect: User already exists (race condition), fetching user...');
+                            // User was created by another request, fetch it
+                            user = await User.findById(userId);
+                            if (!user) {
+                                console.log('❌ Protect: User still not found after duplicate error');
+                                return res.status(401).json({ 
+                                    success: false, 
+                                    message: 'User registration failed' 
+                                });
+                            }
+                            console.log('✅ Protect: User fetched after race condition:', user._id);
+                        } else {
+                            // Re-throw other errors
+                            throw createError;
+                        }
+                    }
+                    
+                } catch (createError) {
+                    console.log('❌ Protect: Failed to create user in database:');
+                    console.log('❌ Protect: Error message:', createError.message);
+                    console.log('❌ Protect: Error stack:', createError.stack);
+                    
+                    // Try one more time to fetch the user (in case it was created by another request)
+                    user = await User.findById(userId);
+                    if (!user) {
+                        return res.status(401).json({ 
+                            success: false, 
+                            message: 'User registration failed' 
+                        });
+                    }
+                    console.log('✅ Protect: User found after retry:', user._id);
+                }
+            } else {
+                console.log('✅ Protect: User found in database:', user.full_name);
+            }
             
             // Add user info to request object
             req.userId = userId;
+            req.user = user;
             
             console.log('✅ Protect: Authentication successful, calling next()');
             console.log('🛡️ ===== PROTECT MIDDLEWARE END =====');
