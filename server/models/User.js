@@ -12,7 +12,23 @@ const userSchema = new mongoose.Schema({
     followers: [{type: String, ref: 'User' }],
     following: [{type: String, ref: 'User' }],
     connections: [{type: String, ref: 'User' }],
-     lastSeen: { type: Date, default: Date.now }
+    lastSeen: { type: Date, default: Date.now },
+    settings: {
+        profilePrivacy: {
+            type: String,
+            enum: ['public', 'private'],
+            default: 'public'
+        },
+        messageSetting: {
+            type: String,
+            enum: ['anyone', 'custom', 'private'],
+            default: 'anyone'
+        },
+        allowedMessagingUsers: [{
+            type: String,
+            ref: 'User'
+        }]
+    }
 },{timestamps: true, minimize: false})
 
 const User = mongoose.model('User', userSchema)

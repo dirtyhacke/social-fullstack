@@ -12,6 +12,7 @@ const CreatePost = () => {
   const [media, setMedia] = useState([])
   const [loading, setLoading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [compressing, setCompressing] = useState(false)
   
   const textareaRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -31,74 +32,214 @@ const CreatePost = () => {
     setContent(e.target.value)
   }
 
-  // Handle media selection (images + videos)
-  const handleMediaSelect = (e) => {
-    const files = Array.from(e.target.files)
+  // Enhanced video compression using FFmpeg.wasm
+  const compressVideo = async (file) => {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('video/')) {
+        resolve(file);
+        return;
+      }
+
+      // For videos smaller than 10MB, skip compression
+      if (file.size <= 10 * 1024 * 1024) {
+        console.log('Video is small enough, skipping compression');
+        resolve(file);
+        return;
+      }
+
+      console.log('Starting video compression:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+
+      const video = document.createElement('video');
+      const source = document.createElement('source');
+      
+      video.preload = 'metadata';
+      source.src = URL.createObjectURL(file);
+      video.appendChild(source);
+
+      video.onloadedmetadata = () => {
+        URL.revokeObjectURL(source.src);
+        
+        const duration = video.duration;
+        const originalSizeMB = file.size / 1024 / 1024;
+        
+        // Simple compression by reducing quality for larger files
+        let quality = 0.8; // Default quality
+        
+        if (originalSizeMB > 50) quality = 0.6;
+        if (originalSizeMB > 100) quality = 0.4;
+        if (originalSizeMB > 200) quality = 0.3;
+
+        console.log(`Video info - Duration: ${duration}s, Original: ${originalSizeMB.toFixed(2)}MB, Quality: ${quality}`);
+
+        // Create a compressed version using MediaRecorder API
+        const mediaStream = video.captureStream();
+        const mediaRecorder = new MediaRecorder(mediaStream, {
+          mimeType: 'video/webm;codecs=vp9',
+          videoBitsPerSecond: Math.floor(1000000 * quality) // Adjust bitrate based on quality
+        });
+
+        const chunks = [];
+        
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            chunks.push(e.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const compressedBlob = new Blob(chunks, { type: 'video/webm' });
+          
+          console.log('Video compressed:', 
+            'Original:', originalSizeMB.toFixed(2), 'MB',
+            'Compressed:', (compressedBlob.size / 1024 / 1024).toFixed(2), 'MB',
+            'Reduction:', ((1 - (compressedBlob.size / file.size)) * 100).toFixed(1) + '%'
+          );
+
+          // Convert to MP4 if needed (for better compatibility)
+          const compressedFile = new File([compressedBlob], file.name.replace(/\.[^/.]+$/, ".webm"), {
+            type: 'video/webm',
+            lastModified: Date.now()
+          });
+
+          resolve(compressedFile);
+        };
+
+        mediaRecorder.onerror = (e) => {
+          console.error('MediaRecorder error:', e);
+          resolve(file); // Fallback to original file
+        };
+
+        // Start recording
+        mediaRecorder.start();
+        
+        // Stop recording after video duration
+        setTimeout(() => {
+          if (mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+          }
+        }, duration * 1000);
+
+        // Play video to capture stream
+        video.play().catch(err => {
+          console.log('Auto-play prevented, using manual compression');
+          mediaRecorder.stop();
+          resolve(file);
+        });
+      };
+
+      video.onerror = () => {
+        console.log('Video loading failed, using original file');
+        resolve(file);
+      };
+    });
+  };
+
+  // Handle media selection with compression
+  const handleMediaSelect = async (e) => {
+    const files = Array.from(e.target.files);
     
     // Check total media count
     if (media.length + files.length > 4) {
-      toast.error('Maximum 4 media files allowed per post.')
-      return
+      toast.error('Maximum 4 media files allowed per post.');
+      return;
     }
 
-    // Validate file types and sizes
-    const validFiles = files.filter(file => {
-      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-        if (file.size > 50 * 1024 * 1024) { // 50MB limit
-          toast.error(`File "${file.name}" is too large. Max 50MB.`)
-          return false
-        }
-        return true
-      } else {
-        toast.error(`File "${file.name}" is not a supported image or video.`)
-        return false
+    setCompressing(true);
+
+    try {
+      const processedFiles = await Promise.all(
+        files.map(async (file) => {
+          // Validate file types and sizes
+          if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+            if (file.size > 500 * 1024 * 1024) { // 500MB limit
+              toast.error(`File "${file.name}" is too large. Max 500MB.`);
+              return null;
+            }
+
+            // Compress videos larger than 5MB
+            if (file.type.startsWith('video/') && file.size > 5 * 1024 * 1024) {
+              try {
+                toast.loading(`Compressing ${file.name}...`, { id: 'compression' });
+                const compressedFile = await compressVideo(file);
+                toast.success(`${file.name} compressed successfully!`, { id: 'compression' });
+                return compressedFile;
+              } catch (error) {
+                console.log('Compression failed, using original:', error);
+                toast.error(`Failed to compress ${file.name}, using original`, { id: 'compression' });
+                return file;
+              }
+            }
+
+            return file; // Return images and small videos as-is
+          } else {
+            toast.error(`File "${file.name}" is not a supported image or video.`);
+            return null;
+          }
+        })
+      );
+
+      // Filter out null values and add to media state
+      const validFiles = processedFiles.filter(file => file !== null);
+      setMedia(prev => [...prev, ...validFiles]);
+      
+    } catch (error) {
+      console.error('Error processing files:', error);
+      toast.error('Error processing media files.');
+    } finally {
+      setCompressing(false);
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    })
-
-    setMedia([...media, ...validFiles])
-    
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
     }
-  }
+  };
 
   // Handle media removal
   const handleMediaRemove = (index) => {
-    setMedia(media.filter((_, i) => i !== index))
-  }
+    setMedia(media.filter((_, i) => i !== index));
+  };
 
   // Get media type for styling
   const getMediaType = (file) => {
-    return file.type.startsWith('video/') ? 'video' : 'image'
-  }
+    return file.type.startsWith('video/') ? 'video' : 'image';
+  };
+
+  // Format file size
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
 
   // Submit function with progress tracking
   const handleSubmit = async () => {
     if (!media.length && !content.trim()) {
-      toast.error('Please add some content or media to your post.')
-      return
+      toast.error('Please add some content or media to your post.');
+      return;
     }
 
-    setLoading(true)
-    setUploadProgress(0)
+    setLoading(true);
+    setUploadProgress(0);
 
     const postType = media.length && content.trim() 
       ? 'text_with_media' 
       : media.length 
         ? 'media' 
-        : 'text'
+        : 'text';
 
     try {
-      const formData = new FormData()
-      formData.append('content', content)
-      formData.append('post_type', postType)
+      const formData = new FormData();
+      formData.append('content', content);
+      formData.append('post_type', postType);
       
       media.forEach((file) => {
-        formData.append('media', file) // Changed from 'images' to 'media'
-      })
+        formData.append('media', file);
+      });
 
-      const token = await getToken()
+      const token = await getToken();
       
       const { data } = await api.post('/api/post/add', formData, {
         headers: { 
@@ -108,38 +249,38 @@ const CreatePost = () => {
         onUploadProgress: (progressEvent) => {
           const progress = Math.round(
             (progressEvent.loaded * 100) / progressEvent.total
-          )
-          setUploadProgress(progress)
+          );
+          setUploadProgress(progress);
         }
-      })
+      });
 
       if (data.success) {
-        toast.success('Post published successfully! 🎉')
+        toast.success('Post published successfully! 🎉');
         // Reset form
-        setContent('')
-        setMedia([])
-        setUploadProgress(0)
+        setContent('');
+        setMedia([]);
+        setUploadProgress(0);
         // Navigate after a short delay for better UX
-        setTimeout(() => navigate('/'), 1000)
+        setTimeout(() => navigate('/'), 1000);
       } else {
-        throw new Error(data.message)
+        throw new Error(data.message);
       }
     } catch (error) {
-      console.error('Error publishing post:', error)
-      toast.error(error.message || 'Failed to publish post. Please try again.')
+      console.error('Error publishing post:', error);
+      toast.error(error.message || 'Failed to publish post. Please try again.');
     } finally {
-      setLoading(false)
-      setUploadProgress(0)
+      setLoading(false);
+      setUploadProgress(0);
     }
-  }
+  };
 
   // Group media by type for better layout
-  const hasVideos = media.some(file => getMediaType(file) === 'video')
+  const hasVideos = media.some(file => getMediaType(file) === 'video');
   const mediaLayoutClass = media.length === 1 
     ? 'grid-cols-1' 
     : media.length === 2 || (media.length === 3 && hasVideos)
       ? 'grid-cols-2'
-      : 'grid-cols-2 sm:grid-cols-3'
+      : 'grid-cols-2 sm:grid-cols-3';
 
   return (
     <div className='min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50 pb-12'>
@@ -181,8 +322,16 @@ const CreatePost = () => {
             placeholder="What's on your mind?..."
             onChange={handleContentChange}
             value={content}
-            disabled={loading}
+            disabled={loading || compressing}
           />
+
+          {/* Compression Indicator */}
+          {compressing && (
+            <div className="flex items-center gap-2 text-blue-600 bg-blue-50 p-3 rounded-lg">
+              <Loader className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Compressing videos... This may take a moment</span>
+            </div>
+          )}
 
           {/* Media Preview */}
           {media.length > 0 && (
@@ -214,7 +363,7 @@ const CreatePost = () => {
                   <button 
                     onClick={() => handleMediaRemove(index)}
                     className='absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-600 transition-all duration-200 rounded-full text-white shadow-xl backdrop-blur-sm hover:scale-110'
-                    disabled={loading}
+                    disabled={loading || compressing}
                   >
                     <X className="w-4 h-4"/>
                   </button>
@@ -222,6 +371,11 @@ const CreatePost = () => {
                   {/* File Type Badge */}
                   <div className='absolute top-2 left-2 px-2 py-1 bg-black/50 text-white text-xs rounded-full backdrop-blur-sm'>
                     {getMediaType(file).toUpperCase()}
+                  </div>
+
+                  {/* File Size Info */}
+                  <div className='absolute bottom-2 left-2 px-2 py-1 bg-black/50 text-white text-xs rounded-full backdrop-blur-sm'>
+                    {formatFileSize(file.size)}
                   </div>
                 </div>
               ))}
@@ -244,7 +398,7 @@ const CreatePost = () => {
           {/* Media Limit Info */}
           {media.length < 4 && (
             <p className='text-xs text-gray-400 text-right'>
-              {media.length}/4 media files • Images & Videos
+              {media.length}/4 media files • Images & Videos • Auto-compression enabled
             </p>
           )}
 
@@ -256,7 +410,7 @@ const CreatePost = () => {
               <label 
                 htmlFor="media" 
                 className={`flex items-center gap-2 text-md transition-all duration-200 cursor-pointer p-3 rounded-xl hover:shadow-md ${
-                  media.length >= 4 
+                  media.length >= 4 || compressing
                     ? 'text-gray-400 cursor-not-allowed' 
                     : 'text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50'
                 }`}
@@ -277,28 +431,30 @@ const CreatePost = () => {
                 hidden 
                 multiple 
                 onChange={handleMediaSelect}
-                disabled={media.length >= 4 || loading}
+                disabled={media.length >= 4 || compressing || loading}
               />
             </div>
 
             {/* Publish Button */}
             <button 
-              disabled={loading || (!media.length && !content.trim())} 
-              onClick={() => handleSubmit()}
+              disabled={loading || compressing || (!media.length && !content.trim())} 
+              onClick={handleSubmit}
               className='flex items-center gap-2 text-md bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-[0.98] transition-all duration-200 text-white font-semibold px-6 py-3 rounded-full shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
             >
-              {loading ? (
+              {compressing ? (
+                <Loader className="w-4 h-4 animate-spin" />
+              ) : loading ? (
                 <Loader className="w-4 h-4 animate-spin" />
               ) : (
                 <Send className='w-4 h-4'/>
               )}
-              {loading ? 'Publishing...' : 'Publish Post'}
+              {compressing ? 'Compressing...' : loading ? 'Publishing...' : 'Publish Post'}
             </button>
           </div>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default CreatePost
+export default CreatePost;

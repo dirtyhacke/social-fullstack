@@ -128,6 +128,38 @@ export const updateUserData = async (req, res) => {
     }
 }
 
+// Update User Settings
+export const updateUserSettings = async (req, res) => {
+    try {
+        const { userId } = req.auth()
+        const { profilePrivacy, messageSetting, allowedMessagingUsers } = req.body;
+
+        const updatedData = {
+            settings: {
+                profilePrivacy,
+                messageSetting,
+                allowedMessagingUsers: allowedMessagingUsers || []
+            }
+        }
+
+        const user = await User.findByIdAndUpdate(
+            userId, 
+            updatedData, 
+            { new: true }
+        )
+
+        res.json({
+            success: true, 
+            user, 
+            message: 'Settings updated successfully'
+        })
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({success: false, message: error.message})
+    }
+}
+
 // Find Users using username, email, location, name
 export const discoverUsers = async (req, res) => {
     try {
@@ -304,19 +336,116 @@ export const acceptConnectionRequest = async (req, res) => {
     }
 }
 
-// Get User Profiles
+// Get User Profiles with Privacy Check
 export const getUserProfiles = async (req, res) =>{
     try {
         const { profileId } = req.body;
+        const { userId } = req.auth()
+        
         const profile = await User.findById(profileId)
         if(!profile){
             return res.json({ success: false, message: "Profile not found" });
         }
+
+        // Check if profile is private and user is not follower
+        if (profile.settings?.profilePrivacy === 'private') {
+            const isFollower = profile.followers.includes(userId);
+            const isOwner = userId === profileId;
+            
+            if (!isFollower && !isOwner) {
+                // Return limited profile info for private accounts
+                return res.json({
+                    success: true,
+                    profile: {
+                        _id: profile._id,
+                        full_name: profile.full_name,
+                        username: profile.username,
+                        settings: profile.settings,
+                        // Don't return sensitive info
+                        profile_picture: '',
+                        cover_photo: '',
+                        bio: 'This account is private',
+                        followers: [],
+                        following: [],
+                        connections: []
+                    },
+                    posts: [] // No posts for non-followers
+                })
+            }
+        }
+
         const posts = await Post.find({user: profileId}).populate('user')
 
         res.json({success: true, profile, posts})
     } catch (error) {
         console.log(error);
         res.json({success: false, message: error.message})
+    }
+}
+
+// Check if user can message another user
+export const canMessageUser = async (req, res) => {
+    try {
+        const { userId } = req.auth()
+        const { targetUserId } = req.body;
+
+        const targetUser = await User.findById(targetUserId)
+        if (!targetUser) {
+            return res.json({ success: false, message: "User not found" })
+        }
+
+        const canMessage = checkMessagePermission(targetUser, userId)
+        
+        res.json({ 
+            success: true, 
+            canMessage: canMessage.allowed,
+            reason: canMessage.reason
+        })
+
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message })
+    }
+}
+
+// Helper function to check message permissions
+export const checkMessagePermission = (targetUser, currentUserId) => {
+    const settings = targetUser.settings || {}
+    
+    // User can always message themselves
+    if (targetUser._id === currentUserId) {
+        return { allowed: true, reason: 'Can message yourself' }
+    }
+    
+    switch (settings.messageSetting) {
+        case 'anyone':
+            return { allowed: true, reason: 'User accepts messages from anyone' }
+            
+        case 'private':
+            // Check if current user is followed by target user
+            const isFollowed = targetUser.following.includes(currentUserId)
+            if (isFollowed) {
+                return { allowed: true, reason: 'User follows you' }
+            } else {
+                return { 
+                    allowed: false, 
+                    reason: 'User only accepts messages from people they follow' 
+                }
+            }
+            
+        case 'custom':
+            // Check if current user is in allowed list
+            const isAllowed = settings.allowedMessagingUsers?.includes(currentUserId)
+            if (isAllowed) {
+                return { allowed: true, reason: 'You are in user\'s allowed messaging list' }
+            } else {
+                return { 
+                    allowed: false, 
+                    reason: 'User has restricted messaging to specific users only' 
+                }
+            }
+            
+        default:
+            return { allowed: true, reason: 'Default setting - anyone can message' }
     }
 }

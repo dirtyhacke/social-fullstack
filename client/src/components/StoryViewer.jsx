@@ -1,4 +1,4 @@
-import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Volume2, VolumeX } from 'lucide-react'
 import React, { useEffect, useState, useRef } from 'react'
 
 const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setViewStory }) => {
@@ -6,9 +6,11 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
     const [progress, setProgress] = useState(0)
     const [audioProgress, setAudioProgress] = useState(0)
     const [currentLyric, setCurrentLyric] = useState("")
-    const [showMusicOptions, setShowMusicOptions] = useState(false)
+    const [isMuted, setIsMuted] = useState(true)
+    const [videoLoaded, setVideoLoaded] = useState(false)
 
     const audioRef = useRef(null)
+    const videoRef = useRef(null)
     const progressIntervalRef = useRef(null)
     const storyDuration = 10000; // 10 seconds for non-video stories
 
@@ -34,21 +36,50 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
 
         // Reset progress when story changes
         setProgress(0);
+        setVideoLoaded(false);
         stopSongPreview();
 
-        // Only start timer/progress if the story is not a video
-        if(viewStory.media_type !== 'video'){
+        // Handle different media types
+        if (viewStory.media_type === 'video') {
+            // For videos, wait for video to load and play
+            if (videoRef.current) {
+                const video = videoRef.current;
+                video.currentTime = 0;
+                
+                const playVideo = async () => {
+                    try {
+                        video.muted = true;
+                        video.playsInline = true;
+                        video.preload = "auto";
+                        
+                        // Wait for video to be ready
+                        if (video.readyState < 3) {
+                            video.load();
+                        }
+                        
+                        await video.play();
+                        console.log('🎥 Video playback started successfully');
+                    } catch (error) {
+                        console.error('🎥 Video play failed:', error);
+                    }
+                };
+
+                // Start video playback after a small delay to ensure DOM is ready
+                setTimeout(playVideo, 100);
+            }
+        } else {
+            // For non-video stories, use timer-based progress
             const setTime = 50;
             let elapsed = 0;
 
-           progressInterval = setInterval(() => {
+            progressInterval = setInterval(() => {
                 elapsed += setTime;
                 setProgress(Math.min(100, (elapsed / storyDuration) * 100));
             }, setTime);
 
-             timer = setTimeout(()=>{
+            timer = setTimeout(() => {
                 handleNextStory(); // Auto-advance to next story
-             }, storyDuration)
+            }, storyDuration)
         }
 
         // Auto-play music if story has music
@@ -58,13 +89,38 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
             }, 500);
         }
 
-        return ()=>{
+        return () => {
             clearTimeout(timer);
             clearInterval(progressInterval);
             stopSongPreview();
         }
 
     }, [viewStory, currentStoryIndex])
+
+    // Handle video events
+    const handleVideoLoad = () => {
+        console.log('🎥 Video loaded successfully');
+        setVideoLoaded(true);
+    }
+
+    const handleVideoError = (e) => {
+        console.error('🎥 Video error:', e);
+        console.error('🎥 Video source:', viewStory?.media_url);
+    }
+
+    const handleVideoEnd = () => {
+        console.log('🎥 Video ended, moving to next story');
+        handleNextStory();
+    }
+
+    // Toggle video mute
+    const toggleMute = (e) => {
+        if (e) e.stopPropagation();
+        if (videoRef.current) {
+            videoRef.current.muted = !videoRef.current.muted;
+            setIsMuted(videoRef.current.muted);
+        }
+    }
 
     // Music functions
     const playSongPreview = async (musicData) => {
@@ -168,7 +224,7 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         return `${sizeClasses[size]} ${styleClasses[style]} rounded-full`; 
     };
 
-    const handleClose = ()=>{
+    const handleClose = () => {
         console.log("🛑 Closing story viewer");
         stopSongPreview(); 
         setViewStory(false);
@@ -180,10 +236,8 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         stopSongPreview();
         
         if (currentStoryIndex < stories.length - 1) {
-            // Go to next story
             setCurrentStoryIndex(currentStoryIndex + 1);
         } else {
-            // No more stories, close viewer
             console.log("📕 No more stories - closing");
             setViewStory(false);
         }
@@ -195,10 +249,8 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         stopSongPreview();
         
         if (currentStoryIndex > 0) {
-            // Go to previous story
             setCurrentStoryIndex(currentStoryIndex - 1);
         } else {
-            // Already at first story, close viewer
             console.log("📗 First story - closing");
             setViewStory(false);
         }
@@ -237,24 +289,71 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         return null;
     }
 
-    const renderContent = ()=>{
-        const mediaClass = 'w-full h-full object-contain';
-
+    const renderContent = () => {
         switch (viewStory.media_type) {
             case 'image':
                 return (
-                    <img src={viewStory.media_url} alt="Story content" className={mediaClass}/>
+                    <img 
+                        src={viewStory.media_url} 
+                        alt="Story content" 
+                        className="w-full h-full object-contain"
+                        loading="lazy"
+                    />
                 );
             case 'video':
                 return (
-                    <video 
-                        onEnded={handleNextStory}
-                        src={viewStory.media_url} 
-                        className={mediaClass} 
-                        controls 
-                        autoPlay 
-                        style={{ maxHeight: '100%' }}
-                    />
+                    <div className="relative w-full h-full bg-black">
+                        {/* Video Loading Indicator */}
+                        {!videoLoaded && (
+                            <div className="absolute inset-0 flex items-center justify-center z-10">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+                            </div>
+                        )}
+                        
+                        <video 
+                            ref={videoRef}
+                            onEnded={handleVideoEnd}
+                            onLoadedData={handleVideoLoad}
+                            onCanPlay={handleVideoLoad}
+                            onError={handleVideoError}
+                            onPlay={() => console.log('🎥 Video playing')}
+                            src={viewStory.media_url} 
+                            className="w-full h-full object-contain"
+                            muted={isMuted}
+                            playsInline
+                            autoPlay
+                            preload="auto"
+                            controls={false}
+                            style={{ 
+                                backgroundColor: 'black',
+                                display: videoLoaded ? 'block' : 'none'
+                            }}
+                        >
+                            Your browser does not support the video tag.
+                        </video>
+                        
+                        {/* Mute/Unmute Button - Only for videos */}
+                        <button
+                            onClick={toggleMute}
+                            className="absolute bottom-4 left-4 p-3 bg-black/50 rounded-full text-white hover:bg-black/70 transition-all z-40"
+                        >
+                            {isMuted ? (
+                                <VolumeX className="w-5 h-5" />
+                            ) : (
+                                <Volume2 className="w-5 h-5" />
+                            )}
+                        </button>
+
+                        {/* Video not loaded fallback */}
+                        {!videoLoaded && (
+                            <div className="absolute inset-0 flex items-center justify-center z-20">
+                                <div className="text-white text-center">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                                    <p className="text-sm">Loading video...</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 );
             case 'text':
                 return (
@@ -270,15 +369,18 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                 );
         
             default:
-                return null;
+                return (
+                    <div className="w-full h-full flex items-center justify-center bg-black">
+                        <p className="text-white text-lg">Unsupported story type</p>
+                    </div>
+                );
         }
     }
 
-    // Music sticker component - Now positioned on the LEFT side
+    // Music sticker component
     const MusicSticker = () => {
         if (!viewStory?.music_data) return null;
 
-        // Position on LEFT side (20% from left, 12% from top)
         const musicPosition = viewStory.music_position || { x: 20, y: 12 };
         const musicData = viewStory.music_data;
         const baseClass = getCardStyleClasses();
@@ -304,7 +406,7 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
             )
         }
 
-        // Standard Music Card (No Lyrics) - Now on LEFT side
+        // Standard Music Card
         return (
             <div 
                 className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-40 transition-all duration-200`}
@@ -315,7 +417,7 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
             >
                 <div className={`${baseClass} flex items-center gap-2 relative overflow-hidden`}>
                     
-                    {/* Album Art with Playing Indicator */}
+                    {/* Album Art */}
                     <div className='relative flex-shrink-0'>
                         <img 
                             src={musicData.image} 
@@ -325,10 +427,6 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                                 rounded-full object-cover
                             `}
                         />
-                         {/* Playing indicator dot 
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
-                            <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
-                        </div> */}
                     </div>
                     
                     {/* Song Info */}
@@ -341,13 +439,13 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                         </p>
                     </div>
                     
-                    {/* Progress Bar */}
-                    {/*<div className='absolute bottom-0 left-0 right-0 h-[2px] bg-white/30 overflow-hidden'>
+                    {/* Audio Progress Bar */}
+                    <div className='absolute bottom-0 left-0 right-0 h-[2px] bg-white/30 overflow-hidden'>
                         <div 
                             className='h-full bg-green-400 transition-all duration-100 ease-linear' 
                             style={{ width: `${audioProgress}%` }}
                         />
-                    </div>*/}
+                    </div>
                 </div>
             </div>
         );
@@ -359,12 +457,7 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         >
           {/* Main Story Container */}
           <div 
-            className='relative w-full max-w-sm h-full max-h-[95vh] sm:max-h-[90vh] mx-auto shadow-2xl rounded-xl overflow-hidden'
-            style={{ 
-                backgroundColor: viewStory.media_type === 'text' && viewStory.background_color 
-                    ? viewStory.background_color 
-                    : 'black' 
-            }}
+            className='relative w-full max-w-sm h-full max-h-[95vh] sm:max-h-[90vh] mx-auto shadow-2xl rounded-xl overflow-hidden bg-black'
           >
               
               {/* Progress Bars for all stories */}
@@ -400,11 +493,11 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
               </div>
 
               {/* Content Wrapper and Tap-to-Advance zones */}
-              <div className='w-full h-full relative'>
+              <div className='w-full h-full relative bg-black'>
                   {/* The actual content (media/text) */}
                   {renderContent()}
                   
-                  {/* Music Sticker - Now positioned on LEFT side */}
+                  {/* Music Sticker */}
                   <MusicSticker />
                   
                   {/* Tap-to-Advance Zones */}

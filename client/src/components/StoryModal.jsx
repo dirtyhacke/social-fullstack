@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/clerk-react'
-import { ArrowLeft, Sparkle, TextIcon, Upload, X, Camera, Music, Play, Pause, Heart, GripHorizontal, AlignLeft, Maximize2, Minimize2, Type } from 'lucide-react'
+import { ArrowLeft, Sparkle, TextIcon, Upload, X, Camera, Music, Play, Pause, Heart, GripHorizontal, AlignLeft } from 'lucide-react'
 import React, { useState, useRef, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import api from '../api/axios'
@@ -30,10 +30,13 @@ const StoryModal = ({setShowModal, fetchStories}) => {
     const [showLyrics, setShowLyrics] = useState(false)
     const [currentLyric, setCurrentLyric] = useState("")
     const [hideWatermark, setHideWatermark] = useState(false)
-    const [favoritePartStart, setFavoritePartStart] = useState(0) // Start time in seconds
+    const [favoritePartStart, setFavoritePartStart] = useState(0)
     const [showFavoriteSelector, setShowFavoriteSelector] = useState(false)
-    const [cardSize, setCardSize] = useState("medium") // small, medium, large
-    const [cardStyle, setCardStyle] = useState("default") // default, minimal, classic, modern
+    const [cardSize, setCardSize] = useState("medium")
+    const [cardStyle, setCardStyle] = useState("default")
+    const [compressing, setCompressing] = useState(false)
+    const [compressionProgress, setCompressionProgress] = useState(0)
+    const [currentCompressingFile, setCurrentCompressingFile] = useState("")
 
     const videoRef = useRef(null)
     const streamRef = useRef(null)
@@ -58,8 +61,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
             audioRef.current.pause();
             audioRef.current.currentTime = 0;
             audioRef.current.src = '';
-            audioRef.current.load(); // Force reload to clear buffer
-            // Remove all event listeners
+            audioRef.current.load();
             audioRef.current.onerror = null;
             audioRef.current.oncanplaythrough = null;
             audioRef.current.ontimeupdate = null;
@@ -88,22 +90,25 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         setPlayingSong(null);
         setAudioProgress(0);
         setCurrentLyric("");
+        
+        // Reset compression states
+        setCompressing(false);
+        setCompressionProgress(0);
+        setCurrentCompressingFile("");
     };
 
-    // Initialize audio element - ONLY when modal is open
+    // Initialize audio element
     useEffect(() => {
-        // Create new audio element when modal opens
         audioRef.current = new Audio();
         audioRef.current.volume = 0.5;
         
         loadTrendingSongs();
         
-        // Cleanup when modal closes
         return () => {
             console.log('🚪 Modal unmounting - cleaning up everything');
             cleanupAll();
         };
-    }, []); // Empty dependency array - only run on mount/unmount
+    }, []);
 
     // Handle escape key and background click
     useEffect(() => {
@@ -128,14 +133,14 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         };
     }, []);
 
-    // CLOSE MODAL HANDLER - FIXED: Ensure music stops when modal closes
+    // CLOSE MODAL HANDLER
     const handleCloseModal = () => {
         console.log('🚪 Closing modal and stopping all audio...');
         cleanupAll();
         setShowModal(false);
     };
 
-    // Auto-play when music is selected (Instagram style)
+    // Auto-play when music is selected
     useEffect(() => {
         if (selectedMusic && (mode === 'media' || mode === 'camera') && previewUrl) {
             setTimeout(() => {
@@ -220,21 +225,126 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         setIsDragging(true);
     };
 
-    // FAVORITE PART SELECTION (Instagram Style)
+    // VIDEO COMPRESSION FUNCTION
+    const compressVideo = (file) => {
+        return new Promise((resolve) => {
+            if (!file.type.startsWith('video/')) {
+                resolve(file);
+                return;
+            }
+
+            // For videos smaller than 5MB, skip compression
+            if (file.size <= 5 * 1024 * 1024) {
+                resolve(file);
+                return;
+            }
+
+            console.log('🎥 Starting video compression for story...');
+            
+            const video = document.createElement('video');
+            const source = document.createElement('source');
+            
+            video.preload = 'metadata';
+            source.src = URL.createObjectURL(file);
+            video.appendChild(source);
+
+            video.onloadedmetadata = () => {
+                URL.revokeObjectURL(source.src);
+                
+                const duration = video.duration;
+                const originalSizeMB = file.size / 1024 / 1024;
+                
+                let quality = 0.8;
+                if (originalSizeMB > 50) quality = 0.6;
+                if (originalSizeMB > 100) quality = 0.4;
+
+                const mediaStream = video.captureStream();
+                const mediaRecorder = new MediaRecorder(mediaStream, {
+                    mimeType: 'video/webm;codecs=vp9',
+                    videoBitsPerSecond: Math.floor(1000000 * quality)
+                });
+
+                const chunks = [];
+                
+                // Update compression progress
+                const progressInterval = setInterval(() => {
+                    setCompressionProgress(prev => {
+                        if (prev >= 90) return 90;
+                        return prev + 10;
+                    });
+                }, 500);
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        chunks.push(e.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    clearInterval(progressInterval);
+                    setCompressionProgress(100);
+                    
+                    const compressedBlob = new Blob(chunks, { type: 'video/webm' });
+                    const compressedFile = new File([compressedBlob], file.name.replace(/\.[^/.]+$/, ".webm"), {
+                        type: 'video/webm',
+                        lastModified: Date.now()
+                    });
+
+                    console.log(`✅ Video compressed: ${originalSizeMB.toFixed(2)}MB → ${(compressedBlob.size / 1024 / 1024).toFixed(2)}MB`);
+                    
+                    setTimeout(() => {
+                        setCompressing(false);
+                        setCompressionProgress(0);
+                        setCurrentCompressingFile("");
+                        resolve(compressedFile);
+                    }, 500);
+                };
+
+                mediaRecorder.onerror = () => {
+                    clearInterval(progressInterval);
+                    setCompressing(false);
+                    setCompressionProgress(0);
+                    setCurrentCompressingFile("");
+                    resolve(file);
+                };
+
+                mediaRecorder.start();
+                
+                setTimeout(() => {
+                    if (mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                }, duration * 1000);
+
+                video.play().catch(() => {
+                    mediaRecorder.stop();
+                    resolve(file);
+                });
+            };
+
+            video.onerror = () => {
+                setCompressing(false);
+                setCompressionProgress(0);
+                setCurrentCompressingFile("");
+                resolve(file);
+            };
+        });
+    };
+
+    // FAVORITE PART SELECTOR
     const FavoritePartSelector = () => {
         const [previewTime, setPreviewTime] = useState(favoritePartStart);
         
         const handleTimeChange = (e) => {
             const newTime = parseInt(e.target.value);
             setPreviewTime(newTime);
-            // Preview the song at this time
             if (audioRef.current) {
                 audioRef.current.currentTime = newTime;
                 if (!isPlaying) {
                     audioRef.current.play().then(() => {
                         setTimeout(() => {
                             audioRef.current.pause();
-                        }, 2000); // Play 2 seconds preview
+                        }, 2000);
                     });
                 }
             }
@@ -245,7 +355,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
             setShowFavoriteSelector(false);
             toast.success(`Favorite part set to ${Math.floor(previewTime / 60)}:${(previewTime % 60).toString().padStart(2, '0')}`);
             
-            // Restart playback from favorite part
             if (selectedMusic) {
                 setTimeout(() => {
                     playSongPreview(selectedMusic);
@@ -324,7 +433,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         return `${sizeClasses[cardSize]} ${styleClasses[cardStyle]} rounded-2xl`;
     };
 
-    // INSTAGRAM-STYLE AUDIO PLAYBACK WITH FAVORITE PART
+    // AUDIO PLAYBACK WITH FAVORITE PART
     const playSongPreview = async (song) => {
         console.log('🎵 Playing story music from:', favoritePartStart + 's');
         
@@ -340,14 +449,12 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         try {
             const audio = audioRef.current;
             
-            // Reset audio completely
             audio.pause();
             audio.currentTime = favoritePartStart;
             audio.volume = 0.5;
             audio.crossOrigin = 'anonymous';
             audio.src = song.downloadUrl;
             
-            // Clear previous event listeners
             audio.onerror = null;
             audio.oncanplaythrough = null;
             audio.ontimeupdate = null;
@@ -364,7 +471,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                     
                     setIsPlaying(true);
                     
-                    // Start progress tracking
                     progressIntervalRef.current = setInterval(() => {
                         const currentTime = audio.currentTime - favoritePartStart;
                         if (audio.ended || currentTime >= selectedDuration) {
@@ -428,7 +534,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         return currentLyric ? currentLyric.text : "🎵 Music playing...";
     };
 
-    // Instagram-style toggle play/pause
+    // Toggle play/pause
     const togglePlayPause = () => {
         if (!selectedMusic) return;
         
@@ -494,7 +600,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         }
     }
 
-    const handleMediaUpload = (e)=>{
+    const handleMediaUpload = async (e) => {
         const file = e.target.files?.[0]
         if(!file) return;
 
@@ -505,17 +611,35 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                 setPreviewUrl(null)
                 return;
             }
+            
             const video = document.createElement('video');
             video.preload = 'metadata';
-            video.onloadedmetadata = ()=>{
+            video.onloadedmetadata = async ()=>{
                 window.URL.revokeObjectURL(video.src)
                 if(video.duration > MAX_VIDEO_DURATION){
                     toast.error("Video duration cannot exceed 1 minute.")
                     setMedia(null)
                     setPreviewUrl(null)
                 }else{
-                    setMedia(file)
-                    setPreviewUrl(URL.createObjectURL(file))
+                    // Start compression for videos larger than 5MB
+                    if (file.size > 5 * 1024 * 1024) {
+                        setCompressing(true);
+                        setCompressionProgress(0);
+                        setCurrentCompressingFile(file.name);
+                        
+                        try {
+                            const compressedFile = await compressVideo(file);
+                            setMedia(compressedFile);
+                            setPreviewUrl(URL.createObjectURL(compressedFile));
+                        } catch (error) {
+                            console.error('Compression failed:', error);
+                            setMedia(file);
+                            setPreviewUrl(URL.createObjectURL(file));
+                        }
+                    } else {
+                        setMedia(file);
+                        setPreviewUrl(URL.createObjectURL(file));
+                    }
                     setText('')
                     setMode("media")
                 }
@@ -661,7 +785,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         setShowMusicSearch(false);
         setMusicSearchQuery("");
         setSearchResults([]);
-        setFavoritePartStart(0); // Reset favorite part when new song is selected
+        setFavoritePartStart(0);
         toast.success(`"${safeSong.name}" added to your story`);
         
         if ((mode === 'media' || mode === 'camera') && previewUrl) {
@@ -776,6 +900,9 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         setFavoritePartStart(0);
         setCardSize("medium");
         setCardStyle("default");
+        setCompressing(false);
+        setCompressionProgress(0);
+        setCurrentCompressingFile("");
         
         if (newMode !== "camera" && streamRef.current) {
             stopCamera();
@@ -824,7 +951,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
             <div 
                 className='fixed inset-0 z-[1000] h-[100dvh] bg-black/80 backdrop-blur-sm text-white flex items-center justify-center p-4'
                 onClick={(e) => {
-                    // Close modal when clicking on background
                     if (e.target === e.currentTarget) {
                         handleCloseModal();
                     }
@@ -842,6 +968,25 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                             <X className='w-6 h-6'/>
                         </button>
                     </div>
+
+                    {/* Compression Progress Bar */}
+                    {compressing && (
+                        <div className="mb-4 p-4 bg-zinc-800 rounded-xl border border-zinc-700">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-white">Compressing Video</span>
+                                <span className="text-sm text-zinc-400">{compressionProgress}%</span>
+                            </div>
+                            <div className="w-full bg-zinc-700 rounded-full h-2">
+                                <div 
+                                    className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${compressionProgress}%` }}
+                                />
+                            </div>
+                            <p className="text-xs text-zinc-400 mt-2 truncate">
+                                {currentCompressingFile}
+                            </p>
+                        </div>
+                    )}
 
                     {/* Story Preview Area */}
                     <div 
@@ -889,7 +1034,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                         <video src={previewUrl} className='object-cover w-full h-full' autoPlay muted loop/>
                                     )}
                                     
-                                    {/* DRAGGABLE MUSIC STICKER WITH MULTIPLE STYLES */}
+                                    {/* DRAGGABLE MUSIC STICKER */}
                                     {selectedMusic && (
                                         <div 
                                             ref={musicStickerRef}
@@ -1179,7 +1324,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                         key={duration}
                                         onClick={() => {
                                             setSelectedDuration(duration);
-                                            // Restart playback with new duration
                                             if (isPlaying && selectedMusic) {
                                                 setTimeout(() => {
                                                     playSongPreview(selectedMusic);
@@ -1270,11 +1414,11 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                             success: 'Story created!',
                             error: (err) => err.message || 'Failed to create story.',
                         })} 
-                        disabled={loading || !isFormValid()}
+                        disabled={loading || !isFormValid() || compressing}
                         className='flex items-center justify-center gap-2 text-white py-3.5 mt-2 w-full rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all duration-300 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] font-semibold border border-green-400/30'
                     >
                         <Sparkle size={18} className='text-white'/> 
-                        {loading ? 'Creating...' : 'Share Story'}
+                        {loading ? 'Creating...' : compressing ? 'Compressing...' : 'Share Story'}
                     </button>
                 </div>
             </div>
@@ -1354,7 +1498,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        // Preview play in search modal
                                                         playSongPreview(song);
                                                     }}
                                                     className='absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg opacity-0 hover:opacity-100 transition-opacity duration-200'
@@ -1404,7 +1547,6 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            // Preview play in search modal
                                                             playSongPreview(song);
                                                         }}
                                                         className='absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg opacity-0 hover:opacity-100 transition-opacity duration-200'

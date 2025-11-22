@@ -1,20 +1,25 @@
-import { Calendar, MapPin, PenBox, Verified } from 'lucide-react'
+import { Calendar, MapPin, PenBox, Verified, Settings } from 'lucide-react'
 import moment from 'moment'
 import React from 'react'
+import { useSelector } from 'react-redux'
 
-const UserProfileInfo = ({ user, posts, profileId, setShowEdit }) => {
+const UserProfileInfo = ({ user, posts, profileId, setShowEdit, setShowSettings }) => {
+    const currentUser = useSelector((state) => state.user.value)
+    
+    // Check if this is the current user's profile
+    const isOwnProfile = !profileId || profileId === currentUser?._id
+
     return (
         <div className='relative py-4 px-6 md:px-8 bg-white'>
             <div className='flex flex-col md:flex-row items-start gap-6'>
 
                 <div className="w-32 h-32 border-4 border-white shadow-lg absolute -top-16 rounded-full overflow-hidden">
                     <img
-                        src={user.profile_picture}
+                        src={user.profile_picture || '/default-avatar.png'}
                         alt=""
                         className="w-full h-full object-cover"
                     />
                 </div>
-
 
                 <div className='w-full pt-16 md:pt-0 md:pl-36'>
                     <div className='flex flex-col md:flex-row items-start justify-between'>
@@ -25,13 +30,46 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit }) => {
                             </div>
                             <p className='text-gray-600'>{user.username ? `@${user.username}` : 'Add a username'}</p>
                         </div>
-                        {/* if user is not on others profile that means he is opening his profile so we will give edit button */}
-                        {!profileId &&
-                            <button onClick={() => setShowEdit(true)} className='flex items-center gap-2 border border-gray-300 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors mt-4 md:mt-0 cursor-pointer'>
-                                <PenBox className='"w-4 h-4' />
-                                Edit
-                            </button>}
+                        
+                        {/* Action Buttons */}
+                        <div className='flex space-x-3 mt-4 md:mt-0'>
+                            {/* Edit Profile Button - Only show on own profile */}
+                            {isOwnProfile && (
+                                <>
+                                    <button 
+                                        onClick={() => setShowEdit(true)} 
+                                        className='flex items-center gap-2 border border-gray-300 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer'
+                                    >
+                                        <PenBox className='w-4 h-4' />
+                                        Edit
+                                    </button>
+                                    
+                                    {/* Settings Button */}
+                                    <button 
+                                        onClick={() => setShowSettings(true)} 
+                                        className='flex items-center gap-2 border border-gray-300 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer'
+                                        title='Profile Settings'
+                                    >
+                                        <Settings className='w-4 h-4' />
+                                        Settings
+                                    </button>
+                                </>
+                            )}
+                            
+                            {/* Follow/Message buttons for other users */}
+                            {!isOwnProfile && (
+                                <>
+                                    <button className='flex items-center gap-2 bg-green-600 text-white hover:bg-green-700 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer'>
+                                        Follow
+                                    </button>
+                                    <button className='flex items-center gap-2 border border-gray-300 hover:bg-gray-50 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer'>
+                                        Message
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
+                    
                     <p className='text-gray-700 text-sm max-w-md mt-4'>{user.bio}</p>
 
                     <div className='flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500 mt-4'>
@@ -52,17 +90,16 @@ const UserProfileInfo = ({ user, posts, profileId, setShowEdit }) => {
                         </div>
                         <div>
                             <span className='sm:text-xl font-bold text-gray-900'>
-                                {user.followers.length}</span>
+                                {user.followers?.length || 0}</span>
                             <span className='text-xs sm:text-sm text-gray-500 ml-1.5'>Followers</span>
                         </div>
                         <div>
                             <span className='sm:text-xl font-bold text-gray-900'>
-                                {user.following.length}</span>
+                                {user.following?.length || 0}</span>
                             <span className='text-xs sm:text-sm text-gray-500 ml-1.5'>Following</span>
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
     )

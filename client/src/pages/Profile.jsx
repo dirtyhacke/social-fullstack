@@ -7,6 +7,7 @@ import UserProfileInfo from '../components/UserProfileInfo'
 import PostCard from '../components/PostCard'
 import moment from 'moment'
 import ProfileModal from '../components/ProfileModal'
+import ProfileSettingsModal from '../components/ProfileSettingsModal'
 import { useAuth } from '@clerk/clerk-react'
 import api from '../api/axios'
 import toast from 'react-hot-toast'
@@ -22,18 +23,32 @@ const Profile = () => {
   const [posts, setPosts] = useState([])
   const [activeTab, setActiveTab] = useState('posts')
   const [showEdit, setShowEdit] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const fetchUser = async (profileId) => {
     const token = await getToken()
     try {
-      const { data } = await api.post(`/api/user/profiles`, {profileId}, {
+      // Fetch user profile
+      const { data: profileData } = await api.post(`/api/user/profiles`, {profileId}, {
         headers: {Authorization: `Bearer ${token}`}
       })
-      if(data.success){
-        setUser(data.profile)
-        setPosts(data.posts)
+      
+      if(profileData.success){
+        setUser(profileData.profile)
+        
+        // Fetch posts with privacy check using the new endpoint
+        const { data: postsData } = await api.post('/api/post/profile-posts', { profileId }, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        
+        if (postsData.success) {
+          setPosts(postsData.posts)
+        } else {
+          toast.error(postsData.message)
+          setPosts([])
+        }
       }else{
-        toast.error(data.message)
+        toast.error(profileData.message)
       }
     } catch (error) {
       toast.error(error.message)
@@ -48,6 +63,86 @@ const Profile = () => {
     }
   },[profileId, currentUser])
 
+  // Check if profile is private and user doesn't have access
+  const isPrivateProfile = user?.settings?.profilePrivacy === 'private' && 
+                          profileId && 
+                          profileId !== currentUser?._id && 
+                          !user?.followers?.includes(currentUser?._id)
+
+  // Show private profile message
+  if (isPrivateProfile) {
+    return (
+      <div className='relative h-full overflow-y-scroll bg-gray-50 p-6'>
+        <div className='max-w-3xl mx-auto'>
+          <div className='bg-white rounded-2xl shadow overflow-hidden'>
+            {/* Cover Photo */}
+            <div className='h-40 md:h-56 bg-gradient-to-r from-indigo-200 via-purple-200 to-pink-200'>
+              {user.cover_photo && <img src={user.cover_photo} alt='' className='w-full h-full object-cover'/>}
+            </div>
+            
+            {/* Private Profile Message */}
+            <div className='px-6 pb-6 -mt-16 relative'>
+              <div className='flex flex-col md:flex-row md:items-end md:justify-between'>
+                <div className='flex flex-col md:flex-row md:items-end space-y-4 md:space-y-0 md:space-x-6'>
+                  {/* Default Avatar */}
+                  <div className='relative'>
+                    <div className='w-32 h-32 rounded-2xl border-4 border-white shadow-lg bg-gray-200 flex items-center justify-center'>
+                      <svg className='w-16 h-16 text-gray-400' fill='currentColor' viewBox='0 0 24 24'>
+                        <path d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/>
+                      </svg>
+                    </div>
+                  </div>
+                  
+                  {/* User Details */}
+                  <div className='space-y-2'>
+                    <h1 className='text-2xl md:text-3xl font-bold text-gray-900'>
+                      {user.full_name}
+                    </h1>
+                    <p className='text-gray-600'>@{user.username}</p>
+                    <p className='text-gray-700 max-w-md'>This account is private</p>
+                    
+                    {/* Stats */}
+                    <div className='flex space-x-6 pt-2'>
+                      <div className='text-center'>
+                        <span className='block font-bold text-gray-900'>-</span>
+                        <span className='text-sm text-gray-600'>Posts</span>
+                      </div>
+                      <div className='text-center'>
+                        <span className='block font-bold text-gray-900'>-</span>
+                        <span className='text-sm text-gray-600'>Followers</span>
+                      </div>
+                      <div className='text-center'>
+                        <span className='block font-bold text-gray-900'>-</span>
+                        <span className='text-sm text-gray-600'>Following</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Follow Button */}
+                <div className='flex space-x-3 mt-4 md:mt-0'>
+                  <button className='px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 font-medium text-sm'>
+                    Follow
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Private Account Message */}
+          <div className='mt-6 bg-white rounded-2xl shadow p-8 text-center'>
+            <div className='text-6xl mb-4'>🔒</div>
+            <h2 className='text-2xl font-bold text-gray-900 mb-2'>This account is private</h2>
+            <p className='text-gray-600 mb-4'>Follow this account to see their photos and videos.</p>
+            <button className='px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 font-medium'>
+              Follow
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return user ? (
     <div className='relative h-full overflow-y-scroll bg-gray-50 p-6'>
       <div className='max-w-3xl mx-auto'>
@@ -58,7 +153,13 @@ const Profile = () => {
             {user.cover_photo && <img src={user.cover_photo} alt='' className='w-full h-full object-cover'/>}
           </div>
           {/* User Info */}
-          <UserProfileInfo user={user} posts={posts} profileId={profileId} setShowEdit={setShowEdit}/>
+          <UserProfileInfo 
+            user={user} 
+            posts={posts} 
+            profileId={profileId} 
+            setShowEdit={setShowEdit}
+            setShowSettings={setShowSettings}
+          />
         </div>
 
         {/* Tabs */}
@@ -82,7 +183,15 @@ const Profile = () => {
           {/* Posts */}
           {activeTab === 'posts' && (
             <div className='mt-6 flex flex-col items-center gap-6'>
-              {posts.map((post)=> <PostCard key={post._id} post={post}/>)}
+              {posts.length > 0 ? (
+                posts.map((post)=> <PostCard key={post._id} post={post}/>)
+              ) : (
+                <div className="w-full text-center py-12 text-gray-500">
+                  <div className="text-6xl mb-4">📝</div>
+                  <p className="text-lg font-medium">No posts yet</p>
+                  <p className="text-sm text-gray-400 mt-2">When you create posts, they will appear here</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -145,6 +254,9 @@ const Profile = () => {
       </div>
       {/* Edit Profile Modal */}
       {showEdit && <ProfileModal setShowEdit={setShowEdit}/>}
+      
+      {/* Settings Modal */}
+      {showSettings && <ProfileSettingsModal setShowSettings={setShowSettings} user={user} />}
     </div>
   ) : (<Loading />)
 }

@@ -1,4 +1,3 @@
-// routes/post.js
 import express from 'express';
 import { 
     addPost, 
@@ -10,7 +9,9 @@ import {
     sharePost,
     getPostComments,
     updateComment,
-    deleteComment
+    deleteComment,
+    getUserProfilePosts,
+    deletePost // ✅ ADDED: Import the deletePost function
 } from '../controllers/postController.js';
 import { mediaUpload } from '../configs/multer.js';
 import { protect } from '../middlewares/auth.js';
@@ -21,8 +22,9 @@ const postRouter = express.Router();
 postRouter.use(protect);
 
 // Now all routes below will be protected
-postRouter.post('/add', mediaUpload, addPost); // Changed to mediaUpload
+postRouter.post('/add', mediaUpload, addPost);
 postRouter.get('/feed', getFeedPosts);
+postRouter.post('/profile-posts', getUserProfilePosts);
 postRouter.post('/like', likePost);
 
 // Comment and Share routes
@@ -35,5 +37,8 @@ postRouter.get('/comments/:postId', getPostComments);
 // Update and delete comments
 postRouter.put('/comment/:commentId', updateComment);
 postRouter.delete('/comment/:commentId', deleteComment);
+
+// ✅ ADDED: Delete post route
+postRouter.delete('/:postId', deletePost);
 
 export default postRouter;

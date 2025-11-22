@@ -7,7 +7,7 @@ import RecentMessages from '../components/RecentMessages'
 import { useAuth } from '@clerk/clerk-react'
 import api from '../api/axios'
 import toast from 'react-hot-toast'
-import { Zap, CornerDownRight } from 'lucide-react' // Added icons for the sidebar
+import { Zap, CornerDownRight } from 'lucide-react'
 
 const Feed = () => {
 
@@ -15,14 +15,16 @@ const Feed = () => {
   const [loading, setLoading] = useState(true)
   const {getToken} = useAuth()
 
-
   const fetchFeeds = async () => {
     try {
       setLoading(true)
-      const {data} = await api.get('/api/post/feed', {headers: { Authorization: `Bearer ${await getToken()}` }})
+      const {data} = await api.get('/api/post/feed', {
+        headers: { Authorization: `Bearer ${await getToken()}` }
+      })
 
       if (data.success){
         setFeeds(data.posts)
+        console.log(`✅ Loaded ${data.posts.length} posts in feed`)
       }else{
         toast.error(data.message)
       }
@@ -37,13 +39,12 @@ const Feed = () => {
   },[])
 
   return !loading ? (
-    // Main Container: Centered max width with proper padding
     <div className='max-w-7xl mx-auto py-6 sm:py-10 px-4 md:px-6 flex justify-center items-start gap-8'>
       
-      {/* 1. Main Content Column: Stories and Post List */}
+      {/* Main Content Column */}
       <div className='flex flex-col w-full max-w-xl flex-shrink-0'>
         
-        {/* Stories Bar (Fixed width to match posts) */}
+        {/* Stories Bar */}
         <div className='mb-6'>
             <StoriesBar />
         </div>
@@ -63,11 +64,11 @@ const Feed = () => {
         </div>
       </div>
 
-      {/* 2. Right Sidebar (Sticky on XL screens and up) */}
+      {/* Right Sidebar */}
       <div className='hidden xl:block w-full max-w-xs'>
         <div className='sticky top-20 flex flex-col gap-6'>
           
-          {/* --- Sponsored Ad Card - Enhanced UI --- */}
+          {/* Sponsored Ad Card */}
           <div className='bg-white p-5 rounded-xl border border-indigo-100 shadow-lg'>
             <h3 className='flex items-center gap-2 text-indigo-600 font-bold text-sm mb-3 uppercase'>
                 <Zap className='w-4 h-4'/> Sponsored
@@ -92,7 +93,7 @@ const Feed = () => {
             </button>
           </div>
           
-          {/* --- Recent Messages Component --- */}
+          {/* Recent Messages Component */}
           <RecentMessages />
           
         </div>
