@@ -10,23 +10,46 @@ import {
     unfollowUser, 
     updateUserData,
     updateUserSettings,
-    canMessageUser
+    canMessageUser,
+    getUsersByIds,
+    getUserSettings,
+    sendFollowRequest,
+    cancelFollowRequest,
+    getFollowRequests,
+    acceptFollowRequest,
+    rejectFollowRequest
 } from '../controllers/userController.js';
 import { protect } from '../middlewares/auth.js';
 import { upload } from '../configs/multer.js';
 
 const userRouter = express.Router();
 
+// User data routes
 userRouter.get('/data', protect, getUserData)
 userRouter.post('/update', upload.fields([{name: 'profile', maxCount: 1}, {name: 'cover', maxCount: 1}]), protect, updateUserData)
-userRouter.put('/settings', protect, updateUserSettings) // ✅ ADDED: Settings route
+
+// Settings routes
+userRouter.get('/settings', protect, getUserSettings)
+userRouter.put('/settings', protect, updateUserSettings)
+
+// User discovery and connections
 userRouter.post('/discover', protect, discoverUsers)
 userRouter.post('/follow', protect, followUser)
 userRouter.post('/unfollow', protect, unfollowUser)
 userRouter.post('/connect', protect, sendConnectionRequest)
 userRouter.post('/accept', protect, acceptConnectionRequest)
 userRouter.get('/connections', protect, getUserConnections)
-userRouter.post('/profiles', protect, getUserProfiles) // ✅ ADDED: protect middleware
-userRouter.post('/can-message', protect, canMessageUser) // ✅ ADDED: Check message permissions
+
+// Follow Request System
+userRouter.post('/follow-request', protect, sendFollowRequest)
+userRouter.post('/cancel-follow-request', protect, cancelFollowRequest)
+userRouter.get('/follow-requests', protect, getFollowRequests)
+userRouter.post('/accept-follow-request', protect, acceptFollowRequest)
+userRouter.post('/reject-follow-request', protect, rejectFollowRequest)
+
+// User profiles and messaging
+userRouter.post('/profiles', protect, getUserProfiles)
+userRouter.post('/can-message', protect, canMessageUser)
+userRouter.post('/get-users-by-ids', protect, getUsersByIds)
 
 export default userRouter

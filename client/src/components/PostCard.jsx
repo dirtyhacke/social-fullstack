@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { BadgeCheck, Heart, MessageCircle, Share2, Send, X, Edit, Trash2, MoreVertical, Loader2, Link, Shield, Play, Volume2, VolumeX, AlertCircle, CheckCircle } from 'lucide-react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { BadgeCheck, Heart, MessageCircle, Share2, Send, X, Edit, Trash2, MoreVertical, Loader2, Link, Play, Volume2, VolumeX, AlertCircle } from 'lucide-react'
 import moment from 'moment'
 import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
@@ -54,9 +54,8 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
 // --- Post Modal Component ---
 // ----------------------------------------------------------------------
 
-const PostModal = ({ 
+const PostModal = React.memo(({ 
     post, 
-    postWithHashtags, 
     isPostOwner, 
     handleEditPost, 
     handleDeletePost, 
@@ -74,24 +73,41 @@ const PostModal = ({
 
     const [comments, setComments] = useState([]);
     const [commentsCount, setCommentsCount] = useState(post?.comments_count || 0);
-    const [isFetchingComments, setIsFetchingComments] = useState(true);
+    const [isFetchingComments, setIsFetchingComments] = useState(false);
     const [commentText, setCommentText] = useState('');
     const [isCommenting, setIsCommenting] = useState(false);
     const [editingComment, setEditingComment] = useState(null);
     const [editCommentText, setEditCommentText] = useState('');
     const [showMenu, setShowMenu] = useState(null);
     const [showPostOptionsMenu, setShowPostOptionsMenu] = useState(false);
-    const [playingVideo, setPlayingVideo] = useState(null);
     const [mutedVideos, setMutedVideos] = useState({});
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [commentToDelete, setCommentToDelete] = useState(null);
 
     const modalRef = useRef(null);
-    const videoRefs = useRef([]);
+    const videoRefs = useRef({});
+    const commentsFetched = useRef(false);
 
-    const preventDefaultActions = (e) => {
-        e.preventDefault();
-        return false;
-    };
+    // Memoized values for performance
+    const postWithHashtags = useMemo(() => 
+        post?.content ? 
+            post.content.replace(/(#\w+)/g, '<span class="text-indigo-600 font-medium hover:underline cursor-pointer">$1</span>') 
+            : ''
+    , [post?.content]);
+
+    const mediaData = useMemo(() => {
+        if (post?.media_urls && Array.isArray(post.media_urls) && post.media_urls.length > 0) {
+            return post.media_urls;
+        }
+        else if (post?.image_urls && Array.isArray(post.image_urls) && post.image_urls.length > 0) {
+            return post.image_urls.map(url => ({
+                url: url,
+                type: 'image',
+                filePath: ''
+            }));
+        }
+        return [];
+    }, [post?.media_urls, post?.image_urls]);
 
     const protectiveStyles = {
         userSelect: 'none',
@@ -108,46 +124,23 @@ const PostModal = ({
         pointerEvents: 'none'
     };
 
-    // Get media data with null safety
-    const getMediaData = () => {
-        if (post?.media_urls && Array.isArray(post.media_urls) && post.media_urls.length > 0) {
-            return post.media_urls;
-        }
-        else if (post?.image_urls && Array.isArray(post.image_urls) && post.image_urls.length > 0) {
-            return post.image_urls.map(url => ({
-                url: url,
-                type: 'image',
-                filePath: ''
-            }));
-        }
-        return [];
-    };
-
-    const mediaData = getMediaData();
-
     // Video control functions
-    const handleVideoPlay = (index) => {
-        setPlayingVideo(index);
-        videoRefs.current.forEach((video, i) => {
-            if (video && i !== index) {
-                video.pause();
+    const handleVideoPlay = useCallback((index) => {
+        // Pause all other videos
+        Object.keys(videoRefs.current).forEach(key => {
+            if (key !== index.toString() && videoRefs.current[key]) {
+                videoRefs.current[key].pause();
             }
         });
-    };
+    }, []);
 
-    const handleVideoPause = (index) => {
-        if (playingVideo === index) {
-            setPlayingVideo(null);
-        }
-    };
-
-    const toggleMute = (index, e) => {
+    const toggleMute = useCallback((index, e) => {
         e.stopPropagation();
         setMutedVideos(prev => ({
             ...prev,
             [index]: !prev[index]
         }));
-    };
+    }, []);
 
     // Close modal on ESC key
     useEffect(() => {
@@ -163,103 +156,115 @@ const PostModal = ({
         };
     }, [onClose]);
 
-    // Pause all videos when modal closes
-    useEffect(() => {
-        return () => {
-            videoRefs.current.forEach(video => {
-                if (video) {
-                    video.pause();
-                }
-            });
-        };
-    }, []);
-
     // Prevent body scroll when modal is open
     useEffect(() => {
         document.body.style.overflow = 'hidden';
         return () => {
             document.body.style.overflow = 'unset';
+            // Clean up video refs
+            Object.values(videoRefs.current).forEach(video => {
+                if (video) {
+                    video.pause();
+                    video.src = '';
+                }
+            });
         };
     }, []);
 
-    const fetchComments = async () => {
-        if (!post?._id) {
-            console.error('Cannot fetch comments: post ID is missing');
+    const fetchComments = useCallback(async () => {
+        if (!post?._id || commentsFetched.current) {
             return;
         }
 
-        setIsFetchingComments(true)
+        setIsFetchingComments(true);
         try {
             const token = await getToken();
             const response = await api.get(`/api/post/comments/${post._id}`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 10000 // 10 second timeout
             });
             
             const { data } = response;
             
             if (data.success) {
-                setComments(data.comments || [])
-                setCommentsCount(data.comments?.length || 0)
+                setComments(data.comments || []);
+                setCommentsCount(data.comments?.length || 0);
+                commentsFetched.current = true;
             }  
         } catch (error) {
-            console.error('Error fetching comments:', error)
-            toast.error('Failed to load comments.')
+            console.error('Error fetching comments:', error);
+            if (error.code !== 'ECONNABORTED') {
+                toast.error('Failed to load comments.');
+            }
         } finally {
-            setIsFetchingComments(false)
+            setIsFetchingComments(false);
         }
-    }
+    }, [post?._id, getToken]);
 
     const handleAddComment = async () => {
-        if (!commentText.trim() || !post?._id) return
+        if (!commentText.trim() || !post?._id) return;
 
-        setIsCommenting(true)
+        setIsCommenting(true);
         try {
             const token = await getToken();
             const { data } = await api.post(`/api/post/comment`,  
                 { postId: post._id, content: commentText },  
-                { headers: { Authorization: `Bearer ${token}` }}
-            )
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 10000
+                }
+            );
 
             if (data.success) {
-                toast.success('Comment added!')
-                setCommentsCount(prev => prev + 1)
-                setCommentText('')
-                await fetchComments()
+                toast.success('Comment added!');
+                setCommentsCount(prev => prev + 1);
+                setCommentText('');
+                commentsFetched.current = false; // Reset cache
+                await fetchComments();
             } else {
-                toast.error(data.message || 'Failed to add comment')
+                toast.error(data.message || 'Failed to add comment');
             }
         } catch (error) {
-            toast.error(error.message || 'Failed to add comment')
+            console.error('Error adding comment:', error);
+            toast.error('Failed to add comment');
         } finally {
-            setIsCommenting(false)
+            setIsCommenting(false);
         }
-    }
+    };
 
-    const isCurrentUserComment = (comment) => {
-        return comment?.user?._id === currentUser?._id
-    }
+    const isCurrentUserComment = useCallback((comment) => {
+        return comment?.user?._id === currentUser?._id;
+    }, [currentUser?._id]);
 
-    const handleEditComment = (comment) => {
+    const handleEditComment = useCallback((comment) => {
         if (!comment?._id) return;
-        setEditingComment(comment._id)
-        setEditCommentText(comment?.content || '')
-        setShowMenu(null)
-    }
+        setEditingComment(comment._id);
+        setEditCommentText(comment?.content || '');
+        setShowMenu(null);
+    }, []);
 
     const handleUpdateComment = async (commentId) => {
-        if (!editCommentText.trim() || !commentId) return
+        if (!editCommentText.trim() || !commentId) return;
 
         try {
             const token = await getToken();
-            await api.put(`/api/post/comment/${commentId}`, { content: editCommentText }, { headers: { Authorization: `Bearer ${token}` } })
-            toast.success('Comment updated!')
-            setEditingComment(null)
-            setEditCommentText('')
-            await fetchComments() 
+            await api.put(`/api/post/comment/${commentId}`, 
+                { content: editCommentText }, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 10000
+                }
+            );
+            toast.success('Comment updated!');
+            setEditingComment(null);
+            setEditCommentText('');
+            commentsFetched.current = false; // Reset cache
+            await fetchComments();
         } catch (error) {
-            toast.error('Failed to update comment.')
+            console.error('Error updating comment:', error);
+            toast.error('Failed to update comment.');
         }
-    }
+    };
 
     const handleDeleteComment = async (commentId) => {
         if (!commentId) return;
@@ -267,43 +272,58 @@ const PostModal = ({
         setShowDeleteConfirm(false);
         try {
             const token = await getToken();
-            await api.delete(`/api/post/comment/${commentId}`, { headers: { Authorization: `Bearer ${token}` } })
-            toast.success('Comment deleted!')
-            setCommentsCount(prev => Math.max(0, prev - 1))
-            setShowMenu(null)
-            await fetchComments()
+            await api.delete(`/api/post/comment/${commentId}`, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 10000
+                }
+            );
+            toast.success('Comment deleted!');
+            setCommentsCount(prev => Math.max(0, prev - 1));
+            setShowMenu(null);
+            commentsFetched.current = false; // Reset cache
+            await fetchComments();
         } catch (error) {
-            toast.error('Failed to delete comment.')
+            console.error('Error deleting comment:', error);
+            toast.error('Failed to delete comment.');
         }
-    }
+    };
 
     const cancelEdit = () => {
-        setEditingComment(null)
-        setEditCommentText('')
-    }
+        setEditingComment(null);
+        setEditCommentText('');
+    };
     
+    // Fetch comments when modal opens
     useEffect(() => {
         if (post?._id) {
             fetchComments();
         }
-    }, [post?._id]);
+    }, [post?._id, fetchComments]);
 
     const handleEditAction = () => {
         setShowPostOptionsMenu(false);
         onClose();
         handleEditPost?.();
-    }
+    };
 
     const handleDeleteAction = () => {
         setShowPostOptionsMenu(false);
         setShowDeleteConfirm(true);
-    }
+    };
 
     const confirmDelete = () => {
         setShowDeleteConfirm(false);
         onClose();
         handleDeletePost?.();
-    }
+    };
+
+    const handleCommentKeyPress = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleAddComment();
+        }
+    };
 
     return (
         <>
@@ -311,7 +331,7 @@ const PostModal = ({
                 ref={modalRef}
                 className='fixed inset-0 bg-black bg-opacity-90 backdrop-blur-md flex items-center justify-center z-50 p-4'
                 onClick={onClose}
-                onContextMenu={preventDefaultActions}
+                onContextMenu={(e) => e.preventDefault()}
                 style={{ WebkitUserSelect: 'none' }}
             >
                 <div 
@@ -319,7 +339,7 @@ const PostModal = ({
                     onClick={(e) => e.stopPropagation()} 
                 >
                     
-                    {/* Post Content & Media - Fixed Layout */}
+                    {/* Post Content & Media */}
                     <div className='w-full lg:w-3/5 flex flex-col overflow-hidden border-b lg:border-r lg:border-b-0 border-gray-100'> 
                         <div className='sticky top-0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0'>
                             <div 
@@ -329,15 +349,14 @@ const PostModal = ({
                                         navigate('/profile/' + post.user._id);
                                     }
                                 }}
-                                onContextMenu={preventDefaultActions}
+                                onContextMenu={(e) => e.preventDefault()}
                             >
                                 <img
                                     src={post?.user?.profile_picture || '/default-avatar.png'}
                                     alt={post?.user?.full_name || 'User'}
                                     className='w-10 h-10 rounded-full object-cover shadow-sm'
                                     style={protectiveStyles}
-                                    onContextMenu={preventDefaultActions}
-                                    onDragStart={preventDefaultActions}
+                                    onContextMenu={(e) => e.preventDefault()}
                                     draggable={false}
                                 />
                                 <div>
@@ -377,7 +396,7 @@ const PostModal = ({
                             </div>
                         </div>
                         
-                        <div className='flex-1 p-4 sm:p-6 space-y-4 overflow-y-auto' onContextMenu={preventDefaultActions}>
+                        <div className='flex-1 p-4 sm:p-6 space-y-4 overflow-y-auto' onContextMenu={(e) => e.preventDefault()}>
                             <div className='text-gray-400 text-xs'>
                                 {moment(post?.createdAt).format('MMM D, YYYY HH:mm')}
                             </div>
@@ -387,15 +406,15 @@ const PostModal = ({
                                     className='text-gray-800 text-lg leading-relaxed whitespace-pre-line'
                                     dangerouslySetInnerHTML={{ __html: postWithHashtags }}
                                     style={protectiveStyles}
-                                    onContextMenu={preventDefaultActions}
+                                    onContextMenu={(e) => e.preventDefault()}
                                 />
                             )}
 
-                            {/* Media Container - Fixed Height */}
+                            {/* Media Container */}
                             {mediaData.length > 0 && (
                                 <div 
                                     className={`grid gap-3 ${mediaData.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} overflow-hidden`}
-                                    onContextMenu={preventDefaultActions}
+                                    onContextMenu={(e) => e.preventDefault()}
                                 >
                                     {mediaData.map((media, index) => (
                                         <div key={index} className="relative overflow-hidden rounded-lg bg-black">
@@ -405,26 +424,22 @@ const PostModal = ({
                                                     className='w-full h-full max-h-[50vh] object-contain'
                                                     alt={`Post image ${index + 1}`}
                                                     style={protectiveStyles}
-                                                    onContextMenu={preventDefaultActions}
-                                                    onDragStart={preventDefaultActions}
+                                                    onContextMenu={(e) => e.preventDefault()}
                                                     draggable={false}
                                                 />
                                             ) : (
-                                                <div className="relative w-full h-0 pb-[56.25%]"> {/* 16:9 aspect ratio */}
+                                                <div className="relative w-full h-0 pb-[56.25%]">
                                                     <video
                                                         ref={el => {
                                                             videoRefs.current[index] = el;
-                                                            if (el) {
-                                                                el.muted = mutedVideos[index] || false;
-                                                            }
                                                         }}
                                                         src={media.url}
                                                         className='absolute inset-0 w-full h-full object-contain'
                                                         controls
                                                         style={protectiveStyles}
-                                                        onContextMenu={preventDefaultActions}
+                                                        onContextMenu={(e) => e.preventDefault()}
                                                         onPlay={() => handleVideoPlay(index)}
-                                                        onPause={() => handleVideoPause(index)}
+                                                        muted={mutedVideos[index] || false}
                                                         playsInline
                                                         preload="metadata"
                                                     >
@@ -452,7 +467,7 @@ const PostModal = ({
                         </div>
                     </div>
 
-                    {/* Comments Section - Fixed Height */}
+                    {/* Comments Section */}
                     <div className='w-full lg:w-2/5 flex flex-col flex-shrink-0 border-t lg:border-t-0 lg:border-l border-gray-100'>
                         <h3 className='font-bold text-gray-800 text-lg p-4 border-b border-gray-100 flex-shrink-0'>
                             Comments ({commentsCount})
@@ -460,7 +475,7 @@ const PostModal = ({
                         
                         <div 
                             className='flex-1 p-4 space-y-4 overflow-y-auto'
-                            onContextMenu={preventDefaultActions}
+                            onContextMenu={(e) => e.preventDefault()}
                         >
                             {isFetchingComments ? (
                                 <div className='flex justify-center py-6'>
@@ -471,7 +486,7 @@ const PostModal = ({
                                     <div 
                                         key={comment?._id} 
                                         className='flex gap-3 group relative p-3 -mx-3 rounded-lg hover:bg-gray-50 transition'
-                                        onContextMenu={preventDefaultActions}
+                                        onContextMenu={(e) => e.preventDefault()}
                                     >
                                         <img
                                             src={comment?.user?.profile_picture || '/default-avatar.png'}
@@ -483,8 +498,7 @@ const PostModal = ({
                                                 }
                                             }}
                                             style={protectiveStyles}
-                                            onContextMenu={preventDefaultActions}
-                                            onDragStart={preventDefaultActions}
+                                            onContextMenu={(e) => e.preventDefault()}
                                             draggable={false}
                                         />
                                         
@@ -514,7 +528,7 @@ const PostModal = ({
                                                 <p 
                                                     className='text-gray-800 text-sm break-words'
                                                     style={protectiveStyles}
-                                                    onContextMenu={preventDefaultActions}
+                                                    onContextMenu={(e) => e.preventDefault()}
                                                 >
                                                     {comment?.content}
                                                 </p>
@@ -525,7 +539,10 @@ const PostModal = ({
                                             <div className='absolute right-2 top-3'>
                                                 <MoreVertical
                                                     className='w-4 h-4 cursor-pointer text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition'
-                                                    onClick={(e) => { e.stopPropagation(); setShowMenu(showMenu === comment?._id ? null : comment?._id); }}
+                                                    onClick={(e) => { 
+                                                        e.stopPropagation(); 
+                                                        setShowMenu(showMenu === comment?._id ? null : comment?._id); 
+                                                    }}
                                                 />
                                                 
                                                 {showMenu === comment?._id && (
@@ -533,7 +550,10 @@ const PostModal = ({
                                                         <button onClick={() => handleEditComment(comment)} className='flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 rounded-t-lg transition'>
                                                             <Edit className='w-3 h-3' /> Edit
                                                         </button>
-                                                        <button onClick={() => setShowDeleteConfirm(true)} className='flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 rounded-b-lg transition'>
+                                                        <button onClick={() => {
+                                                            setCommentToDelete(comment?._id);
+                                                            setShowDeleteConfirm(true);
+                                                        }} className='flex items-center gap-2 w-full px-3 py-2 text-sm text-red-500 hover:bg-red-50 rounded-b-lg transition'>
                                                             <Trash2 className='w-3 h-3' /> Delete
                                                         </button>
                                                     </div>
@@ -556,8 +576,7 @@ const PostModal = ({
                                     alt="Your Profile"
                                     className='w-8 h-8 rounded-full flex-shrink-0'
                                     style={protectiveStyles}
-                                    onContextMenu={preventDefaultActions}
-                                    onDragStart={preventDefaultActions}
+                                    onContextMenu={(e) => e.preventDefault()}
                                     draggable={false}
                                 />
                                 <input
@@ -566,7 +585,7 @@ const PostModal = ({
                                     className='flex-1 border border-gray-200 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 outline-none transition-shadow'
                                     value={commentText}
                                     onChange={(e) => setCommentText(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
+                                    onKeyPress={handleCommentKeyPress}
                                 />
                                 <button
                                     onClick={handleAddComment}
@@ -585,22 +604,25 @@ const PostModal = ({
             {/* Delete Confirmation Modal */}
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
-                onClose={() => setShowDeleteConfirm(false)}
-                onConfirm={() => handleDeleteComment(comment?._id)}
+                onClose={() => {
+                    setShowDeleteConfirm(false);
+                    setCommentToDelete(null);
+                }}
+                onConfirm={() => handleDeleteComment(commentToDelete)}
                 title="Delete Comment"
                 message="Are you sure you want to delete this comment? This action cannot be undone."
                 confirmText="Delete Comment"
                 type="delete"
             />
         </>
-    )
-}
+    );
+});
 
 // ----------------------------------------------------------------------
 // --- Main PostCard Component ---
 // ----------------------------------------------------------------------
 
-const PostCard = ({ post, onEdit, onDelete }) => {
+const PostCard = React.memo(({ post, onEdit, onDelete }) => {
     // Comprehensive null checking
     if (!post) {
         console.warn('PostCard received null or undefined post');
@@ -624,9 +646,26 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         );
     }
 
-    const postWithHashtags = post?.content ? 
-        post.content.replace(/(#\w+)/g, '<span class="text-indigo-600 font-medium hover:underline cursor-pointer">$1</span>') 
-        : ''
+    // Memoized values for performance
+    const postWithHashtags = useMemo(() => 
+        post?.content ? 
+            post.content.replace(/(#\w+)/g, '<span class="text-indigo-600 font-medium hover:underline cursor-pointer">$1</span>') 
+            : ''
+    , [post?.content]);
+
+    const mediaData = useMemo(() => {
+        if (post?.media_urls && Array.isArray(post.media_urls) && post.media_urls.length > 0) {
+            return post.media_urls;
+        }
+        else if (post?.image_urls && Array.isArray(post.image_urls) && post.image_urls.length > 0) {
+            return post.image_urls.map(url => ({
+                url: url,
+                type: 'image',
+                filePath: ''
+            }));
+        }
+        return [];
+    }, [post?.media_urls, post?.image_urls]);
 
     const [likes, setLikes] = useState(Array.isArray(post?.likes_count) ? post.likes_count : [])
     const [commentsCount, setCommentsCount] = useState(post?.comments_count || 0)
@@ -644,7 +683,6 @@ const PostCard = ({ post, onEdit, onDelete }) => {
     const [showPostModal, setShowPostModal] = useState(false) 
     const [playingVideo, setPlayingVideo] = useState(null)
     const [mutedVideos, setMutedVideos] = useState({})
-    const [isVideoInView, setIsVideoInView] = useState(false)
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
 
@@ -652,15 +690,11 @@ const PostCard = ({ post, onEdit, onDelete }) => {
     const { getToken } = useAuth()
     const navigate = useNavigate()
     const postCardRef = useRef(null)
-    const videoRefs = useRef([])
+    const videoRefs = useRef({})
     const observerRef = useRef(null)
+    const commentsFetched = useRef(false)
 
     const isPostOwner = post?.user?._id === currentUser?._id;
-
-    const preventDefaultActions = (e) => {
-        e.preventDefault();
-        return false;
-    };
 
     const protectiveStyles = {
         userSelect: 'none',
@@ -676,29 +710,13 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         WebkitTapHighlightColor: 'transparent',
     };
 
-    // Get media data with null safety
-    const getMediaData = () => {
-        if (post?.media_urls && Array.isArray(post.media_urls) && post.media_urls.length > 0) {
-            return post.media_urls;
-        }
-        else if (post?.image_urls && Array.isArray(post.image_urls) && post.image_urls.length > 0) {
-            return post.image_urls.map(url => ({
-                url: url,
-                type: 'image',
-                filePath: ''
-            }));
-        }
-        return [];
-    };
-
-    const mediaData = getMediaData();
-
     // Video control functions
     const handleVideoPlay = useCallback((index) => {
         setPlayingVideo(index);
-        videoRefs.current.forEach((video, i) => {
-            if (video && i !== index) {
-                video.pause();
+        // Pause all other videos
+        Object.keys(videoRefs.current).forEach(key => {
+            if (key !== index.toString() && videoRefs.current[key]) {
+                videoRefs.current[key].pause();
             }
         });
     }, []);
@@ -736,23 +754,18 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         const observer = new IntersectionObserver(
             (entries) => {
                 entries.forEach(entry => {
-                    setIsVideoInView(entry.isIntersecting);
-                    
                     if (entry.isIntersecting) {
                         // Auto-play the first video when post comes into view
                         const firstVideoIndex = mediaData.findIndex(m => m.type === 'video');
                         if (firstVideoIndex !== -1) {
                             const video = videoRefs.current[firstVideoIndex];
-                            if (video && video.paused) {
-                                // Only autoplay if user hasn't manually paused
-                                if (playingVideo === null) {
-                                    video.play().catch(console.error);
-                                }
+                            if (video && video.paused && playingVideo === null) {
+                                video.play().catch(console.error);
                             }
                         }
                     } else {
                         // Pause all videos when post goes out of view
-                        videoRefs.current.forEach(video => {
+                        Object.values(videoRefs.current).forEach(video => {
                             if (video && !video.paused) {
                                 video.pause();
                             }
@@ -764,7 +777,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
             {
                 root: null,
                 rootMargin: '0px',
-                threshold: 0.7 // 70% of the post must be visible to autoplay
+                threshold: 0.7
             }
         );
 
@@ -781,7 +794,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
     // Clean up videos when component unmounts
     useEffect(() => {
         return () => {
-            videoRefs.current.forEach(video => {
+            Object.values(videoRefs.current).forEach(video => {
                 if (video) {
                     video.pause();
                     video.src = '';
@@ -835,7 +848,8 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         try {
             const token = await getToken();
             const { data } = await api.get(`/api/post/shares/count/${post._id}`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 5000
             })
             if (data.success) {
                 setSharesCount(data.count || 0)
@@ -846,8 +860,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
     }
 
     const fetchComments = async () => { 
-        if (!post?._id) {
-            console.error('Cannot fetch comments: post ID is missing');
+        if (!post?._id || commentsFetched.current) {
             return;
         }
 
@@ -855,16 +868,20 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         try {
             const token = await getToken();
             const { data } = await api.get(`/api/post/comments/${post._id}`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 10000
             });
 
             if (data.success) {
                 setComments(data.comments || [])
                 setCommentsCount(data.comments?.length || 0)
+                commentsFetched.current = true;
             }
         } catch (error) {
             console.error('Error fetching comments:', error)
-            toast.error('Failed to load comments.')
+            if (error.code !== 'ECONNABORTED') {
+                toast.error('Failed to load comments.')
+            }
         } finally {
             setIsFetchingComments(false)
         }
@@ -875,7 +892,13 @@ const PostCard = ({ post, onEdit, onDelete }) => {
 
         try {
             const token = await getToken();
-            const { data } = await api.post(`/api/post/like`, { postId: post._id }, { headers: { Authorization: `Bearer ${token}` } })
+            const { data } = await api.post(`/api/post/like`, 
+                { postId: post._id }, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 5000
+                }
+            )
             if (data.success){
                toast.success(data.message)
                setLikes(prev =>{
@@ -910,12 +933,19 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         setIsCommenting(true)
         try {
             const token = await getToken();
-            const { data } = await api.post(`/api/post/comment`, { postId: post._id, content: commentText }, { headers: { Authorization: `Bearer ${token}` } })
+            const { data } = await api.post(`/api/post/comment`, 
+                { postId: post._id, content: commentText }, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 10000
+                }
+            )
             if (data.success) {
                 toast.success('Comment added!')
                 setCommentsCount(prev => prev + 1)
                 setCommentText('')
                 setShowCommentBox(false)
+                commentsFetched.current = false;
                 await fetchComments()
             } else {
                 toast.error(data.message || 'Failed to add comment')
@@ -939,10 +969,17 @@ const PostCard = ({ post, onEdit, onDelete }) => {
 
         try {
             const token = await getToken();
-            await api.put(`/api/post/comment/${commentId}`, { content: editCommentText }, { headers: { Authorization: `Bearer ${token}` } })
+            await api.put(`/api/post/comment/${commentId}`, 
+                { content: editCommentText }, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 10000
+                }
+            )
             toast.success('Comment updated!')
             setEditingComment(null)
             setEditCommentText('')
+            commentsFetched.current = false;
             await fetchComments()
         } catch (error) {
             toast.error('Failed to update comment.')
@@ -954,10 +991,16 @@ const PostCard = ({ post, onEdit, onDelete }) => {
 
         try {
             const token = await getToken();
-            await api.delete(`/api/post/comment/${commentId}`, { headers: { Authorization: `Bearer ${token}` } })
+            await api.delete(`/api/post/comment/${commentId}`, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 10000
+                }
+            )
             toast.success('Comment deleted!')
             setCommentsCount(prev => Math.max(0, prev - 1))
             setShowMenu(null)
+            commentsFetched.current = false;
             await fetchComments()
         } catch (error) {
             toast.error('Failed to delete comment.')
@@ -974,7 +1017,13 @@ const PostCard = ({ post, onEdit, onDelete }) => {
 
         try {
             const token = await getToken();
-            const { data } = await api.post(`/api/post/share`, { postId: post._id }, { headers: { Authorization: `Bearer ${token}` } })
+            const { data } = await api.post(`/api/post/share`, 
+                { postId: post._id }, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 5000
+                }
+            )
             if (data.success) {
                 toast.success('Post shared successfully!')
                 setSharesCount(prev => prev + 1)
@@ -999,9 +1048,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         if (onEdit) {
             onEdit(post);
         } else {
-            // If no onEdit prop provided, show edit modal or navigate to edit page
             toast.success('Edit post functionality - Replace media option would open here');
-            // You can implement the edit modal here
         }
     }
 
@@ -1021,7 +1068,8 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         try {
             const token = await getToken();
             const { data } = await api.delete(`/api/post/${post._id}`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 10000
             });
 
             if (data.success) {
@@ -1056,22 +1104,28 @@ const PostCard = ({ post, onEdit, onDelete }) => {
         return 'h-40 sm:h-48';
     };
 
+    const handleCommentKeyPress = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleAddComment();
+        }
+    };
+
     return (
         <>
             <div 
                 ref={postCardRef}
                 className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100 relative transition-all duration-300 overflow-hidden'
-                onContextMenu={preventDefaultActions}
+                onContextMenu={(e) => e.preventDefault()}
                 style={{ WebkitUserSelect: 'none' }}>
 
                 {/* Post Modal */}
                 {showPostModal && post && (
                     <PostModal 
                         post={post} 
-                        postWithHashtags={postWithHashtags}
                         isPostOwner={isPostOwner}
                         handleEditPost={handleEditPost}
-                        handleDeletePost={handleDeletePost}
+                        handleDeletePost={confirmDeletePost}
                         onClose={() => setShowPostModal(false)}
                         currentUser={currentUser}
                         getToken={getToken}
@@ -1100,15 +1154,14 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                             }
                         }} 
                         className='inline-flex items-center gap-3 cursor-pointer'
-                        onContextMenu={preventDefaultActions}
+                        onContextMenu={(e) => e.preventDefault()}
                     >
                         <img
                             src={post?.user?.profile_picture || '/default-avatar.png'}
                             alt={post?.user?.full_name || 'User'}
                             className='w-12 h-12 rounded-full object-cover shadow-md ring-2 ring-indigo-50'
                             style={protectiveStyles}
-                            onContextMenu={preventDefaultActions}
-                            onDragStart={preventDefaultActions}
+                            onContextMenu={(e) => e.preventDefault()}
                             draggable={false}
                         />
                         <div>
@@ -1162,7 +1215,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                         dangerouslySetInnerHTML={{__html: postWithHashtags}}
                         onClick={() => setShowPostModal(true)}
                         style={protectiveStyles}
-                        onContextMenu={preventDefaultActions}
+                        onContextMenu={(e) => e.preventDefault()}
                     />
                 )}
 
@@ -1171,7 +1224,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                     <div 
                         className={`grid gap-2 cursor-pointer ${getGridClass()} overflow-hidden rounded-lg`}
                         onClick={() => setShowPostModal(true)}
-                        onContextMenu={preventDefaultActions}
+                        onContextMenu={(e) => e.preventDefault()}
                     >
                         {mediaData.slice(0, 4).map((media, index) => (
                             <div 
@@ -1184,8 +1237,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                         className='w-full h-full object-cover transition-transform duration-300 hover:scale-105'
                                         alt={`Post image ${index + 1}`}
                                         style={protectiveStyles}
-                                        onContextMenu={preventDefaultActions}
-                                        onDragStart={preventDefaultActions}
+                                        onContextMenu={(e) => e.preventDefault()}
                                         draggable={false}
                                     />
                                 ) : (
@@ -1193,13 +1245,10 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                         <video
                                             ref={el => {
                                                 videoRefs.current[index] = el;
-                                                if (el) {
-                                                    el.muted = mutedVideos[index] || false;
-                                                }
                                             }}
                                             className="w-full h-full object-cover"
                                             style={protectiveStyles}
-                                            onContextMenu={preventDefaultActions}
+                                            onContextMenu={(e) => e.preventDefault()}
                                             onPlay={() => handleVideoPlay(index)}
                                             onPause={() => handleVideoPause(index)}
                                             playsInline
@@ -1207,14 +1256,15 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                             muted={mutedVideos[index] || false}
                                         >
                                             <source src={media.url} type="video/mp4" />
-                                            <source src={media.url} type="video/webm" />
-                                            <source src={media.url} type="video/ogg" />
                                             Your browser does not support the video tag.
                                         </video>
                                         
                                         {/* Play/Pause Overlay */}
                                         {playingVideo !== index && (
-                                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity duration-300">
+                                            <div 
+                                                className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity duration-300 cursor-pointer"
+                                                onClick={(e) => handleVideoClick(index, e)}
+                                            >
                                                 <div className="bg-black/60 rounded-full p-3 sm:p-4 hover:bg-black/80 transition">
                                                     <Play className="w-6 h-6 sm:w-8 sm:h-8 text-white fill-white" />
                                                 </div>
@@ -1237,13 +1287,6 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                                 <Volume2 className="w-3 h-3 sm:w-4 sm:h-4" />
                                             )}
                                         </button>
-
-                                        {/* Auto-play indicator */}
-                                        {isVideoInView && playingVideo === null && (
-                                            <div className="absolute bottom-2 left-2 bg-green-500 text-white px-2 py-1 rounded text-xs">
-                                                Auto-play
-                                            </div>
-                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1294,8 +1337,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                             alt="Your Profile" 
                             className='w-8 h-8 rounded-full flex-shrink-0'
                             style={protectiveStyles}
-                            onContextMenu={preventDefaultActions}
-                            onDragStart={preventDefaultActions}
+                            onContextMenu={(e) => e.preventDefault()}
                             draggable={false}
                         />
                         <input 
@@ -1304,7 +1346,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                             className='flex-1 border border-gray-200 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 outline-none transition-shadow' 
                             value={commentText} 
                             onChange={(e) => setCommentText(e.target.value)} 
-                            onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
+                            onKeyPress={handleCommentKeyPress}
                         />
                         <button onClick={handleAddComment} disabled={isCommenting || !commentText.trim()} className='bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition' title="Post Comment">
                             {isCommenting ? <Loader2 className='w-4 h-4 animate-spin' /> : <Send className='w-4 h-4' />}
@@ -1330,7 +1372,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                     <div 
                                         key={comment?._id} 
                                         className='flex gap-3 group relative'
-                                        onContextMenu={preventDefaultActions}
+                                        onContextMenu={(e) => e.preventDefault()}
                                     >
                                         <img 
                                             src={comment?.user?.profile_picture || '/default-avatar.png'} 
@@ -1342,8 +1384,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                                 }
                                             }}
                                             style={protectiveStyles}
-                                            onContextMenu={preventDefaultActions}
-                                            onDragStart={preventDefaultActions}
+                                            onContextMenu={(e) => e.preventDefault()}
                                             draggable={false}
                                         />
                                         <div className='flex-1 bg-gray-50 rounded-xl p-3 pb-2 relative'>
@@ -1364,7 +1405,7 @@ const PostCard = ({ post, onEdit, onDelete }) => {
                                                 <p 
                                                     className='text-gray-800 text-sm break-words'
                                                     style={protectiveStyles}
-                                                    onContextMenu={preventDefaultActions}
+                                                    onContextMenu={(e) => e.preventDefault()}
                                                 >
                                                     {comment?.content}
                                                 </p>
@@ -1394,6 +1435,6 @@ const PostCard = ({ post, onEdit, onDelete }) => {
             </div>
         </>
     )
-}
+})
 
-export default PostCard
+export default PostCard;

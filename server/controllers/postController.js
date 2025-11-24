@@ -180,14 +180,13 @@ const optimizeVideoProcessing = async (fileBuffer, originalSize) => {
   }
 };
 
-// Get Feed Posts with Privacy Filtering
+// Get Feed Posts - OPTIMIZED FOR FAST FETCHING
 export const getFeedPosts = async (req, res) => {
     try {
         const userId = req.userId;
+        console.log('🚀 FAST - Get Feed Posts - User:', userId);
 
-        console.log('📝 Get Feed Posts - User:', userId);
-
-        const currentUser = await User.findById(userId);
+        const currentUser = await User.findById(userId).select('following connections');
         if (!currentUser) {
             return res.json({ success: false, message: "User not found" });
         }
@@ -195,72 +194,42 @@ export const getFeedPosts = async (req, res) => {
         const followingIds = currentUser.following || [];
         const connectionIds = currentUser.connections || [];
         
-        console.log(`👥 Current user follows: ${followingIds.length} users, connections: ${connectionIds.length} users`);
+        // Create combined user IDs to fetch
+        const userIDsToFetch = [
+            userId, // own posts
+            ...followingIds, 
+            ...connectionIds
+        ];
+
+        console.log(`👥 Fetching posts from ${userIDsToFetch.length} users`);
+
+        // OPTIMIZED QUERY - Only get essential fields and use lean()
+        const posts = await Post.find({
+            user: { $in: userIDsToFetch }
+        })
+        .populate({
+            path: 'user',
+            select: '_id username full_name profile_picture',
+            options: { allowNull: true }
+        })
+        .select('_id user content media_urls post_type likes_count comments_count shares_count createdAt')
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(); // Convert to plain JS objects for faster processing
+
+        console.log(`✅ FAST - Feed loaded: ${posts.length} posts in milliseconds`);
+
+        // Filter out any posts with invalid users quickly
+        const validPosts = posts.filter(post => post && post.user);
         
-        const allPosts = await Post.find({})
-            .populate({
-                path: 'user',
-                select: '_id username full_name profile_picture settings followers following connections',
-                options: { allowNull: true }
-            })
-            .sort({ createdAt: -1 })
-            .limit(100);
-
-        console.log(`📊 Total posts found: ${allPosts.length}`);
-
-        const filteredPosts = allPosts.filter(post => {
-            if (!post || !post.user) {
-                console.log(`🚫 Filtered: Post or user is null for post ${post?._id}`);
-                return false;
-            }
-
-            const postUser = post.user;
-            const postUserId = postUser?._id?.toString();
-            const currentUserId = currentUser._id.toString();
-            
-            console.log(`🔍 Checking post from: ${postUser?.username || 'unknown'}, Privacy: ${postUser?.settings?.profilePrivacy || 'public'}`);
-            
-            if (postUserId === currentUserId) {
-                console.log(`✅ Showing: Own post from ${postUser?.username}`);
-                return true;
-            }
-            
-            if (postUserId && followingIds.includes(postUserId)) {
-                console.log(`✅ Showing: Followed user ${postUser?.username}`);
-                return true;
-            }
-            
-            if (postUserId && connectionIds.includes(postUserId)) {
-                console.log(`✅ Showing: Connection ${postUser?.username}`);
-                return true;
-            }
-            
-            if (postUser?.settings?.profilePrivacy === 'public') {
-                console.log(`✅ Showing: Public account ${postUser?.username}`);
-                return true;
-            }
-            
-            if (postUser?.settings?.profilePrivacy === 'private') {
-                console.log(`🚫 Filtered: Private account ${postUser?.username} - Not followed or connected`);
-                return false;
-            }
-            
-            console.log(`✅ Showing: Default (no privacy setting) ${postUser?.username}`);
-            return true;
-        });
-
-        console.log(`✅ Feed filtered: ${filteredPosts.length} posts out of ${allPosts.length} total`);
-        
-        const finalPosts = filteredPosts.slice(0, 50);
-        
-        res.json({ success: true, posts: finalPosts });
+        res.json({ success: true, posts: validPosts });
     } catch (error) {
         console.log('💥 Error in getFeedPosts:', error);
         res.json({ success: false, message: error.message });
     }
 }
 
-// Get Posts for User Profile (with privacy check)
+// Get Posts for User Profile (with privacy check) - OPTIMIZED
 export const getUserProfilePosts = async (req, res) => {
     try {
         const { profileId } = req.body;
@@ -272,7 +241,7 @@ export const getUserProfilePosts = async (req, res) => {
             return res.json({ success: false, message: "Profile ID is required" });
         }
 
-        const profileUser = await User.findById(profileId);
+        const profileUser = await User.findById(profileId).select('settings followers connections');
         if (!profileUser) {
             return res.json({ success: false, message: "User not found" });
         }
@@ -287,12 +256,15 @@ export const getUserProfilePosts = async (req, res) => {
             }
         }
 
+        // OPTIMIZED QUERY
         const posts = await Post.find({ user: profileId })
             .populate({
                 path: 'user',
-                select: '_id username full_name profile_picture settings'
+                select: '_id username full_name profile_picture'
             })
-            .sort({ createdAt: -1 });
+            .select('_id user content media_urls post_type likes_count comments_count shares_count createdAt')
+            .sort({ createdAt: -1 })
+            .lean();
 
         res.json({ success: true, posts: posts || [] });
     } catch (error) {
@@ -301,7 +273,7 @@ export const getUserProfilePosts = async (req, res) => {
     }
 }
 
-// Add Post - Fixed with better memory management
+// Add Post - Keep your original upload settings
 export const addPost = async (req, res) => {
     try {
         const userId = req.userId;
@@ -606,7 +578,7 @@ export const sharePost = async (req, res) => {
     }
 }
 
-// Get post comments with user profiles
+// Get post comments with user profiles - OPTIMIZED
 export const getPostComments = async (req, res) => {
     try {
         const { postId } = req.params;
@@ -617,53 +589,40 @@ export const getPostComments = async (req, res) => {
         
         console.log('🔍 Fetching comments for post:', postId);
         
-        const comments = await Comment.find({ post: postId }).sort({ createdAt: -1 });
-        console.log('📝 Found comments:', comments.length);
-        
-        const populatedComments = await Promise.all(
-            comments.map(async (comment) => {
-                try {
-                    const user = await User.findById(comment.user);
-                    
-                    return {
-                        _id: comment._id,
-                        content: comment.content,
-                        post: comment.post,
-                        createdAt: comment.createdAt,
-                        updatedAt: comment.updatedAt,
-                        user: user ? {
-                            _id: user._id,
-                            username: user.username || 'unknown',
-                            full_name: user.full_name || 'Unknown User',
-                            profile_picture: user.profile_picture || ''
-                        } : {
-                            _id: comment.user,
-                            username: 'deleted_user',
-                            full_name: 'Deleted User',
-                            profile_picture: ''
-                        }
-                    };
-                } catch (userError) {
-                    console.log('❌ Error fetching user:', userError);
-                    return {
-                        _id: comment._id,
-                        content: comment.content,
-                        post: comment.post,
-                        createdAt: comment.createdAt,
-                        updatedAt: comment.updatedAt,
-                        user: {
-                            _id: comment.user,
-                            username: 'unknown_user',
-                            full_name: 'Unknown User',
-                            profile_picture: ''
-                        }
-                    };
-                }
+        // OPTIMIZED: Single query with population
+        const comments = await Comment.find({ post: postId })
+            .populate({
+                path: 'user',
+                select: '_id username full_name profile_picture',
+                options: { allowNull: true }
             })
-        );
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .lean();
 
-        console.log('✅ Final populated comments:', populatedComments.length);
-        res.json({ success: true, comments: populatedComments });
+        console.log('✅ Found comments:', comments.length);
+        
+        // Ensure user data is present
+        const safeComments = comments.map(comment => ({
+            _id: comment._id,
+            content: comment.content,
+            post: comment.post,
+            createdAt: comment.createdAt,
+            updatedAt: comment.updatedAt,
+            user: comment.user ? {
+                _id: comment.user._id,
+                username: comment.user.username || 'unknown',
+                full_name: comment.user.full_name || 'Unknown User',
+                profile_picture: comment.user.profile_picture || ''
+            } : {
+                _id: comment.user,
+                username: 'deleted_user',
+                full_name: 'Deleted User',
+                profile_picture: ''
+            }
+        }));
+
+        res.json({ success: true, comments: safeComments });
     } catch (error) {
         console.log('💥 Error in getPostComments:', error);
         res.json({ success: false, message: error.message });

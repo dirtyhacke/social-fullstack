@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { assets } from '../assets/assets';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun } from 'lucide-react';
+import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun, X, Menu } from 'lucide-react';
 import { UserButton, useClerk } from '@clerk/clerk-react';
 import { useSelector } from 'react-redux';
 
@@ -86,10 +86,14 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const handlePixoMovies = () => handleNavigation('/pixo-music', () => navigate('/pixo-music'));
     
     const handleViewProfile = () => {
-        navigate('/profile'); // Navigate to profile page normally
+        navigate('/profile');
         if (window.innerWidth < 640) {
             setSidebarOpen(false);
         }
+    }
+
+    const handleCloseSidebar = () => {
+        setSidebarOpen(false);
     }
 
     const menuItems = [
@@ -103,7 +107,16 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         { icon: <GamepadIcon className='w-5 h-5'/>, name: "Pixo Games", path: "/pixo-games", onClick: handlePixoGames, },
         { icon: <Film className='w-5 h-5'/>, name: "Pixo Music", path: "/pixo-music", onClick: handlePixoMovies, },
         { isSeparator: true },
-        { icon: <User className='w-5 h-5'/>, name: "My Profile", onClick: handleViewProfile, path: '/profile' } // Changed path to '/profile'
+        { icon: <User className='w-5 h-5'/>, name: "My Profile", onClick: handleViewProfile, path: '/profile' }
+    ];
+
+    // Mobile bottom navigation items
+    const mobileNavItems = [
+        { icon: <Home className='w-6 h-6'/>, name: "Home", path: "/" },
+        { icon: <MessageCircle className='w-6 h-6'/>, name: "Messages", path: "/messages" },
+        { icon: <CirclePlus className='w-6 h-6'/>, name: "Create", path: "/create-post" },
+        { icon: <User className='w-6 h-6'/>, name: "Profile", path: "/profile" },
+        { icon: <Menu className='w-6 h-6'/>, name: "Menu", onClick: () => setSidebarOpen(true) }
     ];
 
     // --- FIX: Return null early if the welcome screen is active ---
@@ -255,16 +268,55 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 .animate-pulse { animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
             `}</style>
 
-            {/* --- Original Sidebar Content (ONLY renders if showWelcome is false) --- */}
+            {/* Mobile Bottom Navigation (Like Instagram) */}
+            <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 sm:hidden">
+                <div className="flex justify-around items-center py-2">
+                    {mobileNavItems.map((item, index) => {
+                        const isActive = location.pathname === item.path;
+                        
+                        return (
+                            <button
+                                key={index}
+                                onClick={() => item.onClick ? item.onClick() : handleNavigation(item.path)}
+                                className={`flex flex-col items-center p-2 rounded-lg transition-all duration-200 ${
+                                    isActive 
+                                        ? 'text-green-600' 
+                                        : 'text-gray-500 hover:text-green-500'
+                                }`}
+                            >
+                                <div className={`${isActive ? 'scale-110' : 'scale-100'} transition-transform`}>
+                                    {item.icon}
+                                </div>
+                                <span className="text-xs mt-1 font-medium">{item.name}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* --- Desktop Sidebar (Hidden on mobile) --- */}
+            {/* FIX: Changed from hidden sm:flex to always flex but controlled by translate */}
             <div className={`fixed top-0 left-0 h-screen w-64 xl:w-72 bg-white border-r border-gray-200 flex flex-col justify-between z-[51] shadow-2xl overflow-y-auto
                 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
                 sm:translate-x-0 
                 transition-transform duration-300 ease-in-out`}>
                 
                 <div className='w-full'>
-                    <div onClick={() => navigate('/')} className='flex items-center gap-3 p-4 border-b border-gray-100 cursor-pointer'>
-                        <img src={assets.logo} className='w-10' alt="Pixo Logo" />
-                        <h1 className='text-xl font-bold text-green-700'>Pixo</h1>
+                    {/* Header with Logo and Close Button */}
+                    <div className='flex items-center justify-between p-4 border-b border-gray-100'>
+                        <div onClick={() => navigate('/')} className='flex items-center gap-3 cursor-pointer'>
+                            <img src={assets.logo} className='w-10' alt="Pixo Logo" />
+                            <h1 className='text-xl font-bold text-green-700'>Pixo</h1>
+                        </div>
+                        
+                        {/* X Button - Visible and functional on desktop */}
+                        <button
+                            onClick={handleCloseSidebar}
+                            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200 sm:hidden"
+                            aria-label="Close menu"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
                     </div>
                     
                     <div className='px-4 pt-4 space-y-1.5'>
@@ -330,6 +382,87 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                     </div>
                 </div>
             </div>
+
+            {/* Full Sidebar Overlay for Mobile */}
+            {sidebarOpen && (
+                <div className={`fixed top-0 left-0 h-screen w-full bg-white flex flex-col justify-between z-[51] shadow-2xl overflow-y-auto sm:hidden
+                    ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+                    transition-transform duration-300 ease-in-out`}>
+                    
+                    <div className='w-full'>
+                        {/* Mobile Header with Close Button */}
+                        <div className='flex items-center justify-between p-4 border-b border-gray-100'>
+                            <div onClick={() => navigate('/')} className='flex items-center gap-3 cursor-pointer'>
+                                <img src={assets.logo} className='w-10' alt="Pixo Logo" />
+                                <h1 className='text-xl font-bold text-green-700'>Pixo</h1>
+                            </div>
+                            
+                            <button
+                                onClick={() => setSidebarOpen(false)}
+                                className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all duration-200"
+                                aria-label="Close menu"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        
+                        <div className='px-4 pt-4 space-y-1.5'>
+                            {menuItems.map((item, index) => {
+                                if (item.isSeparator) {
+                                    return <div key={index} className='h-px bg-gray-200 my-4 mx-2' />;
+                                }
+                                
+                                const isActive = location.pathname === item.path;
+                                
+                                return (
+                                    <div 
+                                        key={index}
+                                        onClick={() => handleNavigation(item.path, item.onClick)}
+                                        className={`flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all duration-200 group
+                                                    ${isActive 
+                                                        ? 'bg-green-50 text-green-700 font-bold shadow-sm'
+                                                        : 'hover:bg-gray-100 text-gray-700 hover:text-green-600 font-medium'
+                                                    } 
+                                                    active:scale-[0.98]`}
+                                    >
+                                        <div className={`${isActive ? 'text-green-600' : 'text-gray-500 group-hover:text-green-500'} transition-colors`}>
+                                            {item.icon}
+                                        </div>
+                                        <p className={`transition-colors ${isActive ? 'text-green-800 font-bold' : 'text-gray-700 group-hover:text-green-700'}`}>{item.name}</p>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+
+                    <div className='w-full border-t border-gray-200 p-4 flex flex-col gap-4 flex-shrink-0'> 
+                        <div 
+                            className='flex gap-3 items-center cursor-pointer p-2 rounded-lg hover:bg-gray-100 transition duration-200'
+                            onClick={handleViewProfile}
+                        >
+                            <UserButton />
+                            <div>
+                                <h1 className='text-md font-semibold text-gray-800'>{user?.full_name || 'Pixo User'}</h1>
+                                <p className='text-xs text-gray-500'>@{user?.username || 'username'}</p>
+                            </div>
+                        </div>
+
+                        <div className='flex justify-between items-center px-2'>
+                            <button className='text-gray-500 hover:text-gray-700 transition' title='Toggle Theme'>
+                                <Sun className='w-5 h-5'/>
+                            </button>
+                            <button
+                                onClick={signOut} 
+                                className='flex items-center gap-2 text-red-500 hover:text-red-700 transition font-medium text-sm p-1.5 rounded-lg hover:bg-red-50'
+                                title='Sign Out'
+                            >
+                                <LogOut className='w-5 h-5'/>
+                                Sign Out
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     )
 }

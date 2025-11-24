@@ -34,6 +34,7 @@
   transition: all 0.2s ease;
 }
 
+
 .message-bubble:hover {
   transform: translateY(-1px);
 }
@@ -63,4 +64,19 @@
 .swipe-right .swipe-indicator {
   right: -30px;
   opacity: 1;
+}
+
+
+
+@keyframes glide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-glide {
+  animation: glide 1.5s ease-in-out infinite;
 }

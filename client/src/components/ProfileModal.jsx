@@ -1,302 +1,596 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Pencil, X, RotateCw, Check, Move, Filter, Sliders } from 'lucide-react';
+import React, { useState, useEffect } from 'react'
+import { Pencil, X, Check, MapPin, Navigation, User, Search, Shuffle, Image } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateUser } from '../features/user/userSlice';
 import { useAuth } from '@clerk/clerk-react';
 import toast from 'react-hot-toast';
 
-// --- InteractiveCropper Component (Updated with 15 Filters) ---
-/**
- * Handles interactive drag, resize, rotation, and now filtering of the crop area.
- */
-const InteractiveCropper = ({
-    originalImage,
-    imageKey,
-    rotation,
-    setRotation,
-    handleCropComplete,
-    handleCropCancel
-}) => {
-    const imageRef = useRef(null);
-    const ASPECT_RATIO = imageKey === 'profile_picture' ? 1 : 4; // 1:1 or 4:1
-    const MIN_SIZE = imageKey === 'profile_picture' ? 80 : 160;
+// DiceBear API Styles for Avatars
+const AVATAR_STYLES = {
+  'adventurer': { name: 'Adventurer', baseUrl: 'https://api.dicebear.com/7.x/adventurer/svg' },
+  'avataaars': { name: 'Classic', baseUrl: 'https://api.dicebear.com/7.x/avataaars/svg' },
+  'pixel-art': { name: 'Pixel Art', baseUrl: 'https://api.dicebear.com/7.x/pixel-art/svg' },
+  'bottts': { name: 'Robots', baseUrl: 'https://api.dicebear.com/7.x/bottts/svg' },
+  'lorelei': { name: 'Fairy Tale', baseUrl: 'https://api.dicebear.com/7.x/lorelei/svg' },
+  'micah': { name: 'Cartoon', baseUrl: 'https://api.dicebear.com/7.x/micah/svg' },
+  'miniavs': { name: 'Mini Avatars', baseUrl: 'https://api.dicebear.com/7.x/miniavs/svg' },
+  'personas': { name: 'Professional', baseUrl: 'https://api.dicebear.com/7.x/personas/svg' }
+};
 
-    // New state for filter
-    const [filterType, setFilterType] = useState('none'); 
+// Cover Photo Themes
+const COVER_THEMES = {
+  'nature': { name: 'Nature', baseUrl: 'https://picsum.photos/600/200?random=' },
+  'gradient': { name: 'Gradient', baseUrl: 'https://picsum.photos/600/200?blur=2&random=' },
+  'abstract': { name: 'Abstract', baseUrl: 'https://picsum.photos/600/200?grayscale&random=' },
+  'city': { name: 'City', baseUrl: 'https://picsum.photos/600/200?city&random=' },
+  'mountains': { name: 'Mountains', baseUrl: 'https://picsum.photos/600/200?mountains&random=' },
+  'beach': { name: 'Beach', baseUrl: 'https://picsum.photos/600/200?beach&random=' }
+};
 
-    const [crop, setCrop] = useState({ x: 0, y: 0, width: 150, height: 150 / ASPECT_RATIO });
-    const [isDragging, setIsDragging] = useState(false);
-    const [isResizing, setIsResizing] = useState(false);
-    const [startPos, setStartPos] = useState({ x: 0, y: 0 });
-    const [initialCrop, setInitialCrop] = useState(null);
+// Generate random avatars
+const generateRandomAvatars = (count = 100) => {
+  const avatars = [];
+  const styleKeys = Object.keys(AVATAR_STYLES);
+  const colors = ['ffdfbf', 'b6e3f4', 'd1d4f9', 'ffadad', 'caffbf', 'fdffb6', 'ffd6a5', 'fffffc'];
+  
+  for (let i = 0; i < count; i++) {
+    const styleKey = styleKeys[Math.floor(Math.random() * styleKeys.length)];
+    const style = AVATAR_STYLES[styleKey];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const seed = `avatar-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const avatar = {
+      id: seed,
+      name: `${style.name} ${i + 1}`,
+      url: `${style.baseUrl}?seed=${seed}&backgroundColor=${color}`,
+      style: styleKey
+    };
+    
+    avatars.push(avatar);
+  }
+  
+  return avatars;
+};
 
-    // --- 15 Filter Presets ---
-    const filters = {
-        'none': 'none',
-        'grayscale': 'grayscale(100%)',
-        'sepia': 'sepia(100%)',
-        'vintage': 'sepia(50%) contrast(1.3) brightness(1.1)',
-        'lomo': 'contrast(1.5) brightness(0.9) saturate(1.2)',
-        'blue_wash': 'brightness(1.1) contrast(1.1) sepia(20%) hue-rotate(180deg)',
-        'dark_mono': 'grayscale(100%) contrast(1.5) brightness(0.7)',
-        'bright_pop': 'saturate(200%) brightness(1.2)',
-        'warm_retro': 'sepia(80%) contrast(0.8) brightness(0.9)',
-        'x_pro': 'sepia(30%) contrast(1.5) brightness(0.8) saturate(1.3)',
-        'blur_light': 'brightness(1.5) blur(1px)',
-        'contrast_max': 'contrast(200%)',
-        'soft_breeze': 'sepia(10%) brightness(1.1) contrast(0.9) saturate(1.1)',
-        'cool_tone': 'brightness(1.1) contrast(1.1) sepia(10%) hue-rotate(220deg)',
-        'high_sat': 'saturate(300%) contrast(1.1)',
+// Generate cover photos
+const generateCoverPhotos = () => {
+  const covers = [];
+  const themeKeys = Object.keys(COVER_THEMES);
+  
+  themeKeys.forEach((themeKey, index) => {
+    const theme = COVER_THEMES[themeKey];
+    for (let i = 0; i < 3; i++) {
+      const seed = `cover-${themeKey}-${i}-${Date.now()}`;
+      covers.push({
+        id: seed,
+        name: `${theme.name} ${i + 1}`,
+        url: `${theme.baseUrl}${seed}`,
+        style: themeKey
+      });
     }
+  });
+  
+  return covers;
+};
 
-    // Initialize crop box to the center (CORE LOGIC UNCHANGED)
-    useEffect(() => {
-        if (imageRef.current) {
-            const img = imageRef.current;
-            const containerWidth = img.clientWidth;
-            const containerHeight = img.clientHeight;
+// --- Location Detection Component ---
+const LocationInput = ({ value, onChange, disabled }) => {
+    const [isDetecting, setIsDetecting] = useState(false);
+    const [showLocationOptions, setShowLocationOptions] = useState(false);
 
-            const initialWidth = Math.min(containerWidth, containerHeight * ASPECT_RATIO) * 0.6;
-            const initialHeight = initialWidth / ASPECT_RATIO;
-
-            setCrop({
-                x: (containerWidth - initialWidth) / 2,
-                y: (containerHeight - initialHeight) / 2,
-                width: initialWidth,
-                height: initialHeight
-            });
+    const detectLocation = () => {
+        if (!navigator.geolocation) {
+            toast.error('Geolocation is not supported by your browser');
+            return;
         }
-    }, [originalImage, imageKey, ASPECT_RATIO]);
 
+        setIsDetecting(true);
+        setShowLocationOptions(false);
 
-    // Mouse/Touch Handlers (CORE LOGIC UNCHANGED)
-    const handleMouseDown = (e, mode) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const clientX = e.clientX || (e.touches ? e.touches[0].clientX : e.clientX);
-        const clientY = e.clientY || (e.touches ? e.touches[0].clientY : e.clientY);
-
-        setStartPos({ x: clientX, y: clientY });
-        setInitialCrop(crop);
-
-        if (mode === 'drag') setIsDragging(true);
-        else if (mode === 'resize') setIsResizing(true);
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                try {
+                    const { latitude, longitude } = position.coords;
+                    console.log('Got coordinates:', latitude, longitude);
+                    
+                    // Try multiple reverse geocoding services for better reliability
+                    let locationName = await tryReverseGeocoding(latitude, longitude);
+                    
+                    if (locationName) {
+                        onChange(locationName);
+                        toast.success('Location detected successfully!');
+                    } else {
+                        // If reverse geocoding fails, show coordinates
+                        const fallbackLocation = `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}`;
+                        onChange(fallbackLocation);
+                        toast.success('Location detected! (Coordinates only)');
+                    }
+                } catch (error) {
+                    console.error('Location detection error:', error);
+                    toast.error('Failed to get location details');
+                } finally {
+                    setIsDetecting(false);
+                }
+            },
+            (error) => {
+                console.error('Geolocation error:', error);
+                let errorMessage = 'Failed to detect location';
+                
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage = 'Location access denied. Please enable location permissions in your browser settings.';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage = 'Location information unavailable.';
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage = 'Location request timed out. Please try again.';
+                        break;
+                }
+                
+                toast.error(errorMessage);
+                setIsDetecting(false);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 60000
+            }
+        );
     };
 
-    const handleMouseMove = useCallback((e) => {
-        if (!isDragging && !isResizing) return;
-        
-        const imgContainer = imageRef.current;
-        if (!imgContainer) return;
-
-        const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : startPos.x);
-        const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : startPos.y);
-        
-        const dx = clientX - startPos.x;
-        const dy = clientY - startPos.y;
-
-        const containerRect = imgContainer.getBoundingClientRect();
-
-        if (isDragging) {
-            const newX = Math.max(0, Math.min(initialCrop.x + dx, containerRect.width - initialCrop.width));
-            const newY = Math.max(0, Math.min(initialCrop.y + dy, containerRect.height - initialCrop.height));
-            setCrop(prev => ({ ...prev, x: newX, y: newY }));
-
-        } else if (isResizing) {
-            const change = (dx > dy ? dx : dy);
-            let newWidth = initialCrop.width + change;
-
-            newWidth = Math.max(MIN_SIZE, newWidth); 
-            newWidth = Math.min(newWidth, containerRect.width);
-            newWidth = Math.min(newWidth, containerRect.height * ASPECT_RATIO);
+    // Try multiple reverse geocoding services
+    const tryReverseGeocoding = async (lat, lng) => {
+        const services = [
+            // OpenStreetMap Nominatim (free, no API key required)
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`,
             
-            const newHeight = newWidth / ASPECT_RATIO;
-
-            const newX = initialCrop.x - (newWidth - initialCrop.width) / 2;
-            const newY = initialCrop.y - (newHeight - initialCrop.height) / 2;
-
-            const finalX = Math.max(0, Math.min(newX, containerRect.width - newWidth));
-            const finalY = Math.max(0, Math.min(newY, containerRect.height - newHeight));
+            // BigDataCloud (free tier)
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
             
-            setCrop({ x: finalX, y: finalY, width: newWidth, height: newHeight });
+            // GeoNames (free tier)
+            `http://api.geonames.org/findNearbyPlaceNameJSON?lat=${lat}&lng=${lng}&username=demo`
+        ];
+
+        for (let serviceUrl of services) {
+            try {
+                console.log('Trying service:', serviceUrl);
+                const response = await fetch(serviceUrl);
+                
+                if (!response.ok) continue;
+                
+                const data = await response.json();
+                console.log('Service response:', data);
+                
+                let location = extractLocationName(data, serviceUrl);
+                if (location) {
+                    console.log('Found location:', location);
+                    return location;
+                }
+            } catch (error) {
+                console.log('Service failed:', serviceUrl, error);
+                continue;
+            }
         }
-    }, [isDragging, isResizing, startPos, initialCrop, ASPECT_RATIO, MIN_SIZE]);
+        
+        return null;
+    };
 
-
-    const handleMouseUp = useCallback(() => {
-        setIsDragging(false);
-        setIsResizing(false);
-        setInitialCrop(null);
-    }, []);
-
-    // Attach/Detach global event listeners (CORE LOGIC UNCHANGED)
-    useEffect(() => {
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        document.addEventListener('touchmove', handleMouseMove);
-        document.addEventListener('touchend', handleMouseUp);
-
-        return () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-            document.removeEventListener('touchmove', handleMouseMove);
-            document.removeEventListener('touchend', handleMouseUp);
-        };
-    }, [handleMouseMove, handleMouseUp]);
-    
-    
-    const isProfile = imageKey === 'profile_picture';
-    const containerClass = isProfile 
-        ? 'w-64 h-64 rounded-full' 
-        : 'w-full h-48 rounded-lg';
-
-    // Handler to complete the crop, passing the filter type
-    const handleApply = () => {
-        if(imageRef.current) {
-            handleCropComplete(imageRef.current, crop, filters[filterType]);
+    // Extract location name from different service responses
+    const extractLocationName = (data, serviceUrl) => {
+        // OpenStreetMap Nominatim
+        if (serviceUrl.includes('nominatim')) {
+            if (data.address) {
+                const { city, town, village, county, state, country } = data.address;
+                return [city, town, village, county].find(Boolean) + ', ' + (state || country);
+            }
         }
-    }
-
+        
+        // BigDataCloud
+        if (serviceUrl.includes('bigdatacloud')) {
+            if (data.city && data.countryName) {
+                return `${data.city}, ${data.countryName}`;
+            } else if (data.locality && data.countryName) {
+                return `${data.locality}, ${data.countryName}`;
+            }
+        }
+        
+        // GeoNames
+        if (serviceUrl.includes('geonames')) {
+            if (data.geonames && data.geonames[0]) {
+                const place = data.geonames[0];
+                return `${place.name}, ${data.countryName}`;
+            }
+        }
+        
+        return null;
+    };
 
     return (
-        <div className="fixed inset-0 z-[10000] bg-black/80 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl scale-100 transition-transform duration-300">
-                {/* Header */}
-                <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50">
-                    <h3 className="text-xl font-bold text-gray-800">Adjust Image & Apply Filter</h3>
+        <div className="relative">
+            <div className="flex gap-2">
+                <div className="flex-1 relative">
+                    <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <input
+                        type="text"
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        disabled={disabled}
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all"
+                        placeholder="Enter your location manually"
+                        onFocus={() => setShowLocationOptions(true)}
+                    />
+                </div>
+                
+                <button
+                    type="button"
+                    onClick={detectLocation}
+                    disabled={isDetecting || disabled}
+                    className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap min-w-[140px] justify-center"
+                >
+                    {isDetecting ? (
+                        <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Detecting...</span>
+                        </>
+                    ) : (
+                        <>
+                            <Navigation className="w-4 h-4" />
+                            <span>Auto Detect</span>
+                        </>
+                    )}
+                </button>
+            </div>
+
+            {/* Location Options Dropdown */}
+            {showLocationOptions && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
                     <button
-                        onClick={handleCropCancel}
-                        className="text-gray-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition"
+                        type="button"
+                        onClick={() => {
+                            detectLocation();
+                            setShowLocationOptions(false);
+                        }}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 border-b border-gray-100"
                     >
-                        <X className="w-6 h-6" />
+                        <Navigation className="w-4 h-4 text-blue-600" />
+                        <div>
+                            <div className="font-medium text-gray-900">Use Current Location</div>
+                            <div className="text-sm text-gray-500">Automatically detect your location</div>
+                        </div>
+                    </button>
+                    
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onChange('');
+                            setShowLocationOptions(false);
+                        }}
+                        className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3"
+                    >
+                        <X className="w-4 h-4 text-gray-600" />
+                        <div>
+                            <div className="font-medium text-gray-900">Clear Location</div>
+                            <div className="text-sm text-gray-500">Remove location information</div>
+                        </div>
                     </button>
                 </div>
+            )}
 
-                {/* Image Preview & Interactive Area */}
-                <div className="p-6">
-                    <div 
-                        ref={imageRef}
-                        className={`relative mx-auto bg-gray-900 overflow-hidden shadow-xl border-4 border-gray-700/50 ${containerClass}`}
-                        onMouseDown={(e) => e.preventDefault()}
-                    >
-                        {/* Rotated & Filtered Image */}
-                        <img
-                            src={originalImage}
-                            alt="Crop preview"
-                            className={`w-full h-full object-contain transition-transform duration-200 ${isProfile ? 'rounded-full' : 'rounded-lg'}`}
-                            style={{
-                                transform: `rotate(${rotation}deg)`,
-                                filter: filters[filterType], // Apply CSS filter for preview
-                            }}
-                        />
+            {/* Click outside to close dropdown */}
+            {showLocationOptions && (
+                <div 
+                    className="fixed inset-0 z-0" 
+                    onClick={() => setShowLocationOptions(false)}
+                />
+            )}
+        </div>
+    );
+};
 
-                        {/* Interactive Crop Box */}
-                        <div
-                            className={`absolute border-4 border-teal-400 cursor-move shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] transition-all duration-50 ease-in-out ${isProfile ? 'rounded-full' : 'rounded-none'}`}
-                            style={{
-                                top: `${crop.y}px`,
-                                left: `${crop.x}px`,
-                                width: `${crop.width}px`,
-                                height: `${crop.height}px`,
-                            }}
-                            onMouseDown={(e) => handleMouseDown(e, 'drag')}
-                            onTouchStart={(e) => handleMouseDown(e, 'drag')}
-                        >
-                            <div className='absolute inset-0 flex items-center justify-center text-white/50 pointer-events-none'>
-                                <Move className='w-6 h-6' />
-                            </div>
+// --- Avatar Selector Component ---
+const AvatarSelector = ({ onAvatarSelect }) => {
+    const [showAvatarOptions, setShowAvatarOptions] = useState(false);
+    const [selectedStyle, setSelectedStyle] = useState('all');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [avatars, setAvatars] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
 
-                            {/* Resize Handle */}
-                            <div 
-                                className='absolute bottom-0 right-0 w-6 h-6 bg-teal-500 rounded-full cursor-nwse-resize transform translate-x-1/2 translate-y-1/2 border-2 border-white shadow-lg'
-                                onMouseDown={(e) => handleMouseDown(e, 'resize')}
-                                onTouchStart={(e) => handleMouseDown(e, 'resize')}
-                            ></div>
+    useEffect(() => {
+        if (showAvatarOptions && avatars.length === 0) {
+            generateMoreAvatars();
+        }
+    }, [showAvatarOptions]);
+
+    const generateMoreAvatars = () => {
+        setIsLoading(true);
+        setTimeout(() => {
+            const newAvatars = generateRandomAvatars(50);
+            setAvatars(prev => [...prev, ...newAvatars]);
+            setIsLoading(false);
+        }, 500);
+    };
+
+    const filteredAvatars = avatars.filter(avatar => {
+        const matchesStyle = selectedStyle === 'all' || avatar.style === selectedStyle;
+        const matchesSearch = avatar.name.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesStyle && matchesSearch;
+    });
+
+    const handleAvatarSelect = async (avatar) => {
+        try {
+            const response = await fetch(avatar.url);
+            const blob = await response.blob();
+            const file = new File([blob], `avatar-${avatar.id}.svg`, { type: 'image/svg+xml' });
+            
+            onAvatarSelect(file);
+            setShowAvatarOptions(false);
+            toast.success('Avatar selected!');
+        } catch (error) {
+            console.error('Error loading avatar:', error);
+            toast.error('Failed to select avatar');
+        }
+    };
+
+    const handleShuffle = () => {
+        setAvatars([]);
+        generateMoreAvatars();
+    };
+
+    return (
+        <div className="relative">
+            <button
+                type="button"
+                onClick={() => setShowAvatarOptions(true)}
+                className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all font-medium flex items-center gap-2 text-sm"
+            >
+                <User className="w-4 h-4" />
+                <span>Choose Avatar</span>
+            </button>
+
+            {showAvatarOptions && (
+                <div className="fixed inset-0 z-[10000] bg-white flex flex-col">
+                    {/* Header */}
+                    <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-pink-50">
+                        <div>
+                            <h3 className="text-2xl font-bold text-gray-900">Choose Your Avatar</h3>
+                            <p className="text-gray-600 mt-1">Select from unlimited unique avatars</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={handleShuffle}
+                                className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                                disabled={isLoading}
+                            >
+                                <Shuffle className="w-4 h-4" />
+                                Shuffle
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowAvatarOptions(false)}
+                                className="text-gray-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
                     </div>
 
-                    {/* Filter Controls */}
-                    <div className='mt-6 border-t pt-4 border-gray-100'>
-                        <h4 className='text-sm font-semibold text-gray-700 flex items-center mb-3'>
-                            <Sliders className='w-4 h-4 mr-2 text-indigo-500'/>
-                            Select Filter
-                        </h4>
-                        {/* Horizontal Scrollable Filter List */}
-                        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                            {Object.keys(filters).map((key) => (
+                    {/* Search and Controls */}
+                    <div className="p-4 border-b border-gray-200 bg-white">
+                        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                            <div className="relative flex-1 max-w-md">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                                <input
+                                    type="text"
+                                    placeholder="Search avatars..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-purple-500 focus:ring-1 focus:ring-purple-200"
+                                />
+                            </div>
+                            <div className="flex flex-wrap gap-2">
                                 <button
-                                    key={key}
                                     type="button"
-                                    onClick={() => setFilterType(key)}
-                                    className={`
-                                        flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-all shadow-sm active:scale-95 capitalize whitespace-nowrap
-                                        ${filterType === key 
-                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-400/50'
-                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                        }
-                                    `}
+                                    onClick={() => setSelectedStyle('all')}
+                                    className={`px-3 py-1.5 rounded-full text-sm transition-all ${
+                                        selectedStyle === 'all' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    }`}
                                 >
-                                    {key.replace('_', ' ')}
+                                    All
+                                </button>
+                                {Object.entries(AVATAR_STYLES).map(([key, style]) => (
+                                    <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => setSelectedStyle(key)}
+                                        className={`px-3 py-1.5 rounded-full text-sm transition-all ${
+                                            selectedStyle === key ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    >
+                                        {style.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Avatars Grid */}
+                    <div className="flex-1 overflow-auto bg-gray-50 p-4">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
+                            {filteredAvatars.map((avatar) => (
+                                <button
+                                    key={avatar.id}
+                                    type="button"
+                                    onClick={() => handleAvatarSelect(avatar)}
+                                    className="p-3 bg-white border border-gray-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all flex flex-col items-center gap-2 group"
+                                >
+                                    <img
+                                        src={avatar.url}
+                                        alt={avatar.name}
+                                        className="w-16 h-16 rounded-full object-cover border-2 border-gray-200 group-hover:border-purple-300 transition-colors"
+                                        loading="lazy"
+                                    />
+                                    <span className="text-xs text-gray-600 text-center line-clamp-1">{avatar.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                        
+                        {isLoading && (
+                            <div className="text-center py-4">
+                                <div className="inline-flex items-center gap-2 text-purple-600">
+                                    <div className="w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                                    Loading more avatars...
+                                </div>
+                            </div>
+                        )}
+
+                        {!isLoading && (
+                            <div className="text-center py-4">
+                                <button
+                                    type="button"
+                                    onClick={generateMoreAvatars}
+                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                                >
+                                    Load More Avatars
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="p-4 border-t border-gray-200 bg-white">
+                        <button
+                            type="button"
+                            onClick={() => setShowAvatarOptions(false)}
+                            className="w-full py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// --- Cover Photo Selector Component ---
+const CoverPhotoSelector = ({ onCoverSelect }) => {
+    const [showCoverOptions, setShowCoverOptions] = useState(false);
+    const [covers, setCovers] = useState([]);
+
+    useEffect(() => {
+        if (showCoverOptions && covers.length === 0) {
+            setCovers(generateCoverPhotos());
+        }
+    }, [showCoverOptions]);
+
+    const handleCoverSelect = async (cover) => {
+        try {
+            const response = await fetch(cover.url);
+            const blob = await response.blob();
+            const file = new File([blob], `cover-${cover.id}.jpg`, { type: 'image/jpeg' });
+            
+            onCoverSelect(file);
+            setShowCoverOptions(false);
+            toast.success('Cover photo selected!');
+        } catch (error) {
+            console.error('Error loading cover:', error);
+            toast.error('Failed to select cover photo');
+        }
+    };
+
+    return (
+        <div className="relative">
+            <button
+                type="button"
+                onClick={() => setShowCoverOptions(true)}
+                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg hover:from-blue-600 hover:to-cyan-600 transition-all font-medium flex items-center gap-2 text-sm"
+            >
+                <Image className="w-4 h-4" />
+                <span>Choose Cover</span>
+            </button>
+
+            {showCoverOptions && (
+                <div className="fixed inset-0 z-[10000] bg-white flex flex-col">
+                    <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+                        <div>
+                            <h3 className="text-2xl font-bold text-gray-900">Choose Cover Photo</h3>
+                            <p className="text-gray-600 mt-1">Select from beautiful cover themes</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowCoverOptions(false)}
+                            className="text-gray-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-auto bg-gray-50 p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {covers.map((cover) => (
+                                <button
+                                    key={cover.id}
+                                    type="button"
+                                    onClick={() => handleCoverSelect(cover)}
+                                    className="group bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105"
+                                >
+                                    <div className="aspect-w-16 aspect-h-9 bg-gray-200">
+                                        <img
+                                            src={cover.url}
+                                            alt={cover.name}
+                                            className="w-full h-32 object-cover group-hover:scale-110 transition-transform duration-300"
+                                            loading="lazy"
+                                        />
+                                    </div>
+                                    <div className="p-3">
+                                        <h4 className="font-medium text-gray-900 text-sm">{cover.name}</h4>
+                                        <p className="text-xs text-gray-500 capitalize">{cover.style} theme</p>
+                                    </div>
                                 </button>
                             ))}
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex justify-end gap-4 mt-8 pt-4 border-t border-gray-100">
-                         <button
-                            onClick={() => setRotation(prev => (prev + 90) % 360)}
-                            className="flex items-center gap-2 px-5 py-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors font-medium text-gray-700 active:scale-[0.98] shadow-md"
-                        >
-                            <RotateCw className="w-5 h-5" />
-                            <span>Rotate</span>
-                        </button>
-                        
+                    <div className="p-4 border-t border-gray-200 bg-white">
                         <button
-                            onClick={handleApply} 
-                            className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-full transition-all font-semibold shadow-xl shadow-teal-500/30 active:scale-[0.98]"
+                            type="button"
+                            onClick={() => setShowCoverOptions(false)}
+                            className="w-full py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                         >
-                            <Check className="w-5 h-5" />
-                            <span>Crop & Apply</span>
+                            Cancel
                         </button>
                     </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
 
-
-// --- Main ProfileModal Component (CORE LOGIC UNCHANGED) ---
-const ProfileModal = ({setShowEdit}) => {
+// --- Main ProfileModal Component ---
+const ProfileModal = ({ setShowEdit }) => {
     const dispatch = useDispatch();
-    const {getToken} = useAuth()
+    const { getToken } = useAuth()
     const user = useSelector((state) => state.user.value)
     
-    // CORE STATE UNCHANGED
+    // CORE STATE
     const [editForm, setEditForm] = useState({
         username: user.username || '',
         bio: user.bio || '',
         location: user.location || '',
-        profile_picture: null,
-        cover_photo: null,
+        profile_picture: user.profile_picture || null,
+        cover_photo: user.cover_photo || null,
         full_name: user.full_name || '',
     })
 
     const [isSaving, setIsSaving] = useState(false);
 
-    // CORE CROP STATES UNCHANGED
-    const [cropMode, setCropMode] = useState(false);
-    const [originalImage, setOriginalImage] = useState(null);
-    const [rotation, setRotation] = useState(0);
-    const [imageKey, setImageKey] = useState(''); 
-
-    // --- Core Logic (UNCHANGED) ---
+    // --- Core Logic ---
     const handleSaveProfile = async () => {
         try {
+            setIsSaving(true);
             const userData = new FormData();
-            const {full_name, username, bio, location, profile_picture, cover_photo} = editForm
+            const { full_name, username, bio, location, profile_picture, cover_photo } = editForm
 
             if (!full_name.trim() || !username.trim()) {
                 throw new Error('Name and Username are required.');
@@ -307,6 +601,7 @@ const ProfileModal = ({setShowEdit}) => {
             userData.append('location', location);
             userData.append('full_name', full_name);
             
+            // Only append if it's a File object (new selection)
             if (profile_picture instanceof File) {
                 userData.append('profile', profile_picture);
             }
@@ -315,116 +610,52 @@ const ProfileModal = ({setShowEdit}) => {
             }
 
             const token = await getToken()
-            await dispatch(updateUser({userData, token})) 
+            await dispatch(updateUser({ userData, token })) 
 
             setShowEdit(false)
+            toast.success('Profile updated successfully!');
         } catch (error) {
-            throw error; 
+            toast.error(error.message || 'Error saving profile');
+        } finally {
+            setIsSaving(false);
         }
     }
 
-    // CORE HANDLER UNCHANGED
+    // Handle avatar selection
+    const handleAvatarSelect = (avatarFile) => {
+        setEditForm(prev => ({
+            ...prev,
+            profile_picture: avatarFile
+        }));
+    };
+
+    // Handle cover photo selection
+    const handleCoverSelect = (coverFile) => {
+        setEditForm(prev => ({
+            ...prev,
+            cover_photo: coverFile
+        }));
+    };
+
+    // Handle image upload directly without cropping
     const handleImageUpload = (key, file) => {
         if (file) {
-            setImageKey(key);
-            setOriginalImage(URL.createObjectURL(file));
-            setCropMode(true); 
-            setRotation(0);
+            setEditForm(prev => ({
+                ...prev,
+                [key]: file
+            }));
         }
     }
 
-    /**
-     * UPDATED: Now accepts a filter style string.
-     */
-    const handleCropComplete = (imageContainerElement, crop, filterStyle = 'none') => {
-        const img = imageContainerElement.querySelector('img');
-        if (!img) {
-            handleCropCancel();
-            return;
-        }
+    // Handle location change
+    const handleLocationChange = (location) => {
+        setEditForm(prev => ({
+            ...prev,
+            location
+        }));
+    };
 
-        const naturalWidth = img.naturalWidth;
-        const naturalHeight = img.naturalHeight;
-        const containerRect = imageContainerElement.getBoundingClientRect();
-
-        const ratioX = containerRect.width / naturalWidth;
-        const ratioY = containerRect.height / naturalHeight;
-        const scale = Math.min(ratioX, ratioY);
-        
-        const offsetX = (containerRect.width - (naturalWidth * scale)) / 2;
-        const offsetY = (containerRect.height - (naturalHeight * scale)) / 2;
-
-        const originalCropX = (crop.x - offsetX) / scale;
-        const originalCropY = (crop.y - offsetY) / scale;
-        const originalCropWidth = crop.width / scale;
-        const originalCropHeight = crop.height / scale;
-
-        // Canvas for final output
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        const imgObj = new Image();
-        imgObj.onload = () => {
-            let finalWidth = originalCropWidth;
-            let finalHeight = originalCropHeight;
-            
-            if (rotation % 180 !== 0) {
-                 [finalWidth, finalHeight] = [originalCropHeight, originalCropWidth];
-            }
-
-            canvas.width = finalWidth;
-            canvas.height = finalHeight;
-            
-            // --- FILTER APPLICATION ---
-            if (filterStyle && filterStyle !== 'none') {
-                ctx.filter = filterStyle; 
-            }
-            // --------------------------
-
-            // Apply translation and rotation to the canvas context
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.rotate((rotation * Math.PI) / 180);
-            
-            // Draw the cropped portion of the original image onto the rotated canvas
-            ctx.drawImage(
-                imgObj, 
-                originalCropX,
-                originalCropY,
-                originalCropWidth,
-                originalCropHeight,
-                -originalCropWidth / 2,
-                -originalCropHeight / 2,
-                originalCropWidth,
-                originalCropHeight
-            );
-            
-            // Reset filter for any future canvas use (good practice)
-            ctx.filter = 'none'; 
-
-            // Convert to blob and update form
-            canvas.toBlob((blob) => {
-                const croppedFile = new File([blob], `${imageKey}-cropped.jpg`, { type: 'image/jpeg' });
-                setEditForm(prev => ({
-                    ...prev,
-                    [imageKey]: croppedFile
-                }));
-            }, 'image/jpeg', 0.9);
-            
-            // Close the cropper
-            handleCropCancel();
-        };
-        imgObj.src = originalImage;
-    }
-
-
-    const handleCropCancel = () => {
-        setCropMode(false);
-        setOriginalImage(null);
-        setRotation(0);
-        setImageKey('');
-    }
-
-    // Utility function to get image URL for preview (UNCHANGED)
+    // Utility function to get image URL for preview
     const getImageUrl = (file, fallbackUrl) => {
         if (file instanceof File) {
             return URL.createObjectURL(file);
@@ -442,9 +673,7 @@ const ProfileModal = ({setShowEdit}) => {
                         <div className='flex justify-between items-center border-b border-gray-100 pb-4 mb-6'>
                             <h1 className='text-2xl font-extrabold text-gray-900'>Edit Your Profile</h1>
                             <button 
-                                onClick={()=> {
-                                    setShowEdit(false);
-                                }} 
+                                onClick={()=> setShowEdit(false)} 
                                 type='button' 
                                 className='text-gray-500 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition'
                                 aria-label="Close modal"
@@ -455,18 +684,7 @@ const ProfileModal = ({setShowEdit}) => {
 
                         <form className='space-y-6' onSubmit={(e) => {
                             e.preventDefault();
-                            setIsSaving(true); 
-
-                            toast.promise(
-                                handleSaveProfile(), 
-                                {
-                                    loading: 'Saving changes...',
-                                    success: () => 'Profile updated!',
-                                    error: (err) => err.message || 'Error saving profile',
-                                }
-                            ).finally(() => {
-                                setIsSaving(false); 
-                            });
+                            handleSaveProfile();
                         }}>
                             
                             {/* Image Upload Area */}
@@ -474,15 +692,21 @@ const ProfileModal = ({setShowEdit}) => {
                                 
                                 {/* Cover Photo Input */}
                                 <div className='relative'>
-                                    <label htmlFor="cover_photo_input" className="block text-sm font-semibold text-gray-700 mb-2 cursor-pointer">
-                                        Cover Photo
-                                    </label>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label htmlFor="cover_photo_input" className="block text-sm font-semibold text-gray-700 cursor-pointer">
+                                            Cover Photo
+                                        </label>
+                                        <CoverPhotoSelector onCoverSelect={handleCoverSelect} />
+                                    </div>
                                     <input 
                                         hidden 
                                         type="file" 
                                         accept="image/*" 
                                         id="cover_photo_input" 
-                                        onChange={(e)=>handleImageUpload('cover_photo', e.target.files[0])}
+                                        onChange={(e) => {
+                                            e.preventDefault();
+                                            handleImageUpload('cover_photo', e.target.files[0]);
+                                        }}
                                     />
                                     <label htmlFor="cover_photo_input" className='cursor-pointer'>
                                         <div className='group/cover relative w-full h-40 bg-gray-100 rounded-xl overflow-hidden shadow-md border border-gray-200 hover:border-indigo-400 transition-all duration-200'>
@@ -501,32 +725,42 @@ const ProfileModal = ({setShowEdit}) => {
 
                                 {/* Profile Picture Input */}
                                 <div className='relative -mt-16 ml-6'>
-                                    <label htmlFor="profile_picture_input" className='block cursor-pointer'>
-                                        <input 
-                                            hidden 
-                                            type="file" 
-                                            accept="image/*" 
-                                            id="profile_picture_input" 
-                                            onChange={(e)=>handleImageUpload('profile_picture', e.target.files[0])}
-                                        />
-                                        <div className='group/profile relative w-28 h-28 rounded-full overflow-hidden border-4 border-white shadow-xl transition-transform hover:scale-[1.02] hover:border-indigo-400'>
-                                            <img 
-                                                src={getImageUrl(editForm.profile_picture, user.profile_picture)} 
-                                                alt="Profile Preview" 
-                                                className='w-full h-full object-cover'
-                                                onError={(e) => { e.target.src = 'https://via.placeholder.com/100?text=P'; }}
-                                            />
-                                            <div className='absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/profile:opacity-100 transition-opacity duration-300'>
-                                                <Pencil className="w-5 h-5 text-white"/>
-                                            </div>
+                                    <div className='flex flex-col items-start gap-4'>
+                                        <div className="flex items-end gap-4">
+                                            <label htmlFor="profile_picture_input" className='block cursor-pointer'>
+                                                <input 
+                                                    hidden 
+                                                    type="file" 
+                                                    accept="image/*" 
+                                                    id="profile_picture_input" 
+                                                    onChange={(e) => {
+                                                        e.preventDefault();
+                                                        handleImageUpload('profile_picture', e.target.files[0]);
+                                                    }}
+                                                />
+                                                <div className='group/profile relative w-28 h-28 rounded-full overflow-hidden border-4 border-white shadow-xl transition-transform hover:scale-[1.02] hover:border-indigo-400'>
+                                                    <img 
+                                                        src={getImageUrl(editForm.profile_picture, user.profile_picture)} 
+                                                        alt="Profile Preview" 
+                                                        className='w-full h-full object-cover'
+                                                        onError={(e) => { 
+                                                            e.target.src = 'https://via.placeholder.com/100?text=P'; 
+                                                        }}
+                                                    />
+                                                    <div className='absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/profile:opacity-100 transition-opacity duration-300'>
+                                                        <Pencil className="w-5 h-5 text-white"/>
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-2 ml-2">Upload Photo</p>
+                                            </label>
+                                            <AvatarSelector onAvatarSelect={handleAvatarSelect} />
                                         </div>
-                                        <p className="text-xs text-gray-500 mt-2 ml-2">Click to change</p>
-                                    </label>
+                                    </div>
                                 </div>
 
                             </div>
 
-                            {/* Form Fields (Styling Enhanced) */}
+                            {/* Form Fields */}
                             <div className="pt-4 space-y-5">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
@@ -567,17 +801,18 @@ const ProfileModal = ({setShowEdit}) => {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                                    <input 
-                                        type="text" 
-                                        className='w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all' 
-                                        placeholder='e.g., San Francisco, CA' 
-                                        onChange={(e)=>setEditForm({...editForm, location: e.target.value})} 
+                                    <LocationInput 
                                         value={editForm.location}
+                                        onChange={handleLocationChange}
+                                        disabled={isSaving}
                                     />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Use auto-detect for accurate location or type manually
+                                    </p>
                                 </div>
                             </div>
 
-                            {/* Action Buttons with Loading State */}
+                            {/* Action Buttons */}
                             <div className='flex justify-end space-x-3 pt-6 border-t border-gray-100'>
                                 <button 
                                     onClick={()=> setShowEdit(false)} 
@@ -601,7 +836,6 @@ const ProfileModal = ({setShowEdit}) => {
                                 >
                                     {isSaving ? (
                                         <>
-                                            {/* Simple Tailwind spinner */}
                                             <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -618,18 +852,6 @@ const ProfileModal = ({setShowEdit}) => {
                     </div>
                 </div>
             </div>
-
-            {/* Interactive Crop Modal */}
-            {cropMode && originalImage && imageKey && (
-                <InteractiveCropper
-                    originalImage={originalImage}
-                    imageKey={imageKey}
-                    rotation={rotation}
-                    setRotation={setRotation}
-                    handleCropComplete={handleCropComplete}
-                    handleCropCancel={handleCropCancel}
-                />
-            )}
         </div>
     )
 }

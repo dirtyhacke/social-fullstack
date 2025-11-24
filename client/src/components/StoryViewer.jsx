@@ -1,5 +1,6 @@
-import { X, ChevronLeft, ChevronRight, Volume2, VolumeX } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Volume2, VolumeX, Clock } from 'lucide-react'
 import React, { useEffect, useState, useRef } from 'react'
+import moment from 'moment'
 
 const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setViewStory }) => {
 
@@ -17,6 +18,27 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
     // Get current story data
     const viewStory = stories?.[currentStoryIndex] || null;
     const storyUser = viewStory?.user || {};
+
+    // Format time function
+    const formatUploadTime = (timestamp) => {
+        if (!timestamp) return '';
+        
+        const now = moment();
+        const storyTime = moment(timestamp);
+        const diffInHours = now.diff(storyTime, 'hours');
+        const diffInDays = now.diff(storyTime, 'days');
+        
+        if (diffInHours < 1) {
+            const diffInMinutes = now.diff(storyTime, 'minutes');
+            return `${diffInMinutes}m ago`;
+        } else if (diffInHours < 24) {
+            return `${diffInHours}h ago`;
+        } else if (diffInDays < 7) {
+            return `${diffInDays}d ago`;
+        } else {
+            return storyTime.format('MMM D');
+        }
+    };
 
     // Initialize audio
     useEffect(() => {
@@ -64,7 +86,6 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                     }
                 };
 
-                // Start video playback after a small delay to ensure DOM is ready
                 setTimeout(playVideo, 100);
             }
         } else {
@@ -78,7 +99,7 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
             }, setTime);
 
             timer = setTimeout(() => {
-                handleNextStory(); // Auto-advance to next story
+                handleNextStory();
             }, storyDuration)
         }
 
@@ -303,7 +324,6 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
             case 'video':
                 return (
                     <div className="relative w-full h-full bg-black">
-                        {/* Video Loading Indicator */}
                         {!videoLoaded && (
                             <div className="absolute inset-0 flex items-center justify-center z-10">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
@@ -332,7 +352,6 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                             Your browser does not support the video tag.
                         </video>
                         
-                        {/* Mute/Unmute Button - Only for videos */}
                         <button
                             onClick={toggleMute}
                             className="absolute bottom-4 left-4 p-3 bg-black/50 rounded-full text-white hover:bg-black/70 transition-all z-40"
@@ -344,7 +363,6 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                             )}
                         </button>
 
-                        {/* Video not loaded fallback */}
                         {!videoLoaded && (
                             <div className="absolute inset-0 flex items-center justify-center z-20">
                                 <div className="text-white text-center">
@@ -473,22 +491,38 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                             alt={storyUser.full_name} 
                             className='size-8 rounded-full object-cover border-2 border-white/80'
                         />
-                        <div className='text-white font-semibold text-sm'>
-                            <span>{storyUser.full_name || 'Anonymous'}</span>
-                        </div>
-                        <div className='text-white/70 text-xs'>
-                            {currentStoryIndex + 1} / {stories.length}
+                        <div className='flex flex-col'>
+                            <span className='text-white font-semibold text-sm'>
+                                {storyUser.full_name || 'Anonymous'}
+                            </span>
+                            {/* Upload Time */}
+                            {viewStory.createdAt && (
+                                <div className='flex items-center gap-1'>
+                                    <Clock className='w-3 h-3 text-white/60' />
+                                    <span className='text-white/60 text-xs'>
+                                        {formatUploadTime(viewStory.createdAt)}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* Close Button - RIGHT SIDE */}
-                    <button 
-                        onClick={handleClose} 
-                        className='text-white p-1.5 opacity-80 hover:opacity-100 transition-opacity'
-                        aria-label="Close story viewer"
-                    >
-                        <X className='w-6 h-6'/>
-                    </button>
+                    {/* Story Counter and Close Button - RIGHT SIDE */}
+                    <div className='flex items-center gap-3'>
+                        {/* Story Counter */}
+                        <div className='text-white/70 text-xs bg-black/40 px-2 py-1 rounded-full'>
+                            {currentStoryIndex + 1} / {stories.length}
+                        </div>
+                        
+                        {/* Close Button */}
+                        <button 
+                            onClick={handleClose} 
+                            className='text-white p-1.5 opacity-80 hover:opacity-100 transition-opacity'
+                            aria-label="Close story viewer"
+                        >
+                            <X className='w-6 h-6'/>
+                        </button>
+                    </div>
                 </div>
               </div>
 
