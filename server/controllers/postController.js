@@ -1,190 +1,17 @@
 import imagekit from "../configs/imageKit.js";
+import cloudinary from "../configs/cloudinary.js";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
 import Comment from "../models/Comment.js";
 import Share from "../models/Share.js";
 import { v4 as uuidv4 } from 'uuid';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegPath from 'ffmpeg-static';
 import stream from 'stream';
-import { Buffer } from 'buffer';
 
-// Set ffmpeg path
-ffmpeg.setFfmpegPath(ffmpegPath);
-
-// Video compression settings
-const VIDEO_SETTINGS = {
-  maxSize: 100 * 1024 * 1024, // 100MB
-  maxDuration: 60, // 60 seconds
-  targetResolution: '1280x720',
-  crf: 28,
-  preset: 'fast',
-  videoBitrate: '1500k',
-  audioBitrate: '128k',
-  fps: 30
-};
-
-// Get video duration safely
-const getVideoDuration = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    const readableStream = new stream.PassThrough();
-    readableStream.end(fileBuffer);
-    
-    ffmpeg(readableStream)
-      .ffprobe((err, metadata) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        const duration = metadata.format.duration;
-        resolve(duration);
-      });
-  });
-};
-
-// Process video in chunks to avoid memory issues
-const processVideoInChunks = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    console.log('🎥 Processing video with chunk-based compression...');
-    
-    const chunks = [];
-    let totalSize = 0;
-    
-    const readableStream = new stream.PassThrough();
-    readableStream.end(fileBuffer);
-    
-    ffmpeg(readableStream)
-      .videoCodec('libx264')
-      .size(VIDEO_SETTINGS.targetResolution)
-      .videoBitrate(VIDEO_SETTINGS.videoBitrate)
-      .fps(VIDEO_SETTINGS.fps)
-      .addOptions([
-        `-crf ${VIDEO_SETTINGS.crf}`,
-        `-preset ${VIDEO_SETTINGS.preset}`,
-        '-movflags +faststart',
-        '-profile:v high',
-        '-level 4.0',
-        '-threads 2',
-        '-max_muxing_queue_size 1024'
-      ])
-      .audioCodec('aac')
-      .audioBitrate(VIDEO_SETTINGS.audioBitrate)
-      .format('mp4')
-      .on('start', () => {
-        console.log('🚀 FFmpeg compression started');
-      })
-      .on('progress', (progress) => {
-        if (progress.percent) {
-          console.log(`📊 Compression progress: ${Math.round(progress.percent)}%`);
-        }
-      })
-      .on('error', (error) => {
-        console.log('❌ Compression error:', error);
-        reject(error);
-      })
-      .on('end', () => {
-        console.log('✅ Video compression completed');
-        const compressedBuffer = Buffer.concat(chunks);
-        resolve(compressedBuffer);
-      })
-      .pipe()
-      .on('data', (chunk) => {
-        chunks.push(chunk);
-        totalSize += chunk.length;
-        
-        if (totalSize > VIDEO_SETTINGS.maxSize) {
-          reject(new Error('Compressed video still too large'));
-        }
-      })
-      .on('error', (error) => {
-        reject(error);
-      });
-  });
-};
-
-// Fast light compression for large files
-const fastLightCompression = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    
-    const readableStream = new stream.PassThrough();
-    readableStream.end(fileBuffer);
-    
-    ffmpeg(readableStream)
-      .videoCodec('libx264')
-      .size('1280x720')
-      .addOptions([
-        '-crf 32',
-        '-preset ultrafast',
-        '-movflags +faststart',
-        '-threads 2'
-      ])
-      .audioCodec('aac')
-      .audioBitrate('96k')
-      .format('mp4')
-      .on('end', () => {
-        const compressedBuffer = Buffer.concat(chunks);
-        resolve(compressedBuffer);
-      })
-      .on('error', reject)
-      .pipe()
-      .on('data', (chunk) => chunks.push(chunk))
-      .on('error', reject);
-  });
-};
-
-// Fallback compression - minimal processing
-const fallbackCompression = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    
-    const readableStream = new stream.PassThrough();
-    readableStream.end(fileBuffer);
-    
-    ffmpeg(readableStream)
-      .videoCodec('libx264')
-      .size('854x480')
-      .addOptions([
-        '-crf 35',
-        '-preset ultrafast'
-      ])
-      .audioCodec('aac')
-      .audioBitrate('64k')
-      .format('mp4')
-      .on('end', () => {
-        const compressedBuffer = Buffer.concat(chunks);
-        resolve(compressedBuffer);
-      })
-      .on('error', (error) => {
-        console.log('❌ Fallback compression failed, using original:', error.message);
-        resolve(fileBuffer);
-      })
-      .pipe()
-      .on('data', (chunk) => chunks.push(chunk))
-      .on('error', () => resolve(fileBuffer));
-  });
-};
-
-// Optimized video processing with fallbacks
-const optimizeVideoProcessing = async (fileBuffer, originalSize) => {
-  try {
-    if (originalSize <= 50 * 1024 * 1024) {
-      return await processVideoInChunks(fileBuffer);
-    } else {
-      console.log('⚡ Using fast compression for large video...');
-      return await fastLightCompression(fileBuffer);
-    }
-  } catch (error) {
-    console.log('⚠️ Primary compression failed, using fallback:', error.message);
-    return await fallbackCompression(fileBuffer);
-  }
-};
-
-// Get Feed Posts - OPTIMIZED FOR FAST FETCHING
+// =========== UPDATED: Get Feed Posts - OPTIMIZED ===========
 export const getFeedPosts = async (req, res) => {
     try {
         const userId = req.userId;
-        console.log('🚀 FAST - Get Feed Posts - User:', userId);
+        console.log('🚀 INSTANT - Get Feed Posts - User:', userId);
 
         const currentUser = await User.findById(userId).select('following connections');
         if (!currentUser) {
@@ -194,16 +21,19 @@ export const getFeedPosts = async (req, res) => {
         const followingIds = currentUser.following || [];
         const connectionIds = currentUser.connections || [];
         
-        // Create combined user IDs to fetch
         const userIDsToFetch = [
-            userId, // own posts
+            userId,
             ...followingIds, 
             ...connectionIds
         ];
 
         console.log(`👥 Fetching posts from ${userIDsToFetch.length} users`);
 
-        // OPTIMIZED QUERY - Only get essential fields and use lean()
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // SINGLE QUERY FOR ALL DATA
         const posts = await Post.find({
             user: { $in: userIDsToFetch }
         })
@@ -212,22 +42,453 @@ export const getFeedPosts = async (req, res) => {
             select: '_id username full_name profile_picture',
             options: { allowNull: true }
         })
-        .select('_id user content media_urls post_type likes_count comments_count shares_count createdAt')
+        .select('_id user content post_type likes_count comments_count shares_count media_urls createdAt')
         .sort({ createdAt: -1 })
-        .limit(50)
-        .lean(); // Convert to plain JS objects for faster processing
+        .skip(skip)
+        .limit(limit)
+        .lean();
 
-        console.log(`✅ FAST - Feed loaded: ${posts.length} posts in milliseconds`);
+        console.log(`✅ INSTANT - Feed loaded: ${posts.length} posts`);
 
-        // Filter out any posts with invalid users quickly
-        const validPosts = posts.filter(post => post && post.user);
+        // Process video URLs for Cloudinary videos
+        const processedPosts = posts.map(post => {
+            if (post.media_urls && post.media_urls.length > 0) {
+                const processedMedia = post.media_urls.map(media => {
+                    // If it's a Cloudinary video, add streaming URL and thumbnail
+                    if (media.storage === 'cloudinary' && media.type === 'video') {
+                        return {
+                            ...media,
+                            url: cloudinary.url(media.public_id, { 
+                                resource_type: 'video',
+                                flags: 'streaming_attachment'
+                            }),
+                            thumbnail: cloudinary.url(media.public_id, {
+                                resource_type: 'video',
+                                transformation: [
+                                    { width: 320, height: 180, crop: 'fill' },
+                                    { quality: 'auto' },
+                                    { fetch_format: 'auto' }
+                                ]
+                            }),
+                            hls_url: cloudinary.url(media.public_id, {
+                                resource_type: 'video',
+                                streaming_profile: 'hd',
+                                format: 'm3u8'
+                            }),
+                            dash_url: cloudinary.url(media.public_id, {
+                                resource_type: 'video',
+                                streaming_profile: 'hd',
+                                format: 'mpd'
+                            })
+                        };
+                    }
+                    return media;
+                });
+                return { ...post, media_urls: processedMedia };
+            }
+            return post;
+        });
+
+        const validPosts = processedPosts.filter(post => post && post.user);
         
-        res.json({ success: true, posts: validPosts });
+        res.json({ 
+            success: true, 
+            posts: validPosts,
+            pagination: {
+                page,
+                limit,
+                hasMore: posts.length === limit
+            }
+        });
     } catch (error) {
         console.log('💥 Error in getFeedPosts:', error);
         res.json({ success: false, message: error.message });
     }
 }
+
+// Helper function to detect file type from magic bytes
+const detectFileTypeFromBuffer = (buffer) => {
+    if (!buffer || buffer.length < 12) return 'unknown';
+    
+    const hex = buffer.slice(0, 12).toString('hex');
+    
+    // Common file signatures
+    const signatures = {
+        // Images
+        'png': ['89504e470d0a1a0a'],
+        'jpg': ['ffd8ffe0', 'ffd8ffe1', 'ffd8ffe2', 'ffd8ffe3', 'ffd8ffe8'],
+        'jpeg': ['ffd8ffe0', 'ffd8ffe1', 'ffd8ffe2', 'ffd8ffe3', 'ffd8ffe8'],
+        'gif': ['47494638'],
+        'webp': ['52494646'],
+        
+        // Videos
+        'mp4': ['6674797069736f6d', '667479706d703432', '0000001866747970'],
+        'avi': ['52494646'],
+        'mov': ['6674797061747421', '6674797071742020'],
+        'webm': ['1a45dfa3'],
+        'mkv': ['1a45dfa3'],
+        'wmv': ['3026b2758e66cf11'],
+        'flv': ['464c5601']
+    };
+    
+    for (const [type, sigs] of Object.entries(signatures)) {
+        for (const sig of sigs) {
+            if (hex.startsWith(sig)) {
+                return type;
+            }
+        }
+    }
+    
+    return 'unknown';
+};
+
+// =========== UPDATED: Add Post with Smart File Handling ===========
+export const addPost = async (req, res) => {
+    try {
+        const userId = req.userId;
+        const { content, post_type } = req.body;
+        const mediaFiles = req.files;
+
+        console.log('➕ Add Post - User:', userId);
+        console.log('📁 Media files received:', mediaFiles?.length);
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.json({ success: false, message: "User not found" });
+        }
+
+        let media_urls = [];
+        let videoUploadPromises = [];
+
+        if (mediaFiles && mediaFiles.length) {
+            for (let i = 0; i < mediaFiles.length; i++) {
+                const file = mediaFiles[i];
+                console.log('📤 Processing media:', file.originalname, 'Type:', file.mimetype, 'Size:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
+                
+                // =========== STEP 1: BASIC VALIDATION ===========
+                if (!file.buffer || file.buffer.length === 0) {
+                    console.log('❌ No buffer found for file:', file.originalname);
+                    throw new Error('Invalid file buffer. File may be corrupted.');
+                }
+
+                // =========== STEP 2: DETECT ACTUAL FILE TYPE ===========
+                const actualFileType = detectFileTypeFromBuffer(file.buffer);
+                const declaredMimeType = file.mimetype;
+                const isDeclaredImage = declaredMimeType?.startsWith('image/');
+                const isDeclaredVideo = declaredMimeType?.startsWith('video/');
+                
+                console.log(`🔍 File analysis:`, {
+                    originalName: file.originalname,
+                    declaredType: declaredMimeType,
+                    actualType: actualFileType,
+                    fileExtension: file.originalname.split('.').pop().toLowerCase()
+                });
+
+                // =========== STEP 3: HANDLE MISMATCHED FILES ===========
+                let finalFileType = 'unknown';
+                
+                if (actualFileType === 'png' || actualFileType === 'jpg' || actualFileType === 'jpeg' || actualFileType === 'gif' || actualFileType === 'webp') {
+                    // File is actually an image
+                    if (isDeclaredVideo) {
+                        console.log(`⚠️ File mismatch: Declared as video but is actually ${actualFileType.toUpperCase()} image`);
+                        console.log(`ℹ️ Converting to image upload instead...`);
+                    }
+                    finalFileType = 'image';
+                    
+                } else if (actualFileType === 'mp4' || actualFileType === 'mov' || actualFileType === 'avi' || actualFileType === 'webm' || actualFileType === 'mkv') {
+                    // File is actually a video
+                    if (isDeclaredImage) {
+                        console.log(`⚠️ File mismatch: Declared as image but is actually ${actualFileType.toUpperCase()} video`);
+                        console.log(`ℹ️ Converting to video upload instead...`);
+                    }
+                    finalFileType = 'video';
+                    
+                } else {
+                    // Unknown file type
+                    if (isDeclaredImage) {
+                        console.log(`⚠️ Could not verify image format, trusting declared type`);
+                        finalFileType = 'image';
+                    } else if (isDeclaredVideo) {
+                        console.log(`⚠️ Could not verify video format, trusting declared type`);
+                        finalFileType = 'video';
+                    } else {
+                        throw new Error('Unsupported or corrupted file. Please upload valid images or videos.');
+                    }
+                }
+
+                // =========== STEP 4: SIZE VALIDATION ===========
+                const maxImageSize = 50 * 1024 * 1024; // 50MB
+                const maxVideoSize = 500 * 1024 * 1024; // 500MB
+                const maxSize = finalFileType === 'video' ? maxVideoSize : maxImageSize;
+                
+                if (file.size > maxSize) {
+                    throw new Error(`${finalFileType.charAt(0).toUpperCase() + finalFileType.slice(1)} too large. Maximum size is ${maxSize / 1024 / 1024}MB. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+                }
+
+                // =========== STEP 5: UPLOAD BASED ON FINAL TYPE ===========
+                if (finalFileType === 'image') {
+                    // =========== UPLOAD TO IMAGEKIT ===========
+                    console.log(`📤 Uploading as image to ImageKit:`, file.originalname);
+
+                    try {
+                        const response = await imagekit.upload({
+                            file: file.buffer,
+                            fileName: `img_${uuidv4()}_${Date.now()}_${file.originalname}`,
+                            folder: `posts/images/${userId}`,
+                            useUniqueFileName: true,
+                        });
+
+                        console.log(`✅ Image uploaded to ImageKit:`, response.filePath);
+
+                        // Get optimized image URL
+                        const url = imagekit.url({
+                            path: response.filePath,
+                            transformation: [
+                                { quality: 'auto' },
+                                { format: 'webp' },
+                                { width: '1280' }
+                            ]
+                        });
+
+                        media_urls.push({
+                            url: url,
+                            thumbnail: url,
+                            type: 'image',
+                            filePath: response.filePath,
+                            size: file.size,
+                            duration: 0,
+                            storage: 'imagekit',
+                            mime_type: 'image/' + actualFileType,
+                            original_name: file.originalname,
+                            detected_type: actualFileType,
+                            was_mismatched: actualFileType !== 'unknown' && isDeclaredVideo
+                        });
+                        
+                        console.log(`✅ Image stored successfully`);
+                        
+                    } catch (uploadError) {
+                        console.log('❌ Image upload failed:', uploadError.message);
+                        throw new Error(`Failed to upload image: ${uploadError.message}`);
+                    }
+                    
+                } else if (finalFileType === 'video') {
+                    // =========== UPLOAD TO CLOUDINARY ===========
+                    console.log(`🎬 Uploading as video to Cloudinary:`, file.originalname);
+                    
+                    // Create upload promise for this video
+                    const videoUploadPromise = new Promise(async (resolve, reject) => {
+                        try {
+                            // Create a readable stream from buffer
+                            const bufferStream = new stream.PassThrough();
+                            bufferStream.end(file.buffer);
+                            
+                            // Generate unique file name
+                            const uniqueFileName = `vid_${userId}_${Date.now()}_${uuidv4().substring(0, 8)}`;
+                            
+                            // Upload to Cloudinary
+                            const uploadResult = await new Promise((resolveUpload, rejectUpload) => {
+                                const uploadStream = cloudinary.uploader.upload_stream(
+                                    {
+                                        resource_type: 'video',
+                                        folder: `posts/videos/${userId}`,
+                                        public_id: uniqueFileName,
+                                        chunk_size: 6000000,
+                                        eager: [
+                                            { 
+                                                width: 320, 
+                                                height: 180, 
+                                                crop: 'fill', 
+                                                format: 'jpg',
+                                                quality: 'auto'
+                                            }
+                                        ],
+                                        eager_async: false,
+                                        timeout: 300000
+                                    },
+                                    (error, result) => {
+                                        if (error) {
+                                            console.log('❌ Cloudinary upload error:', error.message);
+                                            rejectUpload(error);
+                                            return;
+                                        }
+                                        resolveUpload(result);
+                                    }
+                                );
+                                
+                                bufferStream.pipe(uploadStream);
+                            });
+
+                            console.log(`✅ Video uploaded to Cloudinary:`, uploadResult.public_id);
+                            
+                            // Get thumbnail URL
+                            let thumbnailUrl = uploadResult.secure_url.replace(/\.[^/.]+$/, ".jpg");
+                            if (uploadResult.eager && uploadResult.eager.length > 0) {
+                                thumbnailUrl = uploadResult.eager[0].secure_url;
+                            }
+
+                            const videoData = {
+                                url: uploadResult.secure_url,
+                                thumbnail: thumbnailUrl,
+                                public_id: uploadResult.public_id,
+                                type: 'video',
+                                size: uploadResult.bytes || file.size,
+                                duration: Math.round(uploadResult.duration || 0),
+                                width: uploadResult.width,
+                                height: uploadResult.height,
+                                format: uploadResult.format,
+                                storage: 'cloudinary',
+                                mime_type: 'video/' + actualFileType,
+                                original_name: file.originalname,
+                                detected_type: actualFileType,
+                                was_mismatched: actualFileType !== 'unknown' && isDeclaredImage
+                            };
+
+                            media_urls.push(videoData);
+                            console.log(`✅ Video stored successfully: ${uploadResult.duration}s, ${uploadResult.format}`);
+                            resolve(videoData);
+                            
+                        } catch (videoError) {
+                            console.log('❌ Video upload failed:', videoError.message);
+                            reject(new Error(`Failed to upload video: ${videoError.message}`));
+                        }
+                    });
+                    
+                    videoUploadPromises.push(videoUploadPromise);
+                }
+            }
+        }
+
+        // Wait for all video uploads to complete
+        if (videoUploadPromises.length > 0) {
+            console.log(`⏳ Waiting for ${videoUploadPromises.length} video upload(s) to complete...`);
+            await Promise.all(videoUploadPromises);
+            console.log(`✅ All video uploads completed`);
+        }
+
+        // Determine post type
+        const finalPostType = determinePostType(content, media_urls, post_type);
+        
+        // Create the post
+        const newPost = await Post.create({
+            user: userId,
+            content: content || "",
+            media_urls,
+            post_type: finalPostType
+        });
+        
+        console.log('✅ Post created successfully with', media_urls.length, 'media files');
+        
+        // Log media details
+        media_urls.forEach((media, index) => {
+            console.log(`   Media ${index + 1}: ${media.type} (${media.storage})`);
+            if (media.was_mismatched) {
+                console.log(`       ⚠️ File was corrected from wrong type`);
+            }
+        });
+        
+        res.json({ 
+            success: true, 
+            message: "Post created successfully", 
+            post: newPost 
+        });
+        
+    } catch (error) {
+        console.log('💥 Error in addPost:', error.message);
+        res.json({ 
+            success: false, 
+            message: error.message
+        });
+    }
+}
+
+// Helper function to determine post type
+const determinePostType = (content, media_urls, specifiedType) => {
+    if (specifiedType) return specifiedType;
+
+    const hasImages = media_urls.some(media => media.type === 'image');
+    const hasVideos = media_urls.some(media => media.type === 'video');
+    const hasText = content && content.trim().length > 0;
+
+    if (hasText && hasImages && hasVideos) return 'text_with_media';
+    if (hasText && hasImages) return 'text_with_image';
+    if (hasText && hasVideos) return 'text_with_video';
+    if (hasImages && hasVideos) return 'media';
+    if (hasImages) return 'image';
+    if (hasVideos) return 'video';
+    if (hasText) return 'text';
+    return 'text';
+}
+
+// =========== NEW: Validate File Before Upload ===========
+export const validateMediaFile = async (req, res) => {
+    try {
+        const file = req.file;
+        
+        if (!file) {
+            return res.json({ success: false, message: "No file provided" });
+        }
+
+        console.log('🔍 Validating file:', {
+            name: file.originalname,
+            mimetype: file.mimetype,
+            size: (file.size / 1024 / 1024).toFixed(2) + 'MB'
+        });
+
+        // Detect actual file type
+        const actualFileType = detectFileTypeFromBuffer(file.buffer);
+        const isDeclaredImage = file.mimetype?.startsWith('image/');
+        const isDeclaredVideo = file.mimetype?.startsWith('video/');
+
+        let finalType = 'unknown';
+        let message = '';
+
+        if (actualFileType === 'png' || actualFileType === 'jpg' || actualFileType === 'jpeg' || actualFileType === 'gif' || actualFileType === 'webp') {
+            finalType = 'image';
+            if (isDeclaredVideo) {
+                message = `File is actually a ${actualFileType.toUpperCase()} image but was declared as video. It will be uploaded as an image.`;
+            }
+        } else if (actualFileType === 'mp4' || actualFileType === 'mov' || actualFileType === 'avi' || actualFileType === 'webm' || actualFileType === 'mkv') {
+            finalType = 'video';
+            if (isDeclaredImage) {
+                message = `File is actually a ${actualFileType.toUpperCase()} video but was declared as image. It will be uploaded as a video.`;
+            }
+        } else {
+            if (isDeclaredImage) finalType = 'image';
+            else if (isDeclaredVideo) finalType = 'video';
+            message = 'Could not verify file format. Uploading based on declared type.';
+        }
+
+        // Check size limits
+        const maxImageSize = 50 * 1024 * 1024;
+        const maxVideoSize = 500 * 1024 * 1024;
+        const maxSize = finalType === 'video' ? maxVideoSize : maxImageSize;
+        
+        if (file.size > maxSize) {
+            return res.json({ 
+                success: false, 
+                message: `${finalType.charAt(0).toUpperCase() + finalType.slice(1)} too large. Maximum size is ${maxSize / 1024 / 1024}MB. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB` 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: message || 'File is valid for upload',
+            fileType: finalType,
+            actualType: actualFileType,
+            declaredType: file.mimetype,
+            size: file.size,
+            maxAllowed: maxSize,
+            willCorrect: actualFileType !== 'unknown' && ((isDeclaredVideo && finalType === 'image') || (isDeclaredImage && finalType === 'video'))
+        });
+
+    } catch (error) {
+        console.log('💥 Error in validateMediaFile:', error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// =========== REST OF THE FUNCTIONS (SAME AS BEFORE) ===========
+// [Keep all the other functions exactly as they were in your original code]
 
 // Get Posts for User Profile (with privacy check) - OPTIMIZED
 export const getUserProfilePosts = async (req, res) => {
@@ -256,7 +517,6 @@ export const getUserProfilePosts = async (req, res) => {
             }
         }
 
-        // OPTIMIZED QUERY
         const posts = await Post.find({ user: profileId })
             .populate({
                 path: 'user',
@@ -269,157 +529,6 @@ export const getUserProfilePosts = async (req, res) => {
         res.json({ success: true, posts: posts || [] });
     } catch (error) {
         console.log('💥 Error in getUserProfilePosts:', error);
-        res.json({ success: false, message: error.message });
-    }
-}
-
-// Add Post - Keep your original upload settings
-export const addPost = async (req, res) => {
-    try {
-        const userId = req.userId;
-        const { content, post_type } = req.body;
-        const mediaFiles = req.files;
-
-        console.log('➕ Add Post - User:', userId);
-        console.log('📁 Media files received:', mediaFiles?.length);
-
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.json({ success: false, message: "User not found" });
-        }
-
-        let media_urls = [];
-
-        if (mediaFiles && mediaFiles.length) {
-            for (let i = 0; i < mediaFiles.length; i++) {
-                const file = mediaFiles[i];
-                console.log('📤 Processing media:', file.originalname, 'Type:', file.mimetype, 'Size:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
-                
-                const fileType = file.mimetype.startsWith('image/') ? 'image' : 'video';
-                
-                if (fileType === 'image') {
-                    console.log('🖼️ Uploading image to ImageKit:', file.originalname);
-                    
-                    if (!file.buffer) {
-                        console.log('❌ No buffer found for file:', file.originalname);
-                        throw new Error('Invalid file buffer');
-                    }
-
-                    const response = await imagekit.upload({
-                        file: file.buffer,
-                        fileName: `img_${uuidv4()}_${file.originalname}`,
-                        folder: "posts/images",
-                    });
-
-                    console.log('✅ Image uploaded to ImageKit:', response.filePath);
-
-                    const url = imagekit.url({
-                        path: response.filePath,
-                        transformation: [
-                            { quality: 'auto' },
-                            { format: 'webp' },
-                            { width: '1280' }
-                        ]
-                    });
-                    
-                    media_urls.push({
-                        url: url,
-                        type: fileType,
-                        filePath: response.filePath,
-                        size: file.size,
-                        storage: 'imagekit'
-                    });
-                } else {
-                    console.log('🎥 Processing video:', file.originalname);
-                    
-                    if (!file.buffer) {
-                        console.log('❌ No buffer found for video:', file.originalname);
-                        throw new Error('Invalid file buffer');
-                    }
-
-                    if (file.size > VIDEO_SETTINGS.maxSize) {
-                        throw new Error(`Video too large. Maximum size is 100MB. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
-                    }
-
-                    try {
-                        const duration = await getVideoDuration(file.buffer);
-                        console.log(`⏱️ Video duration: ${duration} seconds`);
-                        
-                        if (duration > VIDEO_SETTINGS.maxDuration) {
-                            throw new Error(`Video too long. Maximum duration is 1 minute. Your video: ${Math.ceil(duration)} seconds`);
-                        }
-                    } catch (durationError) {
-                        console.log('⚠️ Could not determine video duration, proceeding anyway:', durationError.message);
-                    }
-
-                    let finalVideoBuffer = file.buffer;
-                    
-                    if (file.size > 10 * 1024 * 1024) {
-                        console.log('🔧 Compressing video for optimal storage...');
-                        try {
-                            finalVideoBuffer = await optimizeVideoProcessing(file.buffer, file.size);
-                            console.log(`✅ Video compressed: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(finalVideoBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-                            
-                            if (finalVideoBuffer.length > VIDEO_SETTINGS.maxSize) {
-                                throw new Error('Compressed video still exceeds 100MB limit');
-                            }
-                        } catch (compressError) {
-                            console.log('⚠️ Compression failed, using original:', compressError.message);
-                            if (file.size > VIDEO_SETTINGS.maxSize) {
-                                throw new Error('Video too large and compression failed');
-                            }
-                        }
-                    }
-
-                    const base64Data = finalVideoBuffer.toString('base64');
-                    const dataUrl = `data:${file.mimetype};base64,${base64Data}`;
-                    
-                    console.log('✅ Video stored in MongoDB, Size:', (finalVideoBuffer.length / 1024 / 1024).toFixed(2) + 'MB');
-                    
-                    media_urls.push({
-                        url: dataUrl,
-                        type: fileType,
-                        filePath: `video_${uuidv4()}_${file.originalname}`,
-                        size: finalVideoBuffer.length,
-                        mimeType: file.mimetype,
-                        storage: 'mongodb'
-                    });
-                }
-            }
-        }
-
-        let finalPostType = post_type;
-        if (!finalPostType) {
-            const hasImages = media_urls.some(media => media.type === 'image');
-            const hasVideos = media_urls.some(media => media.type === 'video');
-            const hasText = content && content.trim().length > 0;
-
-            if (hasText && hasImages && hasVideos) finalPostType = 'text_with_media';
-            else if (hasText && hasImages) finalPostType = 'text_with_image';
-            else if (hasText && hasVideos) finalPostType = 'text_with_video';
-            else if (hasImages && hasVideos) finalPostType = 'media';
-            else if (hasImages) finalPostType = 'image';
-            else if (hasVideos) finalPostType = 'video';
-            else if (hasText) finalPostType = 'text';
-            else finalPostType = 'text';
-        }
-
-        const newPost = await Post.create({
-            user: userId,
-            content: content || "",
-            media_urls,
-            post_type: finalPostType
-        });
-        
-        console.log('✅ Post created successfully with', media_urls.length, 'media files');
-        
-        media_urls.forEach((media, index) => {
-            console.log(`   Media ${index + 1}: ${media.type}, Storage: ${media.storage}, Size: ${(media.size / 1024 / 1024).toFixed(2)}MB`);
-        });
-        
-        res.json({ success: true, message: "Post created successfully", post: newPost });
-    } catch (error) {
-        console.log('💥 Error in addPost:', error);
         res.json({ success: false, message: error.message });
     }
 }
@@ -453,7 +562,7 @@ export const likePost = async (req, res) => {
         } else {
             post.likes_count.push(userId);
             await post.save();
-            res.json({ success: true, message: 'Post liked', liked: true });
+            res.json({ success: false, message: 'Post liked', liked: true });
         }
 
     } catch (error) {
@@ -589,7 +698,6 @@ export const getPostComments = async (req, res) => {
         
         console.log('🔍 Fetching comments for post:', postId);
         
-        // OPTIMIZED: Single query with population
         const comments = await Comment.find({ post: postId })
             .populate({
                 path: 'user',
@@ -602,7 +710,6 @@ export const getPostComments = async (req, res) => {
 
         console.log('✅ Found comments:', comments.length);
         
-        // Ensure user data is present
         const safeComments = comments.map(comment => ({
             _id: comment._id,
             content: comment.content,
@@ -712,21 +819,109 @@ export const deletePost = async (req, res) => {
             return res.json({ success: false, message: "Post not found" });
         }
 
-        // Check if user owns the post
         if (post.user.toString() !== userId) {
             return res.json({ success: false, message: "You can only delete your own posts" });
         }
 
-        // Delete associated comments and shares
+        // Delete Cloudinary videos if any
+        if (post.media_urls && post.media_urls.length > 0) {
+            for (const media of post.media_urls) {
+                if (media.storage === 'cloudinary' && media.public_id) {
+                    try {
+                        await cloudinary.uploader.destroy(media.public_id, {
+                            resource_type: 'video',
+                            invalidate: true
+                        });
+                        console.log(`✅ Deleted Cloudinary video: ${media.public_id}`);
+                    } catch (cloudinaryError) {
+                        console.log(`⚠️ Could not delete Cloudinary video ${media.public_id}:`, cloudinaryError.message);
+                    }
+                }
+            }
+        }
+
         await Comment.deleteMany({ post: postId });
         await Share.deleteMany({ post: postId });
-
-        // Delete the post
         await Post.findByIdAndDelete(postId);
 
         res.json({ success: true, message: 'Post deleted successfully' });
     } catch (error) {
-        console.log('💥 Error in deletePost:', error);
+        console.log('💥 Error in deletePost:',  error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// =========== NEW: Get Post Video ===========
+export const getPostVideo = async (req, res) => {
+    try {
+        const { postId, mediaIndex } = req.params;
+        console.log(`🎬 Loading video for post ${postId}, media ${mediaIndex}`);
+
+        const post = await Post.findById(postId).lean();
+        
+        if (!post || !post.media_urls || !post.media_urls[mediaIndex]) {
+            return res.json({ success: false, message: "Video not found" });
+        }
+
+        const media = post.media_urls[mediaIndex];
+        
+        if (media.type !== 'video') {
+            return res.json({ success: false, message: "Not a video" });
+        }
+
+        res.json({ 
+            success: true, 
+            video: {
+                url: media.url,
+                thumbnail: media.thumbnail,
+                size: media.size,
+                duration: media.duration
+            }
+        });
+    } catch (error) {
+        console.log('💥 Error in getPostVideo:', error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// =========== NEW: Get Video Processing Status ===========
+export const getVideoProcessingStatus = async (req, res) => {
+    try {
+        const { publicId } = req.params;
+        
+        const result = await cloudinary.api.resource(publicId, {
+            resource_type: 'video'
+        });
+
+        res.json({
+            success: true,
+            status: result.status,
+            duration: result.duration,
+            width: result.width,
+            height: result.height,
+            format: result.format,
+            bit_rate: result.bit_rate,
+            eager_status: result.eager ? result.eager[0]?.status : 'completed'
+        });
+    } catch (error) {
+        console.log('💥 Error in getVideoProcessingStatus:', error);
+        res.json({ success: false, message: error.message });
+    }
+}
+
+// =========== NEW: Delete Cloudinary Media ===========
+export const deleteCloudinaryMedia = async (req, res) => {
+    try {
+        const { publicId, resourceType = 'video' } = req.body;
+        
+        const result = await cloudinary.uploader.destroy(publicId, {
+            resource_type: resourceType,
+            invalidate: true
+        });
+
+        res.json({ success: true, result });
+    } catch (error) {
+        console.log('💥 Error in deleteCloudinaryMedia:', error);
         res.json({ success: false, message: error.message });
     }
 }

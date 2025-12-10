@@ -364,19 +364,22 @@ const StoryModal = ({setShowModal, fetchStories}) => {
 
         return (
             <div className="fixed inset-0 z-[1002] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-                <div className="bg-zinc-900 rounded-2xl p-6 max-w-md w-full border border-zinc-700">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold text-white">Select Favorite Part</h3>
+                <div className="bg-[#1a1a1a] rounded-xl p-5 max-w-md w-full border border-[#333] shadow-2xl">
+                    <div className="flex items-center justify-between mb-5">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-4 bg-gradient-to-b from-[#c32aa3] to-[#f46f30] rounded-sm"></div>
+                            <h3 className="text-lg font-semibold text-white">Select Favorite Part</h3>
+                        </div>
                         <button 
                             onClick={() => setShowFavoriteSelector(false)}
-                            className="text-zinc-400 hover:text-white"
+                            className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-[#333] transition-colors"
                         >
                             <X size={20} />
                         </button>
                     </div>
                     
                     <div className="mb-6">
-                        <div className="flex justify-between text-sm text-zinc-400 mb-2">
+                        <div className="flex justify-between text-xs text-gray-400 mb-2 px-1">
                             <span>0:00</span>
                             <span>{selectedDuration}s</span>
                         </div>
@@ -386,26 +389,26 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                             max={selectedDuration}
                             value={previewTime}
                             onChange={handleTimeChange}
-                            className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-500"
+                            className="w-full h-1.5 bg-[#333] rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-gradient-to-r from-[#c32aa3] to-[#f46f30]"
                         />
-                        <div className="text-center mt-2">
-                            <span className="text-green-400 font-semibold">
+                        <div className="text-center mt-3">
+                            <span className="text-white font-semibold text-lg">
                                 {Math.floor(previewTime / 60)}:{(previewTime % 60).toString().padStart(2, '0')}
                             </span>
-                            <span className="text-zinc-400 text-sm ml-2">• Previewing 2 seconds</span>
+                            <span className="text-gray-400 text-sm ml-2 block">• Previewing 2 seconds</span>
                         </div>
                     </div>
 
-                    <div className="flex gap-3">
+                    <div className="flex gap-2 pt-3 border-t border-[#333]">
                         <button
                             onClick={() => setShowFavoriteSelector(false)}
-                            className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition text-white"
+                            className="flex-1 py-3 bg-[#333] hover:bg-[#444] rounded-lg transition text-gray-300 font-medium text-sm"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={confirmFavoritePart}
-                            className="flex-1 py-3 bg-green-600 hover:bg-green-500 rounded-lg transition text-white font-semibold"
+                            className="flex-1 py-3 bg-gradient-to-r from-[#c32aa3] to-[#f46f30] hover:opacity-90 rounded-lg transition text-white font-semibold text-sm"
                         >
                             Set Favorite Part
                         </button>
@@ -424,10 +427,10 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         };
 
         const styleClasses = {
-            default: "bg-black/70 backdrop-blur-lg border border-white/20",
-            minimal: "bg-black/50 backdrop-blur-md border border-white/10",
-            classic: "bg-gradient-to-br from-purple-500/20 to-pink-500/20 backdrop-blur-lg border border-purple-300/30",
-            modern: "bg-gradient-to-br from-blue-500/20 to-cyan-500/20 backdrop-blur-lg border border-cyan-300/30"
+            default: "bg-black/80 backdrop-blur-lg border border-white/20",
+            minimal: "bg-black/60 backdrop-blur-md border border-white/10",
+            classic: "bg-gradient-to-br from-purple-900/70 to-pink-900/70 backdrop-blur-lg border border-purple-300/30",
+            modern: "bg-gradient-to-br from-blue-900/70 to-cyan-900/70 backdrop-blur-lg border border-cyan-300/30"
         };
 
         return `${sizeClasses[cardSize]} ${styleClasses[cardStyle]} rounded-2xl`;
@@ -949,40 +952,41 @@ const StoryModal = ({setShowModal, fetchStories}) => {
         <>
             {/* Main Modal */}
             <div 
-                className='fixed inset-0 z-[1000] h-[100dvh] bg-black/80 backdrop-blur-sm text-white flex items-center justify-center p-4'
+                className='fixed inset-0 z-[1000] h-[100dvh] bg-black/90 flex items-center justify-center p-4'
                 onClick={(e) => {
                     if (e.target === e.currentTarget) {
                         handleCloseModal();
                     }
                 }}
             >
-                <div className='w-full max-w-sm bg-zinc-900 rounded-2xl shadow-2xl p-6 border border-zinc-700'>
+                <div className='w-full max-w-sm bg-[#1a1a1a] rounded-xl shadow-2xl p-5 border border-[#333]'>
                     
                     {/* Header */}
-                    <div className='flex items-center justify-between pb-4 mb-4 border-b border-zinc-700'>
-                        <h2 className='text-xl font-bold text-white'>Create Story</h2>
+                    <div className='flex items-center justify-center pb-4 mb-4 relative border-b border-[#333]'>
+                        <div className="absolute top-0 w-full h-0.5 bg-gradient-to-r from-[#c32aa3] via-[#f46f30] to-[#ffd600]"></div>
+                        <h2 className='text-lg font-semibold text-white'>Create Story</h2>
                         <button 
                             onClick={handleCloseModal} 
-                            className='text-zinc-400 hover:text-white p-2 rounded-full hover:bg-zinc-800 transition-all duration-200'
+                            className='absolute right-0 text-gray-400 hover:text-white p-1 rounded-full hover:bg-[#333] transition-colors'
                         >
-                            <X className='w-6 h-6'/>
+                            <X className='w-5 h-5'/>
                         </button>
                     </div>
 
                     {/* Compression Progress Bar */}
                     {compressing && (
-                        <div className="mb-4 p-4 bg-zinc-800 rounded-xl border border-zinc-700">
-                            <div className="flex items-center justify-between mb-2">
+                        <div className="mb-4 p-3 bg-[#222] rounded-lg border border-[#333]">
+                            <div className="flex items-center justify-between mb-1.5">
                                 <span className="text-sm font-medium text-white">Compressing Video</span>
-                                <span className="text-sm text-zinc-400">{compressionProgress}%</span>
+                                <span className="text-sm text-gray-400">{compressionProgress}%</span>
                             </div>
-                            <div className="w-full bg-zinc-700 rounded-full h-2">
+                            <div className="w-full bg-[#333] rounded-full h-1.5">
                                 <div 
-                                    className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full transition-all duration-300"
+                                    className="bg-gradient-to-r from-[#c32aa3] to-[#f46f30] h-1.5 rounded-full transition-all duration-300"
                                     style={{ width: `${compressionProgress}%` }}
                                 />
                             </div>
-                            <p className="text-xs text-zinc-400 mt-2 truncate">
+                            <p className="text-xs text-gray-400 mt-1.5 truncate">
                                 {currentCompressingFile}
                             </p>
                         </div>
@@ -992,7 +996,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                     <div 
                         ref={containerRef}
                         data-story-preview
-                        className='w-full aspect-[3/4] rounded-xl flex items-center justify-center relative shadow-2xl overflow-hidden border border-zinc-700 select-none' 
+                        className='w-full aspect-[9/16] rounded-lg flex items-center justify-center relative overflow-hidden bg-[#000] mb-4' 
                         style={{backgroundColor: background}}
                     >
                         {/* Camera Mode */}
@@ -1008,7 +1012,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                 <canvas ref={canvasRef} className='hidden' />
                                 <button
                                     onClick={capturePhoto}
-                                    className='absolute bottom-6 left-1/2 transform -translate-x-1/2 w-16 h-16 bg-white rounded-full border-4 border-zinc-800 shadow-2xl hover:scale-110 transition-transform active:scale-95'
+                                    className='absolute bottom-5 left-1/2 transform -translate-x-1/2 w-16 h-16 bg-white rounded-full border-4 border-[#1a1a1a] shadow-lg hover:scale-110 transition-transform active:scale-95'
                                 />
                             </div>
                         )}
@@ -1016,7 +1020,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                         {/* Text Mode */}
                         {mode === 'text' && (
                             <textarea 
-                                className='bg-transparent text-white w-full h-full p-6 text-xl sm:text-2xl font-bold text-center resize-none focus:outline-none placeholder-zinc-400/80 leading-tight' 
+                                className='bg-transparent text-white w-full h-full p-5 text-2xl sm:text-3xl font-semibold text-center resize-none focus:outline-none placeholder-gray-400/70 leading-snug' 
                                 placeholder="Type something amazing..." 
                                 onChange={(e)=>setText(e.target.value)} 
                                 value={text}
@@ -1052,13 +1056,13 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                             onTouchStart={startDragging}
                                         >
                                             <div className={`${getCardStyleClasses()} transition-all duration-200 ${
-                                                isDragging ? 'border-green-400 shadow-lg' : ''
+                                                isDragging ? 'border-[#c32aa3] shadow-lg' : ''
                                             }`}>
                                                 {/* Drag Handle */}
                                                 <div className='flex items-center justify-between mb-2'>
-                                                    <div className='flex items-center gap-2 flex-1'>
-                                                        <GripHorizontal className={`w-3 h-3 ${isDragging ? 'text-green-400' : 'text-gray-400'}`} />
-                                                        <span className={`text-xs ${isDragging ? 'text-green-400' : 'text-gray-400'}`}>
+                                                    <div className='flex items-center gap-1 flex-1'>
+                                                        <GripHorizontal className={`w-3 h-3 ${isDragging ? 'text-[#c32aa3]' : 'text-gray-400'}`} />
+                                                        <span className={`text-xs ${isDragging ? 'text-[#c32aa3]' : 'text-gray-400'}`}>
                                                             {isDragging ? 'Dragging...' : 'Drag to move'}
                                                         </span>
                                                     </div>
@@ -1067,9 +1071,9 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                             e.stopPropagation();
                                                             setShowMusicOptions(!showMusicOptions);
                                                         }}
-                                                        className='text-gray-300 hover:text-white p-1 transition'
+                                                        className='text-gray-300 hover:text-white p-0.5 transition'
                                                     >
-                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                                                             <circle cx="12" cy="12" r="1.5"/>
                                                             <circle cx="12" cy="5" r="1.5"/>
                                                             <circle cx="12" cy="19" r="1.5"/>
@@ -1077,16 +1081,16 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                     </button>
                                                 </div>
 
-                                                <div className='flex items-center gap-3'>
+                                                <div className='flex items-center gap-2'>
                                                     {/* Album Art with Play/Pause Button */}
-                                                    <div className='relative'>
+                                                    <div className='relative flex-shrink-0'>
                                                         <img 
                                                             src={selectedMusic.image} 
                                                             alt={selectedMusic.name}
                                                             className={`${
                                                                 cardSize === 'small' ? 'w-8 h-8' :
-                                                                cardSize === 'medium' ? 'w-12 h-12' :
-                                                                'w-16 h-16'
+                                                                cardSize === 'medium' ? 'w-10 h-10' :
+                                                                'w-12 h-12'
                                                             } rounded-lg object-cover`}
                                                         />
                                                         <button
@@ -1097,9 +1101,9 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                             className='absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg transition-all duration-200 hover:bg-black/60'
                                                         >
                                                             {isPlaying ? (
-                                                                <Pause size={cardSize === 'small' ? 12 : 16} className='text-white' />
+                                                                <Pause size={cardSize === 'small' ? 10 : 12} className='text-white' />
                                                             ) : (
-                                                                <Play size={cardSize === 'small' ? 12 : 16} className='text-white ml-0.5' />
+                                                                <Play size={cardSize === 'small' ? 10 : 12} className='text-white ml-0.5' />
                                                             )}
                                                         </button>
                                                     </div>
@@ -1109,8 +1113,8 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                         <p className={`${
                                                             cardSize === 'small' ? 'text-xs' :
                                                             cardSize === 'medium' ? 'text-sm' :
-                                                            'text-base'
-                                                        } font-semibold text-white truncate`}>
+                                                            'text-sm'
+                                                        } font-medium text-white truncate`}>
                                                             {selectedMusic.name}
                                                         </p>
                                                         <p className={`${
@@ -1120,7 +1124,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                             {selectedMusic.primaryArtists}
                                                         </p>
                                                         {cardSize === 'large' && (
-                                                            <p className="text-xs text-green-400 mt-1">
+                                                            <p className="text-xs text-[#c32aa3] mt-0.5">
                                                                 Favorite part: {Math.floor(favoritePartStart / 60)}:{(favoritePartStart % 60).toString().padStart(2, '0')}
                                                             </p>
                                                         )}
@@ -1129,10 +1133,10 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                 
                                                 {/* Progress Bar */}
                                                 {isPlaying && (
-                                                    <div className='mt-2'>
-                                                        <div className='h-1 bg-white/30 rounded-full overflow-hidden'>
+                                                    <div className='mt-1.5'>
+                                                        <div className='h-0.5 bg-white/30 rounded-full overflow-hidden'>
                                                             <div 
-                                                                className='h-full bg-green-500 rounded-full transition-all duration-100'
+                                                                className='h-full bg-gradient-to-r from-[#c32aa3] to-[#f46f30] rounded-full transition-all duration-100'
                                                                 style={{ width: `${audioProgress}%` }}
                                                             />
                                                         </div>
@@ -1141,7 +1145,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
 
                                                 {/* Lyrics Display */}
                                                 {showLyrics && currentLyric && (
-                                                    <div className='mt-2 p-2 bg-black/50 rounded-lg'>
+                                                    <div className='mt-1.5 p-1.5 bg-black/60 rounded-lg'>
                                                         <p className='text-xs text-white text-center font-medium'>
                                                             {currentLyric}
                                                         </p>
@@ -1150,7 +1154,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
 
                                                 {/* Music Options Dropdown */}
                                                 {showMusicOptions && (
-                                                    <div className='absolute top-full left-0 right-0 mt-2 bg-black/90 backdrop-blur-lg rounded-lg p-2 border border-white/20 shadow-2xl z-50'>
+                                                    <div className='absolute top-full left-0 right-0 mt-1.5 bg-[#1a1a1a] backdrop-blur-lg rounded-lg p-2 border border-white/20 shadow-2xl z-50'>
                                                         <div className='space-y-1'>
                                                             {/* Favorite Part Selection */}
                                                             <button
@@ -1158,9 +1162,9 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                                     setShowFavoriteSelector(true);
                                                                     setShowMusicOptions(false);
                                                                 }}
-                                                                className='w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-white/10 transition text-sm'
+                                                                className='w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-[#333] transition text-xs font-medium'
                                                             >
-                                                                <Heart className='w-4 h-4' />
+                                                                <Heart className='w-3.5 h-3.5' />
                                                                 Select Favorite Part
                                                             </button>
                                                             
@@ -1170,15 +1174,15 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                                     setShowLyrics(!showLyrics);
                                                                     setShowMusicOptions(false);
                                                                 }}
-                                                                className='w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-white/10 transition text-sm'
+                                                                className='w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-[#333] transition text-xs font-medium'
                                                             >
-                                                                <AlignLeft className='w-4 h-4' />
+                                                                <AlignLeft className='w-3.5 h-3.5' />
                                                                 {showLyrics ? 'Hide Lyrics' : 'Show Lyrics'}
                                                             </button>
                                                             
                                                             {/* Card Size Options */}
                                                             <div className="border-t border-white/10 pt-1">
-                                                                <p className="text-xs text-zinc-400 px-3 py-1">Card Size</p>
+                                                                <p className="text-xs text-gray-400 px-2 py-1">Card Size</p>
                                                                 <div className="flex gap-1 px-1">
                                                                     {['small', 'medium', 'large'].map((size) => (
                                                                         <button
@@ -1186,8 +1190,8 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                                             onClick={() => setCardSize(size)}
                                                                             className={`flex-1 py-1 rounded text-xs ${
                                                                                 cardSize === size
-                                                                                    ? 'bg-green-600 text-white'
-                                                                                    : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                                                                                    ? 'bg-gradient-to-r from-[#c32aa3] to-[#f46f30] text-white'
+                                                                                    : 'bg-[#333] text-gray-300 hover:bg-[#444]'
                                                                             }`}
                                                                         >
                                                                             {size === 'small' ? 'S' : size === 'medium' ? 'M' : 'L'}
@@ -1198,7 +1202,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                             
                                                             {/* Card Style Options */}
                                                             <div className="border-t border-white/10 pt-1">
-                                                                <p className="text-xs text-zinc-400 px-3 py-1">Style</p>
+                                                                <p className="text-xs text-gray-400 px-2 py-1">Style</p>
                                                                 <div className="grid grid-cols-2 gap-1 px-1">
                                                                     {[
                                                                         { id: 'default', name: 'Default' },
@@ -1211,8 +1215,8 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                                             onClick={() => setCardStyle(style.id)}
                                                                             className={`py-1 rounded text-xs ${
                                                                                 cardStyle === style.id
-                                                                                    ? 'bg-green-600 text-white'
-                                                                                    : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+                                                                                    ? 'bg-gradient-to-r from-[#c32aa3] to-[#f46f30] text-white'
+                                                                                    : 'bg-[#333] text-gray-300 hover:bg-[#444]'
                                                                             }`}
                                                                         >
                                                                             {style.name}
@@ -1228,9 +1232,9 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                                     setShowMusicOptions(false);
                                                                     toast.success(hideWatermark ? 'Watermark shown' : 'Watermark hidden');
                                                                 }}
-                                                                className='w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-white/10 transition text-sm'
+                                                                className='w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-[#333] transition text-xs font-medium'
                                                             >
-                                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                                                                     <path d="M18 10.48l4-3.98v11l-4-3.98V18c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v4.48z"/>
                                                                 </svg>
                                                                 {hideWatermark ? 'Show Watermark' : 'Hide Watermark'}
@@ -1242,9 +1246,9 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                                     handleRemoveMusic();
                                                                     setShowMusicOptions(false);
                                                                 }}
-                                                                className='w-full flex items-center gap-2 px-3 py-2 rounded hover:bg-red-500/20 text-red-400 transition text-sm'
+                                                                className='w-full flex items-center gap-2 px-2.5 py-1.5 rounded hover:bg-red-500/20 text-red-400 transition text-xs font-medium'
                                                             >
-                                                                <X className='w-4 h-4' />
+                                                                <X className='w-3.5 h-3.5' />
                                                                 Remove Music
                                                             </button>
                                                         </div>
@@ -1256,7 +1260,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                     
                                     {/* Text overlay */}
                                     {text && (
-                                        <div className='absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent'>
+                                        <div className='absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 via-black/40 to-transparent'>
                                             <p className='text-sm font-medium text-white text-center'>{text}</p>
                                         </div>
                                     )}
@@ -1264,7 +1268,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                     {/* Hidden Watermark */}
                                     {!hideWatermark && (
                                         <div className='absolute bottom-2 right-2'>
-                                            <div className='bg-black/50 px-2 py-1 rounded text-xs text-white/80'>
+                                            <div className='bg-black/60 px-2 py-1 rounded text-xs text-white/90'>
                                                 PixoStory
                                             </div>
                                         </div>
@@ -1274,10 +1278,10 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                         }
 
                         {mode === 'media' && !previewUrl && (
-                            <label className='flex flex-col items-center justify-center w-full h-full bg-zinc-800/50 hover:bg-zinc-800/70 transition-all duration-300 cursor-pointer p-8 text-zinc-300 border-2 border-dashed border-zinc-600 rounded-xl'>
-                                <Upload className='w-12 h-12 mb-3 text-zinc-400'/>
-                                <span className='font-semibold text-center text-white'>Select Photo or Video</span>
-                                <span className='text-xs mt-2 text-zinc-400 text-center'>Max 1 min video, 50MB file size</span>
+                            <label className='flex flex-col items-center justify-center w-full h-full bg-[#222] hover:bg-[#2a2a2a] transition-all duration-300 cursor-pointer p-6 text-gray-300 border-2 border-dashed border-[#444] rounded-lg'>
+                                <Upload className='w-10 h-10 mb-2.5 text-gray-400'/>
+                                <span className='font-medium text-center text-white text-sm'>Select Photo or Video</span>
+                                <span className='text-xs mt-1.5 text-gray-400 text-center'>Max 1 min video, 50MB file size</span>
                                 <input 
                                     onChange={handleMediaUpload} 
                                     type="file" 
@@ -1289,11 +1293,11 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                     </div>
 
                     {mode === 'text' && (
-                        <div className='flex justify-center mt-4 gap-2'>
+                        <div className='flex justify-center mt-3 gap-1.5 mb-4'>
                             {bgColors.map((color)=>(
                                 <button 
                                     key={color} 
-                                    className={`w-7 h-7 rounded-full transition-all duration-200 shadow-lg ${background === color ? 'ring-3 ring-white ring-offset-2 ring-offset-zinc-900 scale-110' : 'hover:scale-105 hover:ring-2 hover:ring-white/50'}`} 
+                                    className={`w-6 h-6 rounded-full transition-all duration-200 ${background === color ? 'ring-2 ring-white scale-110' : 'hover:scale-105'}`} 
                                     style={{backgroundColor: color}} 
                                     onClick={()=> setBackground(color)}
                                 />
@@ -1302,13 +1306,13 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                     )}
                     
                     {(mode === 'media' || mode === 'camera') && previewUrl && (
-                        <div className='mt-4'>
+                        <div className='mt-3 mb-3'>
                             <input
                                 type="text"
                                 placeholder="Add text to your story..."
                                 value={text}
                                 onChange={(e) => setText(e.target.value)}
-                                className='w-full p-3 bg-zinc-800 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-green-500 border border-zinc-600 transition-all duration-200'
+                                className='w-full p-3 bg-[#222] rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#c32aa3] border border-[#444] transition-all duration-200 text-sm'
                                 maxLength={100}
                             />
                         </div>
@@ -1316,8 +1320,8 @@ const StoryModal = ({setShowModal, fetchStories}) => {
 
                     {/* Music Duration Selection */}
                     {selectedMusic && (
-                        <div className='mt-4'>
-                            <p className='text-sm text-zinc-400 mb-2'>Music Duration:</p>
+                        <div className='mt-3 mb-3'>
+                            <p className='text-xs text-gray-400 mb-1.5'>Music Duration:</p>
                             <div className='flex gap-2'>
                                 {[15, 30, 60].map((duration) => (
                                     <button
@@ -1332,8 +1336,8 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                         }}
                                         className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all duration-200 border ${
                                             selectedDuration === duration
-                                                ? 'bg-green-600 text-white border-green-500'
-                                                : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border-zinc-600'
+                                                ? 'bg-gradient-to-r from-[#c32aa3] to-[#f46f30] text-white border-transparent'
+                                                : 'bg-[#222] text-gray-300 hover:bg-[#333] border-[#444]'
                                         }`}
                                     >
                                         {duration}s
@@ -1343,26 +1347,26 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                         </div>
                     )}
 
-                    <div className={`flex gap-3 mt-6 ${(mode === 'media' || mode === 'camera') && previewUrl ? 'flex-col' : 'flex-row'}`}>
+                    <div className={`flex gap-2 mt-4 ${(mode === 'media' || mode === 'camera') && previewUrl ? 'flex-col' : 'flex-row'}`}>
                         
                         {(mode === 'media' || mode === 'camera') && previewUrl && (
                             <div className='flex gap-2'>
                                 <button 
                                     onClick={() => resetState("media")} 
-                                    className='flex-1 flex items-center justify-center gap-2 p-3 rounded-xl bg-zinc-800 text-white hover:bg-zinc-700 transition-all duration-200 border border-zinc-600'
+                                    className='flex-1 flex items-center justify-center gap-1.5 p-2.5 rounded-lg bg-[#222] text-white hover:bg-[#333] transition-all duration-200 border border-[#444] text-sm font-medium'
                                 >
-                                    <ArrowLeft size={18}/> Change Media
+                                    <ArrowLeft size={16}/> Change Media
                                 </button>
                                 
                                 <button
                                     onClick={() => setShowMusicSearch(true)}
-                                    className={`flex items-center justify-center gap-2 p-3 rounded-xl transition-all duration-200 border ${
+                                    className={`flex items-center justify-center gap-1.5 p-2.5 rounded-lg transition-all duration-200 border ${
                                         selectedMusic 
-                                            ? 'bg-green-600 text-white border-green-500' 
-                                            : 'bg-zinc-800 text-white hover:bg-zinc-700 border-zinc-600'
+                                            ? 'bg-gradient-to-r from-[#c32aa3] to-[#f46f30] text-white border-transparent' 
+                                            : 'bg-[#222] text-white hover:bg-[#333] border-[#444]'
                                     }`}
                                 >
-                                    <Music size={18}/>
+                                    <Music size={16}/>
                                 </button>
                             </div>
                         )}
@@ -1371,30 +1375,30 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                             <>
                                 <button 
                                     onClick={() => resetState("text")} 
-                                    className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl font-medium transition-all duration-200 border ${
+                                    className={`flex-1 flex items-center justify-center gap-1.5 p-2.5 rounded-lg font-medium transition-all duration-200 border ${
                                         mode === "text" 
-                                            ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg border-green-500" 
-                                            : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border-zinc-600"
+                                            ? "bg-gradient-to-r from-[#c32aa3] to-[#f46f30] text-white border-transparent" 
+                                            : "bg-[#222] text-gray-300 hover:bg-[#333] border-[#444]"
                                     }`}
                                 >
-                                    <TextIcon size={18}/> Text
+                                    <TextIcon size={16}/> Text
                                 </button>
                                 
                                 <button 
                                     onClick={startCamera}
-                                    className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl font-medium transition-all duration-200 border ${
+                                    className={`flex-1 flex items-center justify-center gap-1.5 p-2.5 rounded-lg font-medium transition-all duration-200 border ${
                                         mode === "camera" 
-                                            ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg border-green-500" 
-                                            : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border-zinc-600"
+                                            ? "bg-gradient-to-r from-[#c32aa3] to-[#f46f30] text-white border-transparent" 
+                                            : "bg-[#222] text-gray-300 hover:bg-[#333] border-[#444]"
                                     }`}
                                 >
-                                    <Camera size={18}/> Camera
+                                    <Camera size={16}/> Camera
                                 </button>
                                 
-                                <label className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl font-medium transition-all duration-200 border ${
+                                <label className={`flex-1 flex items-center justify-center gap-1.5 p-2.5 rounded-lg font-medium transition-all duration-200 border ${
                                     mode === "media" && !previewUrl 
-                                        ? "bg-gradient-to-r from-green-600 to-emerald-600 text-white shadow-lg border-green-500" 
-                                        : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border-zinc-600"
+                                        ? "bg-gradient-to-r from-[#c32aa3] to-[#f46f30] text-white border-transparent" 
+                                        : "bg-[#222] text-gray-300 hover:bg-[#333] border-[#444]"
                                 }`}>
                                     <input 
                                         onChange={handleMediaUpload} 
@@ -1402,7 +1406,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                         accept='image/*, video/*' 
                                         className='hidden'
                                     />
-                                    <Upload size={18}/> Upload
+                                    <Upload size={16}/> Upload
                                 </label>
                             </>
                         )}
@@ -1415,21 +1419,25 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                             error: (err) => err.message || 'Failed to create story.',
                         })} 
                         disabled={loading || !isFormValid() || compressing}
-                        className='flex items-center justify-center gap-2 text-white py-3.5 mt-2 w-full rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all duration-300 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] font-semibold border border-green-400/30'
+                        className='flex items-center justify-center gap-1.5 text-white py-3 mt-3 w-full rounded-lg bg-gradient-to-r from-[#c32aa3] to-[#f46f30] hover:opacity-90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] font-semibold text-sm shadow-lg'
                     >
-                        <Sparkle size={18} className='text-white'/> 
-                        {loading ? 'Creating...' : compressing ? 'Compressing...' : 'Share Story'}
+                        {loading ? 'Creating...' : compressing ? 'Compressing...' : (
+                            <>
+                                <Sparkle size={16} className='text-white'/> 
+                                Share Story
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
 
             {/* Music Search Modal */}
             {showMusicSearch && (
-                <div className='fixed inset-0 z-[1001] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4'>
-                    <div className='w-full max-w-md bg-zinc-900 rounded-2xl p-0 max-h-[80vh] overflow-hidden flex flex-col border border-zinc-700 shadow-2xl'>
+                <div className='fixed inset-0 z-[1001] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4'>
+                    <div className='w-full max-w-md bg-[#1a1a1a] rounded-xl p-0 max-h-[80vh] overflow-hidden flex flex-col border border-[#333] shadow-2xl'>
                         {/* Header */}
-                        <div className='flex items-center justify-between p-4 border-b border-zinc-700'>
-                            <div className='flex items-center gap-3'>
+                        <div className='flex items-center justify-between p-3.5 border-b border-[#333]'>
+                            <div className='flex items-center gap-2'>
                                 <button 
                                     onClick={() => {
                                         stopSongPreview();
@@ -1437,16 +1445,16 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                         setMusicSearchQuery("");
                                         setSearchResults([]);
                                     }}
-                                    className='text-white p-1'
+                                    className='text-white p-1 hover:bg-[#333] rounded-full transition-colors'
                                 >
-                                    <ArrowLeft size={20}/>
+                                    <ArrowLeft size={18}/>
                                 </button>
-                                <h3 className='text-lg font-bold text-white'>Add Music to Story</h3>
+                                <h3 className='text-base font-semibold text-white'>Add Music</h3>
                             </div>
                         </div>
                         
                         {/* Search Bar */}
-                        <div className='p-4 border-b border-zinc-700'>
+                        <div className='p-3.5 border-b border-[#333]'>
                             <div className='relative'>
                                 <input
                                     type="text"
@@ -1463,10 +1471,10 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                             setSearchResults([])
                                         }
                                     }}
-                                    className='w-full p-4 bg-zinc-800 rounded-xl text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-green-500 border border-zinc-600 transition-all duration-200'
+                                    className='w-full p-3 bg-[#222] rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#c32aa3] border border-[#444] transition-all duration-200 text-sm'
                                     autoFocus
                                 />
-                                <Music className='absolute right-4 top-4 text-zinc-400' size={20}/>
+                                <Music className='absolute right-3 top-3 text-gray-400' size={18}/>
                             </div>
                         </div>
 
@@ -1474,18 +1482,18 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                         <div className='flex-1 overflow-y-auto'>
                             {searchLoading ? (
                                 <div className='text-center py-8'>
-                                    <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500 mx-auto'></div>
-                                    <p className='text-zinc-400 mt-2'>Searching songs...</p>
+                                    <div className='animate-spin rounded-full h-7 w-7 border-b-2 border-[#c32aa3] mx-auto'></div>
+                                    <p className='text-gray-400 mt-2 text-sm'>Searching songs...</p>
                                 </div>
                             ) : searchResults.length > 0 ? (
                                 <div className='p-2'>
                                     {searchResults.map((song) => (
                                         <div
                                             key={song.id}
-                                            className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 ${
+                                            className={`flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-all duration-200 ${
                                                 selectedMusic?.id === song.id 
-                                                    ? 'bg-green-500/10' 
-                                                    : 'hover:bg-zinc-800'
+                                                    ? 'bg-gradient-to-r from-[#c32aa3]/10 to-[#f46f30]/10' 
+                                                    : 'hover:bg-[#222]'
                                             }`}
                                             onClick={() => handleMusicSelect(song)}
                                         >
@@ -1493,7 +1501,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                 <img 
                                                     src={song.image} 
                                                     alt={song.name}
-                                                    className='w-12 h-12 rounded-lg object-cover'
+                                                    className='w-11 h-11 rounded-lg object-cover'
                                                 />
                                                 <button
                                                     onClick={(e) => {
@@ -1503,38 +1511,38 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                     className='absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg opacity-0 hover:opacity-100 transition-opacity duration-200'
                                                 >
                                                     {playingSong?.id === song.id && isPlaying ? (
-                                                        <Pause size={16} className='text-white' />
+                                                        <Pause size={14} className='text-white' />
                                                     ) : (
-                                                        <Play size={16} className='text-white ml-0.5' />
+                                                        <Play size={14} className='text-white ml-0.5' />
                                                     )}
                                                 </button>
                                             </div>
                                             
                                             <div className='flex-1 min-w-0'>
-                                                <p className='font-semibold truncate text-white'>{song.name}</p>
-                                                <p className='text-sm text-zinc-300 truncate'>{song.primaryArtists}</p>
-                                                <p className='text-xs text-zinc-400'>{song.duration}</p>
+                                                <p className='font-medium truncate text-white text-sm'>{song.name}</p>
+                                                <p className='text-xs text-gray-300 truncate'>{song.primaryArtists}</p>
+                                                <p className='text-xs text-gray-400'>{song.duration}</p>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
                             ) : musicSearchQuery.length > 2 ? (
-                                <div className='text-center py-8 text-zinc-400'>
-                                    <Music size={48} className='mx-auto mb-3 opacity-50' />
-                                    <p>No songs found for "{musicSearchQuery}"</p>
-                                    <p className='text-sm mt-1'>Try different keywords</p>
+                                <div className='text-center py-8 text-gray-400'>
+                                    <Music size={40} className='mx-auto mb-3 opacity-50' />
+                                    <p className='text-sm'>No songs found for "{musicSearchQuery}"</p>
+                                    <p className='text-xs mt-1'>Try different keywords</p>
                                 </div>
                             ) : (
-                                <div className='p-4'>
-                                    <h4 className='text-sm font-semibold text-zinc-400 mb-3 px-2'>Trending Now</h4>
-                                    <div className='space-y-2'>
+                                <div className='p-3'>
+                                    <h4 className='text-xs font-semibold text-gray-400 mb-2 px-2'>Trending Now</h4>
+                                    <div className='space-y-1.5'>
                                         {trendingSongs.map((song) => (
                                             <div
                                                 key={song.id}
-                                                className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 ${
+                                                className={`flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-all duration-200 ${
                                                     selectedMusic?.id === song.id 
-                                                        ? 'bg-green-500/10' 
-                                                        : 'hover:bg-zinc-800'
+                                                        ? 'bg-gradient-to-r from-[#c32aa3]/10 to-[#f46f30]/10' 
+                                                        : 'hover:bg-[#222]'
                                                 }`}
                                                 onClick={() => handleMusicSelect(song)}
                                             >
@@ -1542,7 +1550,7 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                     <img 
                                                         src={song.image} 
                                                         alt={song.name}
-                                                        className='w-12 h-12 rounded-lg object-cover'
+                                                        className='w-11 h-11 rounded-lg object-cover'
                                                     />
                                                     <button
                                                         onClick={(e) => {
@@ -1552,16 +1560,16 @@ const StoryModal = ({setShowModal, fetchStories}) => {
                                                         className='absolute inset-0 flex items-center justify-center bg-black/50 rounded-lg opacity-0 hover:opacity-100 transition-opacity duration-200'
                                                     >
                                                         {playingSong?.id === song.id && isPlaying ? (
-                                                            <Pause size={16} className='text-white' />
+                                                            <Pause size={14} className='text-white' />
                                                         ) : (
-                                                            <Play size={16} className='text-white ml-0.5' />
+                                                            <Play size={14} className='text-white ml-0.5' />
                                                         )}
                                                     </button>
                                                 </div>
                                                 <div className='flex-1 min-w-0'>
-                                                    <p className='font-semibold truncate text-white'>{song.name}</p>
-                                                    <p className='text-sm text-zinc-300 truncate'>{song.primaryArtists}</p>
-                                                    <p className='text-xs text-zinc-400'>{song.duration}</p>
+                                                    <p className='font-medium truncate text-white text-sm'>{song.name}</p>
+                                                    <p className='text-xs text-gray-300 truncate'>{song.primaryArtists}</p>
+                                                    <p className='text-xs text-gray-400'>{song.duration}</p>
                                                 </div>
                                             </div>
                                         ))}

@@ -78,6 +78,104 @@ const LocationInput = ({ value, onChange, disabled }) => {
     const [isDetecting, setIsDetecting] = useState(false);
     const [showLocationOptions, setShowLocationOptions] = useState(false);
 
+    // Function to get accurate location name from GPS coordinates
+    const getLocationFromCoords = async (latitude, longitude) => {
+        console.log('Getting location for coordinates:', latitude, longitude);
+        
+        // Try multiple services in order of reliability
+        const services = [
+            {
+                name: 'OpenStreetMap',
+                url: `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&zoom=18&namedetails=1&accept-language=en`,
+                extractor: (data) => {
+                    if (data && data.address) {
+                        const addr = data.address;
+                        // Try to get the most specific location first
+                        const specificLocation = addr.city || addr.town || addr.village || addr.municipality || addr.county;
+                        const region = addr.state || addr.region;
+                        const country = addr.country;
+                        
+                        if (specificLocation && region) {
+                            return `${specificLocation}, ${region}`;
+                        } else if (specificLocation && country) {
+                            return `${specificLocation}, ${country}`;
+                        } else if (region && country) {
+                            return `${region}, ${country}`;
+                        } else if (specificLocation) {
+                            return specificLocation;
+                        } else if (country) {
+                            return country;
+                        }
+                    }
+                    return null;
+                }
+            },
+            {
+                name: 'LocationIQ',
+                url: `https://us1.locationiq.com/v1/reverse.php?key=pk.6a90a1653f162a6cd7c13f09ef84fdfd&lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`,
+                extractor: (data) => {
+                    if (data && data.address) {
+                        const addr = data.address;
+                        const city = addr.city || addr.town || addr.village;
+                        const state = addr.state;
+                        const country = addr.country;
+                        
+                        if (city && state) {
+                            return `${city}, ${state}`;
+                        } else if (city && country) {
+                            return `${city}, ${country}`;
+                        } else if (city) {
+                            return city;
+                        } else if (country) {
+                            return country;
+                        }
+                    }
+                    return null;
+                }
+            },
+            {
+                name: 'GeocodeXYZ',
+                url: `https://geocode.xyz/${latitude},${longitude}?geoit=json&auth=312966956082042582999x125801`,
+                extractor: (data) => {
+                    if (data && data.city && data.country) {
+                        return `${data.city}, ${data.country}`;
+                    } else if (data && data.region && data.country) {
+                        return `${data.region}, ${data.country}`;
+                    }
+                    return null;
+                }
+            }
+        ];
+
+        // Try each service until we get a valid location
+        for (const service of services) {
+            try {
+                console.log(`Trying ${service.name} service...`);
+                const response = await fetch(service.url);
+                
+                if (!response.ok) {
+                    console.log(`${service.name} response not OK:`, response.status);
+                    continue;
+                }
+                
+                const data = await response.json();
+                console.log(`${service.name} response:`, data);
+                
+                const locationName = service.extractor(data);
+                if (locationName) {
+                    console.log(`Found location from ${service.name}:`, locationName);
+                    return locationName;
+                }
+            } catch (error) {
+                console.log(`${service.name} failed:`, error);
+                continue;
+            }
+        }
+        
+        // If all services fail, return coordinates
+        return `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}`;
+    };
+
     const detectLocation = () => {
         if (!navigator.geolocation) {
             toast.error('Geolocation is not supported by your browser');
@@ -87,27 +185,45 @@ const LocationInput = ({ value, onChange, disabled }) => {
         setIsDetecting(true);
         setShowLocationOptions(false);
 
+        // Request high accuracy GPS position
         navigator.geolocation.getCurrentPosition(
             async (position) => {
                 try {
                     const { latitude, longitude } = position.coords;
-                    console.log('Got coordinates:', latitude, longitude);
-                    
-                    // Try multiple reverse geocoding services for better reliability
-                    let locationName = await tryReverseGeocoding(latitude, longitude);
+                    console.log('Got GPS coordinates:', {
+                        latitude,
+                        longitude,
+                        accuracy: position.coords.accuracy,
+                        altitude: position.coords.altitude,
+                        altitudeAccuracy: position.coords.altitudeAccuracy,
+                        heading: position.coords.heading,
+                        speed: position.coords.speed
+                    });
+
+                    // Check if we have good accuracy
+                    if (position.coords.accuracy > 1000) {
+                        console.warn('Location accuracy is poor:', position.coords.accuracy, 'meters');
+                        toast('Location accuracy is low. Moving or going outside might improve it.', {
+                            icon: '📍',
+                            duration: 4000
+                        });
+                    }
+
+                    // Get location name from coordinates
+                    const locationName = await getLocationFromCoords(latitude, longitude);
                     
                     if (locationName) {
                         onChange(locationName);
                         toast.success('Location detected successfully!');
                     } else {
-                        // If reverse geocoding fails, show coordinates
-                        const fallbackLocation = `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}`;
+                        // Fallback to coordinates
+                        const fallbackLocation = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
                         onChange(fallbackLocation);
-                        toast.success('Location detected! (Coordinates only)');
+                        toast.success('Location detected (coordinates only)');
                     }
                 } catch (error) {
-                    console.error('Location detection error:', error);
-                    toast.error('Failed to get location details');
+                    console.error('Location processing error:', error);
+                    toast.error('Failed to get location details. Please try again.');
                 } finally {
                     setIsDetecting(false);
                 }
@@ -118,92 +234,33 @@ const LocationInput = ({ value, onChange, disabled }) => {
                 
                 switch (error.code) {
                     case error.PERMISSION_DENIED:
-                        errorMessage = 'Location access denied. Please enable location permissions in your browser settings.';
+                        errorMessage = 'Location access denied. Please enable location permissions in your browser settings and try again.';
                         break;
                     case error.POSITION_UNAVAILABLE:
-                        errorMessage = 'Location information unavailable.';
+                        errorMessage = 'Location information unavailable. Please check your GPS or network connection.';
                         break;
                     case error.TIMEOUT:
-                        errorMessage = 'Location request timed out. Please try again.';
+                        errorMessage = 'Location request timed out. Please try again in a moment.';
                         break;
+                    default:
+                        errorMessage = 'Could not get your location. Please try again.';
                 }
                 
                 toast.error(errorMessage);
                 setIsDetecting(false);
+                
+                // Suggest manual entry
+                toast('You can enter your location manually instead.', {
+                    icon: '✏️',
+                    duration: 5000
+                });
             },
             {
-                enableHighAccuracy: true,
-                timeout: 15000,
-                maximumAge: 60000
+                enableHighAccuracy: true, // Request GPS if available
+                timeout: 20000, // 20 second timeout
+                maximumAge: 60000 // Accept cached position if less than 1 minute old
             }
         );
-    };
-
-    // Try multiple reverse geocoding services
-    const tryReverseGeocoding = async (lat, lng) => {
-        const services = [
-            // OpenStreetMap Nominatim (free, no API key required)
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`,
-            
-            // BigDataCloud (free tier)
-            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`,
-            
-            // GeoNames (free tier)
-            `http://api.geonames.org/findNearbyPlaceNameJSON?lat=${lat}&lng=${lng}&username=demo`
-        ];
-
-        for (let serviceUrl of services) {
-            try {
-                console.log('Trying service:', serviceUrl);
-                const response = await fetch(serviceUrl);
-                
-                if (!response.ok) continue;
-                
-                const data = await response.json();
-                console.log('Service response:', data);
-                
-                let location = extractLocationName(data, serviceUrl);
-                if (location) {
-                    console.log('Found location:', location);
-                    return location;
-                }
-            } catch (error) {
-                console.log('Service failed:', serviceUrl, error);
-                continue;
-            }
-        }
-        
-        return null;
-    };
-
-    // Extract location name from different service responses
-    const extractLocationName = (data, serviceUrl) => {
-        // OpenStreetMap Nominatim
-        if (serviceUrl.includes('nominatim')) {
-            if (data.address) {
-                const { city, town, village, county, state, country } = data.address;
-                return [city, town, village, county].find(Boolean) + ', ' + (state || country);
-            }
-        }
-        
-        // BigDataCloud
-        if (serviceUrl.includes('bigdatacloud')) {
-            if (data.city && data.countryName) {
-                return `${data.city}, ${data.countryName}`;
-            } else if (data.locality && data.countryName) {
-                return `${data.locality}, ${data.countryName}`;
-            }
-        }
-        
-        // GeoNames
-        if (serviceUrl.includes('geonames')) {
-            if (data.geonames && data.geonames[0]) {
-                const place = data.geonames[0];
-                return `${place.name}, ${data.countryName}`;
-            }
-        }
-        
-        return null;
     };
 
     return (
@@ -256,7 +313,7 @@ const LocationInput = ({ value, onChange, disabled }) => {
                         <Navigation className="w-4 h-4 text-blue-600" />
                         <div>
                             <div className="font-medium text-gray-900">Use Current Location</div>
-                            <div className="text-sm text-gray-500">Automatically detect your location</div>
+                            <div className="text-sm text-gray-500">Uses GPS for accurate location</div>
                         </div>
                     </button>
                     
@@ -283,6 +340,14 @@ const LocationInput = ({ value, onChange, disabled }) => {
                     className="fixed inset-0 z-0" 
                     onClick={() => setShowLocationOptions(false)}
                 />
+            )}
+
+            {/* Location detection tips */}
+            {!isDetecting && !value && (
+                <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                    <span>💡</span>
+                    <span>Auto-detect uses GPS. For best accuracy, ensure location services are enabled.</span>
+                </div>
             )}
         </div>
     );
@@ -807,7 +872,7 @@ const ProfileModal = ({ setShowEdit }) => {
                                         disabled={isSaving}
                                     />
                                     <p className="text-xs text-gray-500 mt-1">
-                                        Use auto-detect for accurate location or type manually
+                                        Auto-detect uses GPS for accurate location detection
                                     </p>
                                 </div>
                             </div>

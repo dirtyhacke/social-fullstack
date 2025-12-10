@@ -1,4 +1,4 @@
-import { X, ChevronLeft, ChevronRight, Volume2, VolumeX, Clock } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Volume2, VolumeX, Clock, Music } from 'lucide-react'
 import React, { useEffect, useState, useRef } from 'react'
 import moment from 'moment'
 
@@ -7,7 +7,8 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
     const [progress, setProgress] = useState(0)
     const [audioProgress, setAudioProgress] = useState(0)
     const [currentLyric, setCurrentLyric] = useState("")
-    const [isMuted, setIsMuted] = useState(true)
+    // 2. Changed default mute state to false (unmuted)
+    const [isMuted, setIsMuted] = useState(false) 
     const [videoLoaded, setVideoLoaded] = useState(false)
 
     const audioRef = useRef(null)
@@ -30,11 +31,11 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         
         if (diffInHours < 1) {
             const diffInMinutes = now.diff(storyTime, 'minutes');
-            return `${diffInMinutes}m ago`;
+            return `${diffInMinutes}m`;
         } else if (diffInHours < 24) {
-            return `${diffInHours}h ago`;
+            return `${diffInHours}h`;
         } else if (diffInDays < 7) {
-            return `${diffInDays}d ago`;
+            return `${diffInDays}d`;
         } else {
             return storyTime.format('MMM D');
         }
@@ -70,7 +71,8 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                 
                 const playVideo = async () => {
                     try {
-                        video.muted = true;
+                        // Removed video.muted = true to respect the default unmute setting
+                        video.muted = isMuted; 
                         video.playsInline = true;
                         video.preload = "auto";
                         
@@ -83,6 +85,13 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                         console.log('🎥 Video playback started successfully');
                     } catch (error) {
                         console.error('🎥 Video play failed:', error);
+                        // Fallback: if browser blocks unmuted autoplay, mute and try again
+                        if(!isMuted) {
+                             console.log('Trying muted playback as fallback');
+                             video.muted = true;
+                             setIsMuted(true);
+                             video.play().catch(e => console.error("Fallback failed", e));
+                        }
                     }
                 };
 
@@ -103,7 +112,8 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
             }, storyDuration)
         }
 
-        // Auto-play music if story has music
+        // Auto-play music if story has music AND it's not a video (videos usually have own audio)
+        // If you want music over video, remove the check.
         if (viewStory?.music_data) {
             setTimeout(() => {
                 playSongPreview(viewStory.music_data);
@@ -124,6 +134,14 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         setVideoLoaded(true);
     }
 
+    // 1. New function to update progress bar based on video time
+    const handleVideoTimeUpdate = (e) => {
+        if(e.target.duration) {
+            const currentProgress = (e.target.currentTime / e.target.duration) * 100;
+            setProgress(currentProgress);
+        }
+    }
+
     const handleVideoError = (e) => {
         console.error('🎥 Video error:', e);
         console.error('🎥 Video source:', viewStory?.media_url);
@@ -138,8 +156,9 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
     const toggleMute = (e) => {
         if (e) e.stopPropagation();
         if (videoRef.current) {
-            videoRef.current.muted = !videoRef.current.muted;
-            setIsMuted(videoRef.current.muted);
+            const newMuteState = !videoRef.current.muted;
+            videoRef.current.muted = newMuteState;
+            setIsMuted(newMuteState);
         }
     }
 
@@ -224,27 +243,6 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         return currentLyric ? currentLyric.text : "🎵 Music playing...";
     };
 
-    // Card style classes for MusicSticker 
-    const getCardStyleClasses = () => {
-        const sizeClasses = {
-            small: "p-1.5 min-w-[120px]", 
-            medium: "p-2 min-w-[160px]", 
-            large: "p-3 min-w-[200px]"
-        };
-
-        const styleClasses = {
-            default: "bg-white/20 backdrop-blur-md", 
-            minimal: "bg-black/40 backdrop-blur-sm",
-            classic: "bg-purple-500/30 backdrop-blur-md", 
-            modern: "bg-cyan-500/30 backdrop-blur-md"
-        };
-
-        const size = viewStory?.card_size || 'medium';
-        const style = viewStory?.card_style || 'default';
-        
-        return `${sizeClasses[size]} ${styleClasses[style]} rounded-full`; 
-    };
-
     const handleClose = () => {
         console.log("🛑 Closing story viewer");
         stopSongPreview(); 
@@ -282,14 +280,14 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         if (!stories || stories.length === 0) return null;
 
         return (
-            <div className='absolute top-0 left-0 right-0 p-1 flex gap-0.5 z-50'>
+            <div className='absolute top-0 left-0 right-0 p-2 flex gap-1 z-50'>
                 {stories.map((story, index) => (
                     <div 
                         key={index}
-                        className='flex-1 h-1 bg-white/40 rounded-full overflow-hidden'
+                        className='flex-1 h-0.5 bg-white/30 rounded-full overflow-hidden'
                     >
                         <div 
-                            className={`h-full bg-white rounded-full transition-all duration-50 linear ${
+                            className={`h-full bg-white shadow-sm transition-all duration-100 ease-linear ${
                                 index === currentStoryIndex ? 'bg-white' : 
                                 index < currentStoryIndex ? 'bg-white' : 'bg-transparent'
                             }`}
@@ -317,16 +315,16 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                     <img 
                         src={viewStory.media_url} 
                         alt="Story content" 
-                        className="w-full h-full object-contain"
+                        className="w-full h-full object-cover"
                         loading="lazy"
                     />
                 );
             case 'video':
                 return (
-                    <div className="relative w-full h-full bg-black">
+                    <div className="relative w-full h-full bg-black flex items-center justify-center">
                         {!videoLoaded && (
                             <div className="absolute inset-0 flex items-center justify-center z-10">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white/50"></div>
                             </div>
                         )}
                         
@@ -335,17 +333,16 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                             onEnded={handleVideoEnd}
                             onLoadedData={handleVideoLoad}
                             onCanPlay={handleVideoLoad}
+                            onTimeUpdate={handleVideoTimeUpdate} // Added this for progress bar
                             onError={handleVideoError}
-                            onPlay={() => console.log('🎥 Video playing')}
                             src={viewStory.media_url} 
-                            className="w-full h-full object-contain"
+                            className="w-full h-full object-contain" // Changed to cover for full immersive feel or contain to see all
                             muted={isMuted}
                             playsInline
                             autoPlay
                             preload="auto"
                             controls={false}
                             style={{ 
-                                backgroundColor: 'black',
                                 display: videoLoaded ? 'block' : 'none'
                             }}
                         >
@@ -354,23 +351,14 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                         
                         <button
                             onClick={toggleMute}
-                            className="absolute bottom-4 left-4 p-3 bg-black/50 rounded-full text-white hover:bg-black/70 transition-all z-40"
+                            className="absolute bottom-4 right-4 p-2 bg-black/40 backdrop-blur-sm rounded-full text-white hover:bg-black/60 transition-all z-40"
                         >
                             {isMuted ? (
-                                <VolumeX className="w-5 h-5" />
+                                <VolumeX className="w-4 h-4" />
                             ) : (
-                                <Volume2 className="w-5 h-5" />
+                                <Volume2 className="w-4 h-4" />
                             )}
                         </button>
-
-                        {!videoLoaded && (
-                            <div className="absolute inset-0 flex items-center justify-center z-20">
-                                <div className="text-white text-center">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
-                                    <p className="text-sm">Loading video...</p>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 );
             case 'text':
@@ -395,20 +383,56 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         }
     }
 
-    // Music sticker component
-    const MusicSticker = () => {
-        if (!viewStory?.music_data) return null;
+    // 3. Instagram-style Header Integration
+    // This replaces the complex MusicSticker logic for the default view
+    const HeaderInfo = () => {
+        const musicData = viewStory?.music_data;
 
-        const musicPosition = viewStory.music_position || { x: 20, y: 12 };
-        const musicData = viewStory.music_data;
-        const baseClass = getCardStyleClasses();
+        return (
+            <div className='flex items-center space-x-3'>
+                {/* Profile Pic */}
+                <div className="relative">
+                    <img 
+                        src={storyUser.profile_picture || '/default-avatar.png'} 
+                        alt={storyUser.full_name} 
+                        className='size-9 rounded-full object-cover border border-white/20'
+                    />
+                </div>
 
-        // Lyric card styling
-        const lyricCardClass = `px-4 py-2 text-white font-extrabold text-sm rounded-lg backdrop-blur-md bg-black/50 text-center`;
+                {/* Text Info */}
+                <div className='flex flex-col justify-center text-left'>
+                    {/* Top Row: Name + Time */}
+                    <div className='flex items-center gap-2'>
+                        <span className='text-white font-semibold text-sm drop-shadow-md'>
+                            {storyUser.full_name || 'Anonymous'}
+                        </span>
+                        <span className='text-white/60 text-xs font-medium'>
+                           • {formatUploadTime(viewStory.createdAt)}
+                        </span>
+                    </div>
 
-        // If lyrics are showing, use the centered lyric card
-        if (viewStory.show_lyrics && currentLyric) {
-            return (
+                    {/* Bottom Row: Music (Instagram Style) */}
+                    {musicData && (
+                        <div className='flex items-center gap-1.5 mt-0.5 opacity-90'>
+                            <Music className='w-3 h-3 text-white' />
+                            <div className='flex items-center max-w-[150px] overflow-hidden'>
+                                <span className='text-xs text-white truncate font-medium drop-shadow-md'>
+                                    {musicData.name} {musicData.artist && `• ${musicData.artist}`}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        )
+    }
+
+    // Optional: Only used if we want to show floating lyrics, otherwise music info is in header
+    const LyricsOverlay = () => {
+        if (viewStory.show_lyrics && currentLyric && viewStory?.music_data) {
+             // Use original positioning logic only for lyrics
+             const musicPosition = viewStory.music_position || { x: 50, y: 80 };
+             return (
                  <div 
                     className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-40 text-center transition-all duration-200`}
                     style={{
@@ -416,58 +440,14 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                         top: `${musicPosition.y}%`,
                     }}
                 >
-                    <div className={`${lyricCardClass} flex items-center justify-center gap-2`}>
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                        {currentLyric}
+                    <div className={`px-4 py-2 text-white font-extrabold text-xl sm:text-2xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-center`}>
+                         {currentLyric}
                     </div>
                 </div>
             )
         }
-
-        // Standard Music Card
-        return (
-            <div 
-                className={`absolute transform -translate-x-1/2 -translate-y-1/2 z-40 transition-all duration-200`}
-                style={{
-                    left: `${musicPosition.x}%`,
-                    top: `${musicPosition.y}%`,
-                }}
-            >
-                <div className={`${baseClass} flex items-center gap-2 relative overflow-hidden`}>
-                    
-                    {/* Album Art */}
-                    <div className='relative flex-shrink-0'>
-                        <img 
-                            src={musicData.image} 
-                            alt={musicData.name}
-                            className={`
-                                ${viewStory.card_size === 'small' ? 'w-6 h-6' : 'w-8 h-8'} 
-                                rounded-full object-cover
-                            `}
-                        />
-                    </div>
-                    
-                    {/* Song Info */}
-                    <div className='flex-1 min-w-0'>
-                        <p className={`
-                            ${viewStory.card_size === 'small' ? 'text-xs' : 'text-sm'} 
-                            font-semibold text-white truncate mr-2`
-                        }>
-                            {musicData.name}
-                        </p>
-                    </div>
-                    
-                    {/* Audio Progress Bar */}
-                    <div className='absolute bottom-0 left-0 right-0 h-[2px] bg-white/30 overflow-hidden'>
-                        <div 
-                            className='h-full bg-green-400 transition-all duration-100 ease-linear' 
-                            style={{ width: `${audioProgress}%` }}
-                        />
-                    </div>
-                </div>
-            </div>
-        );
-    };
+        return null;
+    }
 
     return (
         <div 
@@ -475,71 +455,48 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
         >
           {/* Main Story Container */}
           <div 
-            className='relative w-full max-w-sm h-full max-h-[95vh] sm:max-h-[90vh] mx-auto shadow-2xl rounded-xl overflow-hidden bg-black'
+            className='relative w-full max-w-md h-full sm:h-[90vh] mx-auto sm:rounded-xl overflow-hidden bg-black shadow-2xl'
           >
               
               {/* Progress Bars for all stories */}
               <ProgressBars />
               
-              {/* Top Bar - User Info on LEFT and Close on RIGHT */}
-              <div className='absolute top-2 left-0 right-0 px-3 py-2 z-40'>
-                <div className='flex items-center justify-between'>
-                    {/* User Info - LEFT SIDE */}
-                    <div className='flex items-center space-x-2'>
-                        <img 
-                            src={storyUser.profile_picture || '/default-avatar.png'} 
-                            alt={storyUser.full_name} 
-                            className='size-8 rounded-full object-cover border-2 border-white/80'
-                        />
-                        <div className='flex flex-col'>
-                            <span className='text-white font-semibold text-sm'>
-                                {storyUser.full_name || 'Anonymous'}
-                            </span>
-                            {/* Upload Time */}
-                            {viewStory.createdAt && (
-                                <div className='flex items-center gap-1'>
-                                    <Clock className='w-3 h-3 text-white/60' />
-                                    <span className='text-white/60 text-xs'>
-                                        {formatUploadTime(viewStory.createdAt)}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+              {/* Top Bar - Professional Gradient & Layout */}
+              {/* Added gradient for text readability */}
+              <div className='absolute top-0 left-0 right-0 p-4 pt-6 z-40 bg-gradient-to-b from-black/70 via-black/20 to-transparent'>
+                <div className='flex items-start justify-between'>
+                    
+                    {/* User Info & Music (Combined) */}
+                    <HeaderInfo />
 
-                    {/* Story Counter and Close Button - RIGHT SIDE */}
-                    <div className='flex items-center gap-3'>
-                        {/* Story Counter */}
-                        <div className='text-white/70 text-xs bg-black/40 px-2 py-1 rounded-full'>
-                            {currentStoryIndex + 1} / {stories.length}
-                        </div>
-                        
-                        {/* Close Button */}
+                    {/* Right Side Actions */}
+                    <div className='flex items-center gap-4'>
+                         {/* Close Button */}
                         <button 
                             onClick={handleClose} 
-                            className='text-white p-1.5 opacity-80 hover:opacity-100 transition-opacity'
+                            className='text-white/90 hover:text-white transition-colors drop-shadow-md'
                             aria-label="Close story viewer"
                         >
-                            <X className='w-6 h-6'/>
+                            <X className='w-7 h-7'/>
                         </button>
                     </div>
                 </div>
               </div>
 
               {/* Content Wrapper and Tap-to-Advance zones */}
-              <div className='w-full h-full relative bg-black'>
+              <div className='w-full h-full relative bg-gray-900'>
                   {/* The actual content (media/text) */}
                   {renderContent()}
                   
-                  {/* Music Sticker */}
-                  <MusicSticker />
+                  {/* Lyrics Overlay (if enabled) */}
+                  <LyricsOverlay />
                   
                   {/* Tap-to-Advance Zones */}
                   <div className='absolute inset-0 flex justify-between z-30'>
                       {/* Left tap zone for previous story */}
                       <button 
                           onClick={handlePreviousStory} 
-                          className='w-1/3 h-full cursor-pointer'
+                          className='w-1/3 h-full cursor-pointer focus:outline-none'
                           aria-label="Previous story"
                       />
                       {/* Center zone for pause/play (future feature) */}
@@ -547,7 +504,7 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
                       {/* Right tap zone for next story */}
                       <button 
                           onClick={handleNextStory} 
-                          className='w-1/3 h-full cursor-pointer'
+                          className='w-1/3 h-full cursor-pointer focus:outline-none'
                           aria-label="Next story"
                       />
                   </div>
@@ -556,24 +513,22 @@ const StoryViewer = ({ stories, currentStoryIndex, setCurrentStoryIndex, setView
               {/* Desktop Navigation Arrows */}
               <button 
                 onClick={handlePreviousStory} 
-                className={`absolute left-[-65px] top-1/2 transform -translate-y-1/2 p-4 rounded-full text-white z-60 hidden md:flex items-center justify-center backdrop-blur-sm transition-all ${
-                    currentStoryIndex > 0 ? 'bg-white/30 hover:bg-white/50' : 'bg-white/10 cursor-not-allowed'
+                className={`absolute left-4 top-1/2 transform -translate-y-1/2 p-2 rounded-full text-white/70 hover:text-white z-60 hidden md:flex items-center justify-center bg-black/20 hover:bg-black/40 backdrop-blur-sm transition-all ${
+                    currentStoryIndex > 0 ? '' : 'invisible'
                 }`}
-                aria-label="Previous story (desktop)"
                 disabled={currentStoryIndex === 0}
               >
-                  <ChevronLeft className='w-7 h-7'/>
+                  <ChevronLeft className='w-8 h-8'/>
               </button>
               
               <button 
                 onClick={handleNextStory} 
-                className={`absolute right-[-65px] top-1/2 transform -translate-y-1/2 p-4 rounded-full text-white z-60 hidden md:flex items-center justify-center backdrop-blur-sm transition-all ${
-                    currentStoryIndex < stories.length - 1 ? 'bg-white/30 hover:bg-white/50' : 'bg-white/10 cursor-not-allowed'
+                className={`absolute right-4 top-1/2 transform -translate-y-1/2 p-2 rounded-full text-white/70 hover:text-white z-60 hidden md:flex items-center justify-center bg-black/20 hover:bg-black/40 backdrop-blur-sm transition-all ${
+                    currentStoryIndex < stories.length - 1 ? '' : 'invisible'
                 }`}
-                aria-label="Next story (desktop)"
                 disabled={currentStoryIndex === stories.length - 1}
               >
-                  <ChevronRight className='w-7 h-7'/>
+                  <ChevronRight className='w-8 h-8'/>
               </button>
           </div>
           

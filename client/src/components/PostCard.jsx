@@ -6,6 +6,7 @@ import { useSelector } from 'react-redux'
 import { useAuth } from '@clerk/clerk-react'
 import api from '../api/axios'
 import toast from 'react-hot-toast'
+import Reels from './Reels' // Import Reels component
 
 // ----------------------------------------------------------------------
 // --- Confirmation Modal Component ---
@@ -341,7 +342,7 @@ const PostModal = React.memo(({
                     
                     {/* Post Content & Media */}
                     <div className='w-full lg:w-3/5 flex flex-col overflow-hidden border-b lg:border-r lg:border-b-0 border-gray-100'> 
-                        <div className='sticky top-0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0'>
+                        <div className='sticky top -0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0'>
                             <div 
                                 className='flex items-center gap-3 cursor-pointer' 
                                 onClick={() => {
@@ -685,6 +686,11 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
     const [mutedVideos, setMutedVideos] = useState({})
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
+    
+    // Reels states - ADDED FOR REELS FUNCTIONALITY
+    const [showReels, setShowReels] = useState(false)
+    const [reelsData, setReelsData] = useState([])
+    const [initialReelIndex, setInitialReelIndex] = useState(0)
 
     const currentUser = useSelector((state) => state.user.value)
     const { getToken } = useAuth()
@@ -747,6 +753,73 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
         }));
     }, []);
 
+    // Function to pause all videos - ADDED TO FIX THE ISSUE
+    const pauseAllVideos = useCallback(() => {
+        Object.values(videoRefs.current).forEach(video => {
+            if (video && !video.paused) {
+                video.pause();
+            }
+        });
+        setPlayingVideo(null);
+    }, []);
+
+    // Function to open Reels when video is clicked - ADDED FOR REELS FUNCTIONALITY
+    const handleOpenReels = useCallback((videoIndex) => {
+        // Pause all videos before opening Reels - FIXED THE ISSUE
+        pauseAllVideos();
+        
+        // First, we need to get all video posts from the feed
+        // In a real app, you would fetch all video posts or have them available
+        // For now, we'll create a simple reels data from current post
+        if (mediaData[videoIndex]?.type === 'video') {
+            const reelData = [{
+                id: post._id,
+                videoUrl: mediaData[videoIndex].url,
+                thumbnail: mediaData.find(m => m.type === 'image')?.url || '',
+                username: post.user?.username || '@user',
+                fullName: post.user?.full_name || 'User',
+                caption: post.content || '',
+                likes: Array.isArray(post.likes_count) ? post.likes_count.length : (post.likes_count || 0),
+                comments: post.comments_count || 0,
+                shares: post.shares_count || 0,
+                userProfile: post.user?.profile_picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.user?.full_name || 'User')}&background=random`,
+                music: 'Original Sound',
+                timestamp: post.createdAt ? 
+                    new Date(post.createdAt).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric' 
+                    }) : 'Just now',
+                isVerified: false,
+                location: post.location,
+                createdAt: post.createdAt,
+                user: post.user,
+                userId: post.user?._id,
+                userHasLiked: Array.isArray(post.likes_count) ? post.likes_count.includes(currentUser?._id) : false,
+                userReelsCount: 1
+            }];
+            
+            setReelsData(reelData);
+            setInitialReelIndex(0);
+            setShowReels(true);
+            document.body.style.overflow = 'hidden';
+        }
+    }, [post, mediaData, currentUser?._id, pauseAllVideos]);
+
+    // Close Reels - ADDED FOR REELS FUNCTIONALITY
+    const handleCloseReels = useCallback(() => {
+        setShowReels(false);
+        document.body.style.overflow = 'unset';
+        
+        // Pause any video that might be playing in Reels - ADDED FOR SAFETY
+        // This ensures no audio continues playing after closing Reels
+        const videos = document.querySelectorAll('video');
+        videos.forEach(video => {
+            if (!video.paused) {
+                video.pause();
+            }
+        });
+    }, []);
+
     // Auto-play/pause videos based on visibility
     useEffect(() => {
         if (!postCardRef.current || mediaData.filter(m => m.type === 'video').length === 0) return;
@@ -759,18 +832,13 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                         const firstVideoIndex = mediaData.findIndex(m => m.type === 'video');
                         if (firstVideoIndex !== -1) {
                             const video = videoRefs.current[firstVideoIndex];
-                            if (video && video.paused && playingVideo === null) {
+                            if (video && video.paused && playingVideo === null && !showReels) { // Added !showReels check
                                 video.play().catch(console.error);
                             }
                         }
                     } else {
                         // Pause all videos when post goes out of view
-                        Object.values(videoRefs.current).forEach(video => {
-                            if (video && !video.paused) {
-                                video.pause();
-                            }
-                        });
-                        setPlayingVideo(null);
+                        pauseAllVideos();
                     }
                 });
             },
@@ -789,7 +857,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                 observerRef.current.disconnect();
             }
         };
-    }, [mediaData, playingVideo]);
+    }, [mediaData, playingVideo, pauseAllVideos, showReels]);
 
     // Clean up videos when component unmounts
     useEffect(() => {
@@ -823,6 +891,13 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
             document.removeEventListener('keydown', handleKeyDown);
         };
     }, []);
+
+    // Pause all videos when Reels opens - ADDED TO FIX THE ISSUE
+    useEffect(() => {
+        if (showReels) {
+            pauseAllVideos();
+        }
+    }, [showReels, pauseAllVideos]);
 
     useEffect(() => {
         setCommentsCount(post?.comments_count || 0)
@@ -1113,6 +1188,15 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
 
     return (
         <>
+            {/* Reels Component - ADDED FOR REELS FUNCTIONALITY */}
+            {showReels && (
+                <Reels 
+                    onClose={handleCloseReels}
+                    initialData={reelsData}
+                    initialIndex={initialReelIndex}
+                />
+            )}
+            
             <div 
                 ref={postCardRef}
                 className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100 relative transition-all duration-300 overflow-hidden'
@@ -1222,8 +1306,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                 {/* Media - Auto Play/Pause */}
                 {mediaData.length > 0 && (
                     <div 
-                        className={`grid gap-2 cursor-pointer ${getGridClass()} overflow-hidden rounded-lg`}
-                        onClick={() => setShowPostModal(true)}
+                        className={`grid gap-2 ${getGridClass()} overflow-hidden rounded-lg`}
                         onContextMenu={(e) => e.preventDefault()}
                     >
                         {mediaData.slice(0, 4).map((media, index) => (
@@ -1234,8 +1317,9 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                                 {media.type === 'image' ? (
                                     <img
                                         src={media.url}
-                                        className='w-full h-full object-cover transition-transform duration-300 hover:scale-105'
+                                        className='w-full h-full object-cover transition-transform duration-300 hover:scale-105 cursor-pointer'
                                         alt={`Post image ${index + 1}`}
+                                        onClick={() => setShowPostModal(true)}
                                         style={protectiveStyles}
                                         onContextMenu={(e) => e.preventDefault()}
                                         draggable={false}
@@ -1246,11 +1330,15 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                                             ref={el => {
                                                 videoRefs.current[index] = el;
                                             }}
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-full object-cover cursor-pointer"
                                             style={protectiveStyles}
                                             onContextMenu={(e) => e.preventDefault()}
                                             onPlay={() => handleVideoPlay(index)}
                                             onPause={() => handleVideoPause(index)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenReels(index);
+                                            }}
                                             playsInline
                                             preload="metadata"
                                             muted={mutedVideos[index] || false}
@@ -1259,11 +1347,14 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                                             Your browser does not support the video tag.
                                         </video>
                                         
-                                        {/* Play/Pause Overlay */}
+                                        {/* Play Overlay - Only show if video is paused */}
                                         {playingVideo !== index && (
                                             <div 
                                                 className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity duration-300 cursor-pointer"
-                                                onClick={(e) => handleVideoClick(index, e)}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenReels(index);
+                                                }}
                                             >
                                                 <div className="bg-black/60 rounded-full p-3 sm:p-4 hover:bg-black/80 transition">
                                                     <Play className="w-6 h-6 sm:w-8 sm:h-8 text-white fill-white" />
@@ -1292,7 +1383,8 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                             </div>
                         ))}
                         {mediaData.length > 4 && (
-                            <div className='w-full h-40 sm:h-48 bg-gray-200 rounded-lg flex items-center justify-center text-lg font-bold text-gray-600'>
+                            <div className='w-full h-40 sm:h-48 bg-gray-200 rounded-lg flex items-center justify-center text-lg font-bold text-gray-600 cursor-pointer'
+                                 onClick={() => setShowPostModal(true)}>
                                 +{mediaData.length - 4} more
                             </div>
                         )}
@@ -1436,5 +1528,4 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
         </>
     )
 })
-
 export default PostCard;
