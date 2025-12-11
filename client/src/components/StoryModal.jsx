@@ -6,7 +6,7 @@ import api from '../api/axios'
 
 const StoryModal = ({setShowModal, fetchStories}) => {
 
-    const bgColors = ["#059669", "#10b981", "#84cc16", "#0d9488", "#65a30d", "#16a34a"]
+    const bgColors = ["#212529","#f8f9fa",  "#432818", "#2d6a4f", "#1f2d51", "#000000","#cebebe"]
 
     const [mode, setMode] = useState("text")
     const [background, setBackground] = useState(bgColors[0])

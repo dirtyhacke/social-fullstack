@@ -504,30 +504,22 @@ const Layout = () => {
     };
 
     return user ? (
-        <div className='relative w-full min-h-screen flex bg-slate-50'>
+        <div className='relative w-full min-h-screen flex bg-gray-50'>
             <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}/>
             
             {/* Main Content Area */}
-            <div className='flex-1 transition-all duration-300 sm:ml-64 xl:ml-72 pb-20 sm:pb-0 min-h-screen'>
-                <div className='w-full h-full'>
+            <div className='flex-1 transition-all duration-300 sm:ml-64 xl:ml-72 min-h-screen'>
+                {/* Content Container - Removed pt-16 for mobile since no header exists */}
+                <div className='sm:pt-8 px-4 sm:px-6 lg:px-8 pb-6 w-full h-full'>
                     <Outlet />
                 </div>
             </div>
             
             {/* Mobile Overlay */}
             {sidebarOpen && (
-                <div className={`fixed inset-0 bg-black/50 ${zIndexTop} sm:hidden`}
+                <div className={`fixed inset-0 bg-black/40 ${zIndexTop} sm:hidden backdrop-blur-sm transition-opacity`}
                     onClick={() => setSidebarOpen(false)}
                 />
-            )}
-            
-            {/* Mobile Close Button */}
-            {sidebarOpen && (
-                <button className={`fixed top-4 right-4 p-2 ${zIndexTop} bg-white rounded-full shadow-lg w-10 h-10 text-gray-600 sm:hidden cursor-pointer flex items-center justify-center`}
-                    onClick={handleToggle}
-                >
-                    <X className='w-6 h-6' />
-                </button>
             )}
         </div>
     ) : (

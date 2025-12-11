@@ -16,7 +16,7 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
             <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 transform transition-all">
                 <div className="flex items-center gap-3 mb-4">
                     <div className={`p-2 rounded-full ${type === 'delete' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
@@ -330,7 +330,7 @@ const PostModal = React.memo(({
         <>
             <div 
                 ref={modalRef}
-                className='fixed inset-0 bg-black bg-opacity-90 backdrop-blur-md flex items-center justify-center z-50 p-4'
+                className='fixed inset-0 bg-black bg-opacity-90 backdrop-blur-md flex items-center justify-center z-[9998] p-4'
                 onClick={onClose}
                 onContextMenu={(e) => e.preventDefault()}
                 style={{ WebkitUserSelect: 'none' }}
@@ -342,7 +342,7 @@ const PostModal = React.memo(({
                     
                     {/* Post Content & Media */}
                     <div className='w-full lg:w-3/5 flex flex-col overflow-hidden border-b lg:border-r lg:border-b-0 border-gray-100'> 
-                        <div className='sticky top -0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0'>
+                        <div className='sticky top-0 bg-white z-20 p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0'>
                             <div 
                                 className='flex items-center gap-3 cursor-pointer' 
                                 onClick={() => {
@@ -373,7 +373,10 @@ const PostModal = React.memo(({
                                 {isPostOwner && (
                                     <button
                                         className='p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition'
-                                        onClick={(e) => { e.stopPropagation(); setShowPostOptionsMenu(!showPostOptionsMenu); }}
+                                        onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            setShowPostOptionsMenu(!showPostOptionsMenu); 
+                                        }}
                                         title="More Post Options"
                                     >
                                         <MoreVertical className='w-5 h-5' />
@@ -382,10 +385,22 @@ const PostModal = React.memo(({
 
                                 {isPostOwner && showPostOptionsMenu && (
                                     <div className='absolute right-0 top-8 bg-white shadow-xl rounded-lg border border-gray-100 z-30 min-w-36 divide-y divide-gray-100'>
-                                        <button onClick={handleEditAction} className='flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 rounded-t-lg transition'>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleEditAction();
+                                            }} 
+                                            className='flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 rounded-t-lg transition'
+                                        >
                                             <Edit className='w-4 h-4' /> Edit Post
                                         </button>
-                                        <button onClick={handleDeleteAction} className='flex items-center gap-2 w-full px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-b-lg transition'>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteAction();
+                                            }} 
+                                            className='flex items-center gap-2 w-full px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-b-lg transition'
+                                        >
                                             <Trash2 className='w-4 h-4' /> Delete Post
                                         </button>
                                     </div>
@@ -1128,7 +1143,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
     }
 
     // Delete Post Functionality
-    const handleDeletePost = async () => {
+    const handleDeletePost = () => {
         setShowPostMenu(false);
         setShowDeleteConfirm(true);
     }
@@ -1199,7 +1214,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
             
             <div 
                 ref={postCardRef}
-                className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100 relative transition-all duration-300 overflow-hidden'
+                className='bg-white rounded-xl shadow-lg p-5 space-y-4 w-full max-w-2xl border border-gray-100 relative transition-all duration-300 overflow-visible'
                 onContextMenu={(e) => e.preventDefault()}
                 style={{ WebkitUserSelect: 'none' }}>
 
@@ -1229,15 +1244,15 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                     type="delete"
                 />
 
-                {/* User Info Header */}
-                <div className='flex items-center justify-between'>
+                {/* User Info Header - FIXED: Changed from justify-between to items-start with flex-col */}
+                <div className='flex items-start justify-between'>
                     <div 
                         onClick={() => {
                             if (post?.user?._id) {
                                 navigate('/profile/' + post.user._id);
                             }
                         }} 
-                        className='inline-flex items-center gap-3 cursor-pointer'
+                        className='inline-flex items-center gap-3 cursor-pointer flex-1'
                         onContextMenu={(e) => e.preventDefault()}
                     >
                         <img
@@ -1261,27 +1276,39 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                         </div>
                     </div>
 
-                    {/* Post Menu */}
+                    {/* Post Menu - FIXED: Added position relative and ensured it's visible */}
                     {isPostOwner && (
-                        <div className='relative'>
+                        <div className='relative ml-4'>
                             <button
-                                className='post-menu-button p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition'
-                                onClick={() => setShowPostMenu(!showPostMenu)}
+                                className='post-menu-button p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition z-10'
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowPostMenu(!showPostMenu);
+                                }}
                                 title="More options"
                             >
                                 <MoreVertical className='w-5 h-5' />
                             </button>
 
                             {showPostMenu && (
-                                <div className='post-menu-dropdown absolute right-0 top-8 bg-white shadow-xl rounded-lg border border-gray-100 z-10 min-w-36 divide-y divide-gray-100'>
+                                <div 
+                                    className='post-menu-dropdown absolute right-0 top-8 bg-white shadow-xl rounded-lg border border-gray-100 z-[9999] min-w-36 divide-y divide-gray-100'
+                                    style={{ zIndex: 9999 }}
+                                >
                                     <button
-                                        onClick={handleEditPost}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleEditPost();
+                                        }}
                                         className='flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 rounded-t-lg transition'
                                     >
                                         <Edit className='w-4 h-4' /> Edit Post
                                     </button>
                                     <button
-                                        onClick={handleDeletePost}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeletePost();
+                                        }}
                                         className='flex items-center gap-2 w-full px-4 py-2 text-sm text-red-500 hover:bg-red-50 rounded-b-lg transition'
                                     >
                                         <Trash2 className='w-4 h-4' /> Delete Post
@@ -1528,4 +1555,5 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
         </>
     )
 })
+
 export default PostCard;

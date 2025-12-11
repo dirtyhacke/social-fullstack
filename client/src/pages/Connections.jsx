@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, UserCheck, UserRoundPen, MessageSquare, CornerUpRight, AlertCircle, Clock, UserMinus } from 'lucide-react';
+import { Users, UserPlus, UserCheck, UserRoundPen, MessageSquare, AlertCircle, Clock, UserMinus, Search, Filter, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { useAuth } from '@clerk/clerk-react';
@@ -11,6 +11,7 @@ const Connections = () => {
   const [currentTab, setCurrentTab] = useState('Followers');
   const [followRequests, setFollowRequests] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
   const { getToken } = useAuth();
   const dispatch = useDispatch();
@@ -19,11 +20,11 @@ const Connections = () => {
   const { connections, pendingConnections, followers, following } = useSelector((state) => state.connections);
 
   const dataArray = [
-    { label: 'Followers', value: followers, icon: Users, color: 'text-indigo-600', hoverBg: 'hover:bg-indigo-50' },
-    { label: 'Following', value: following, icon: UserCheck, color: 'text-green-600', hoverBg: 'hover:bg-green-50' },
-    { label: 'Pending', value: pendingConnections, icon: UserRoundPen, color: 'text-yellow-600', hoverBg: 'hover:bg-yellow-50' },
-    { label: 'Connections', value: connections, icon: UserPlus, color: 'text-purple-600', hoverBg: 'hover:bg-purple-50' },
-    { label: 'Follow Requests', value: followRequests, icon: Clock, color: 'text-orange-600', hoverBg: 'hover:bg-orange-50' },
+    { label: 'Followers', value: followers, icon: Users, color: 'text-blue-600', bgColor: 'bg-blue-50' },
+    { label: 'Following', value: following, icon: UserCheck, color: 'text-green-600', bgColor: 'bg-green-50' },
+    { label: 'Pending', value: pendingConnections, icon: UserRoundPen, color: 'text-amber-600', bgColor: 'bg-amber-50' },
+    { label: 'Connections', value: connections, icon: UserPlus, color: 'text-purple-600', bgColor: 'bg-purple-50' },
+    { label: 'Requests', value: followRequests, icon: Clock, color: 'text-orange-600', bgColor: 'bg-orange-50' },
   ];
 
   // Fetch follow requests
@@ -130,16 +131,30 @@ const Connections = () => {
   // --- Utility Functions ---
 
   const currentListData = dataArray.find((item) => item.label === currentTab)?.value || [];
-  const currentTabColor = dataArray.find((item) => item.label === currentTab)?.color || 'text-slate-900';
+  const currentTabColor = dataArray.find((item) => item.label === currentTab)?.color || 'text-gray-800';
+
+  // Filter current list data based on search query
+  const filteredData = currentListData.filter(item => {
+    if (!searchQuery.trim()) return true;
+    
+    const searchTerm = searchQuery.toLowerCase();
+    const fullName = item.full_name || item.fromUserId?.full_name || '';
+    const username = item.username || item.fromUserId?.username || '';
+    const bio = item.bio || item.fromUserId?.bio || '';
+    
+    return fullName.toLowerCase().includes(searchTerm) || 
+           username.toLowerCase().includes(searchTerm) ||
+           bio.toLowerCase().includes(searchTerm);
+  });
 
   const getEmptyMessage = (tab) => {
     switch (tab) {
-      case 'Followers': return "You don't have any followers yet.";
-      case 'Following': return "You are not following anyone.";
-      case 'Pending': return "No pending connection requests.";
-      case 'Connections': return "No established connections yet.";
-      case 'Follow Requests': return "No pending follow requests.";
-      default: return "No data available.";
+      case 'Followers': return "You don't have any followers yet";
+      case 'Following': return "You are not following anyone";
+      case 'Pending': return "No pending connection requests";
+      case 'Connections': return "No established connections yet";
+      case 'Requests': return "No pending follow requests";
+      default: return "No data available";
     }
   };
 
@@ -148,180 +163,224 @@ const Connections = () => {
     const date = new Date(dateString);
     const now = new Date();
     const diffTime = Math.abs(now - date);
+    const diffMinutes = Math.ceil(diffTime / (1000 * 60));
+    const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString();
   };
 
-  // --- Component Render ---
+  // Get total connections count
+  const getTotalConnections = () => {
+    return followers.length + following.length + pendingConnections.length + connections.length + followRequests.length;
+  };
 
   return (
-    <div className='min-h-screen bg-gray-50'>
-      <div className='max-w-6xl mx-auto p-4 sm:p-6 lg:p-8'>
-        
-        {/* Header and Title */}
-        <div className='mb-10'>
-          <h1 className='text-4xl font-extrabold text-slate-900 mb-2'>Your Network</h1>
-          <p className='text-slate-600'>Manage your connections, followers, and pending requests efficiently.</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Fixed Header */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 px-6 py-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Users className="w-6 h-6 text-blue-600" />
+            <h1 className="text-xl font-bold text-gray-900">Connections</h1>
+            <span className="text-sm text-gray-500 font-medium">
+              {getTotalConnections()} total
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="pt-20 max-w-6xl mx-auto px-6 pb-8">
+        {/* Search Bar */}
+        <div className="mb-8">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Search connections..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+            <button className="absolute right-4 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded-lg transition-colors">
+              <Filter className="w-4 h-4 text-gray-500" />
+            </button>
+          </div>
         </div>
 
-        {/* Counts - Grid Layout */}
-        <div className='mb-10 grid grid-cols-2 md:grid-cols-5 gap-4 sm:gap-6'>
+        {/* Stats Grid */}
+        <div className="mb-8 grid grid-cols-2 md:grid-cols-5 gap-4">
           {dataArray.map((item, index) => (
             <div 
               key={index} 
-              className={`flex items-center justify-between p-5 bg-white border border-gray-200 rounded-xl shadow-lg transition-all duration-300 ${item.hoverBg}`}
+              className={`p-4 bg-white border border-gray-200 rounded-xl cursor-pointer transition-all duration-200 hover:shadow-md ${
+                currentTab === item.label ? 'ring-2 ring-blue-500 ring-opacity-50' : ''
+              }`}
+              onClick={() => setCurrentTab(item.label)}
             >
-              <div className='space-y-1'>
-                <p className='text-lg text-slate-600'>{item.label}</p>
-                <b className={`text-4xl font-extrabold ${item.color}`}>{item.value.length}</b>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-lg font-bold ${item.color}`}>{item.value.length}</span>
+                <div className={`p-2 rounded-lg ${item.bgColor}`}>
+                  <item.icon className={`w-4 h-4 ${item.color}`} />
+                </div>
               </div>
-              <item.icon className={`w-8 h-8 ${item.color} opacity-70`} />
+              <p className="text-sm text-gray-600">{item.label}</p>
             </div>
           ))}
         </div>
 
-        {/* Tabs */}
-        <div className='mb-8 border-b border-gray-200'>
-          <div className='flex flex-wrap gap-2 sm:gap-4'>
-            {dataArray.map((tab) => (
-              <button 
-                onClick={() => setCurrentTab(tab.label)} 
-                key={tab.label} 
-                className={`
-                  cursor-pointer flex items-center px-4 py-2 text-base font-semibold transition-all duration-200
-                  rounded-t-lg
-                  ${currentTab === tab.label 
-                    ? `border-b-4 ${currentTabColor} border-current text-slate-900` 
-                    : 'text-gray-500 hover:text-slate-800'
-                  }
-                `}
-              >
-                <tab.icon className='w-5 h-5 mr-2' />
-                <span>{tab.label}</span>
-                <span className={`ml-2 text-xs font-bold ${currentTab === tab.label ? 'bg-gray-200 text-slate-800' : 'bg-gray-100 text-gray-500'} px-2 py-0.5 rounded-full`}>
-                    {tab.value.length}
+        {/* Tab Content */}
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+          {/* Tab Header */}
+          <div className="border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <span className={currentTabColor}>{currentTab}</span>
+                <span className="text-sm text-gray-500 font-normal">
+                  ({filteredData.length} {filteredData.length === 1 ? 'person' : 'people'})
                 </span>
-              </button>
-            ))}
+              </h2>
+              {searchQuery && (
+                <button 
+                  onClick={() => setSearchQuery('')}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  Clear search
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Connections List */}
-        <div className='mt-8'>
-          <h2 className={`text-2xl font-bold mb-6 flex items-center gap-2 ${currentTabColor}`}>
-             <CornerUpRight className='w-6 h-6 rotate-90'/> 
-             {currentTab} List
-          </h2>
+          {/* Content */}
+          <div className="p-6">
+            {loading ? (
+              <div className="flex justify-center items-center py-16">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : filteredData.length === 0 ? (
+              <div className="py-16 text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-8 h-8 text-gray-400" />
+                </div>
+                <p className="text-gray-600 font-medium mb-2">
+                  {getEmptyMessage(currentTab)}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {searchQuery ? 'Try a different search term' : 'Check back later'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredData.map((item) => (
+                  <div key={item._id || item.fromUserId?._id} className="flex items-center p-4 hover:bg-gray-50 rounded-xl transition-colors duration-200 group">
+                    {/* Avatar */}
+                    <div className="relative flex-shrink-0">
+                      <img 
+                        src={item.profile_picture || item.fromUserId?.profile_picture || '/default-avatar.png'} 
+                        alt={item.full_name || item.fromUserId?.full_name} 
+                        className="w-14 h-14 rounded-xl object-cover border border-gray-200"
+                      />
+                      {currentTab === 'Requests' && (
+                        <div className="absolute -top-2 -right-2 bg-orange-500 text-white text-xs px-2 py-1 rounded-full">
+                          New
+                        </div>
+                      )}
+                    </div>
 
-          {loading ? (
-            <div className='flex justify-center items-center p-8'>
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-            </div>
-          ) : currentListData.length === 0 ? (
-            <div className='p-8 bg-white border border-gray-200 rounded-xl shadow-inner text-center'>
-                <AlertCircle className='w-8 h-8 text-gray-400 mx-auto mb-3'/>
-                <p className='text-lg font-medium text-gray-700'>{getEmptyMessage(currentTab)}</p>
-                <p className='text-sm text-gray-500 mt-1'>Check the other tabs or explore the platform to find people.</p>
-            </div>
-          ) : (
-            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'>
-              {currentListData.map((item) => (
-                <div key={item._id || item.fromUserId?._id} className='flex flex-col p-6 bg-white border border-gray-100 rounded-xl shadow-lg transition-all duration-300 hover:shadow-xl hover:border-indigo-100'>
-                  
-                  {/* User Info Header */}
-                  <div className='flex items-center gap-4 mb-4'>
-                    <img 
-                      src={item.profile_picture || item.fromUserId?.profile_picture || 'default-avatar.png'} 
-                      alt={item.full_name || item.fromUserId?.full_name} 
-                      className="rounded-full w-14 h-14 object-cover shadow-md flex-shrink-0"
-                    />
-                    <div className='truncate'>
-                      <p className="text-lg font-bold text-slate-800 truncate">
-                        {item.full_name || item.fromUserId?.full_name}
-                      </p>
-                      <p className="text-sm text-indigo-600">
-                        @{item.username || item.fromUserId?.username}
-                      </p>
-                      {/* Request date for follow requests */}
-                      {currentTab === 'Follow Requests' && item.createdAt && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Requested {formatRequestDate(item.createdAt)}
+                    {/* User Info */}
+                    <div className="flex-1 ml-4 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-semibold text-gray-900 truncate">
+                            {item.full_name || item.fromUserId?.full_name}
+                          </h3>
+                          <p className="text-sm text-gray-500 truncate">
+                            @{item.username || item.fromUserId?.username}
+                          </p>
+                        </div>
+                        {/* Request date for follow requests */}
+                        {currentTab === 'Requests' && item.createdAt && (
+                          <span className="text-xs text-gray-400">
+                            {formatRequestDate(item.createdAt)}
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Bio */}
+                      {(item.bio || item.fromUserId?.bio) && (
+                        <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                          {item.bio || item.fromUserId?.bio}
                         </p>
                       )}
                     </div>
-                  </div>
 
-                  {/* Bio */}
-                  <p className="text-sm text-gray-600 mb-4 flex-1">
-                    {item.bio || item.fromUserId?.bio 
-                      ? `${(item.bio || item.fromUserId?.bio).slice(0, 70)}${(item.bio || item.fromUserId?.bio).length > 70 ? '...' : ''}` 
-                      : 'No bio provided.'
-                    }
-                  </p>
-                  
-                  {/* Actions */}
-                  <div className='flex flex-col sm:flex-row gap-3 mt-4 border-t pt-4'>
-                    <button 
-                      onClick={() => navigate(`/profile/${item._id || item.fromUserId?._id}`)} 
-                      className='w-full p-2 text-sm rounded-lg bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 transition text-white font-medium shadow-md'
-                    >
-                      View Profile
-                    </button>
-                    
-                    {currentTab === 'Following' && (
-                      <button 
-                        onClick={() => handleUnfollow(item._id)} 
-                        className='w-full p-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 active:bg-red-100 transition flex items-center justify-center gap-1'
+                    {/* Actions */}
+                    <div className="ml-4 flex items-center gap-3">
+                      <button
+                        onClick={() => navigate(`/profile/${item._id || item.fromUserId?._id}`)}
+                        className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
                       >
-                        <UserMinus className='w-4 h-4' />
-                        Unfollow
+                        View
                       </button>
-                    )}
-                    
-                    {currentTab === 'Pending' && (
-                      <button 
-                        onClick={() => acceptConnection(item._id)} 
-                        className='w-full p-2 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600 active:bg-green-700 transition font-medium'
-                      >
-                        Accept Request
-                      </button>
-                    )}
-                    
-                    {currentTab === 'Connections' && (
-                      <button 
-                        onClick={() => navigate(`/messages/${item._id}`)} 
-                        className='w-full p-2 text-sm rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 active:bg-slate-300 transition flex items-center justify-center gap-1 font-medium'
-                      >
-                        <MessageSquare className='w-4 h-4'/>
-                        Message
-                      </button>
-                    )}
-                    
-                    {currentTab === 'Follow Requests' && (
-                      <div className='flex gap-2 w-full'>
-                        <button 
-                          onClick={() => acceptFollowRequest(item._id)} 
-                          className='flex-1 p-2 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600 active:bg-green-700 transition font-medium'
+                      
+                      {currentTab === 'Following' && (
+                        <button
+                          onClick={() => handleUnfollow(item._id)}
+                          className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                        >
+                          <UserMinus className="w-4 h-4 inline mr-1" />
+                          Unfollow
+                        </button>
+                      )}
+                      
+                      {currentTab === 'Pending' && (
+                        <button
+                          onClick={() => acceptConnection(item._id)}
+                          className="px-4 py-2 text-sm font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
                         >
                           Accept
                         </button>
-                        <button 
-                          onClick={() => rejectFollowRequest(item._id)} 
-                          className='flex-1 p-2 text-sm rounded-lg border border-red-300 text-red-600 hover:bg-red-50 active:bg-red-100 transition'
+                      )}
+                      
+                      {currentTab === 'Connections' && (
+                        <button
+                          onClick={() => navigate(`/messages/${item._id}`)}
+                          className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Message"
                         >
-                          Reject
+                          <MessageSquare className="w-5 h-5" />
                         </button>
-                      </div>
-                    )}
+                      )}
+                      
+                      {currentTab === 'Requests' && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => acceptFollowRequest(item._id)}
+                            className="px-3 py-1.5 text-sm font-medium text-white bg-green-500 hover:bg-green-600 rounded-lg transition-colors"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => rejectFollowRequest(item._id)}
+                            className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                      
+                      <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors" />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

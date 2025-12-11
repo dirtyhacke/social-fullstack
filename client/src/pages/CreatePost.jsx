@@ -1,4 +1,7 @@
+// CreatePost.jsx
 import React, { useState, useRef, useEffect } from 'react';
+import * as nsfwjs from 'nsfwjs';
+import * as tf from '@tensorflow/tfjs';
 import { 
   Image as ImageIcon, 
   Video, 
@@ -26,13 +29,11 @@ async function getCroppedImg(image, crop, fileName) {
     const canvas = document.createElement('canvas');
     const scaleX = image.naturalWidth / image.width;
     const scaleY = image.naturalHeight / image.height;
-    canvas.width = crop.width;
-    canvas.height = crop.height;
-    const ctx = canvas.getContext('2d');
 
-    const pixelRatio = window.devicePixelRatio;
+    const pixelRatio = window.devicePixelRatio || 1;
     canvas.width = crop.width * pixelRatio;
     canvas.height = crop.height * pixelRatio;
+    const ctx = canvas.getContext('2d');
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.imageSmoothingQuality = 'high';
 
@@ -61,10 +62,52 @@ async function getCroppedImg(image, crop, fileName) {
     });
 }
 
+// --- HELPER: COMPRESS / APPLY FILTERS FOR IMAGE FILE ---
+async function processImageFileWithFilters(file, { maxDim = 1280, quality = 0.8, filters = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      // compute new size maintaining aspect ratio
+      let { width, height } = img;
+      const max = Math.max(width, height);
+      if (max > maxDim) {
+        const ratio = maxDim / max;
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      // Compose CSS filter string
+      const filterParts = [];
+      if (typeof filters.brightness !== 'undefined') filterParts.push(`brightness(${filters.brightness})`);
+      if (typeof filters.contrast !== 'undefined') filterParts.push(`contrast(${filters.contrast})`);
+      if (typeof filters.saturate !== 'undefined') filterParts.push(`saturate(${filters.saturate})`);
+      ctx.filter = filterParts.join(' ') || 'none';
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error('Canvas returned empty blob'));
+          return;
+        }
+        const newFile = new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() });
+        resolve(newFile);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = (err) => reject(err);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 const CreatePost = () => {
   const navigate = useNavigate();
   const [content, setContent] = useState('');
-  const [media, setMedia] = useState([]);
+  const [media, setMedia] = useState([]); // array of File objects
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [preparingFiles, setPreparingFiles] = useState(false);
@@ -81,6 +124,32 @@ const CreatePost = () => {
   const [editingIndex, setEditingIndex] = useState(null);
   const imgRef = useRef(null);
 
+  // --- NEW: Replace input ref and replace index ---
+  const replaceInputRef = useRef(null);
+  const [replaceIndex, setReplaceIndex] = useState(null);
+
+  // --- NEW: Filters state per media index (images only) ---
+  const [filtersMap, setFiltersMap] = useState({}); // { index: {brightness, contrast, saturate} }
+
+  // --- NEW: preview loaded state for skeletons ---
+  const [previewLoaded, setPreviewLoaded] = useState([]); // boolean per media index
+
+  // --- NEW: NSFW blur flags per index ---
+  const [blurMap, setBlurMap] = useState({}); // { index: boolean }
+
+  // --- NEW: drag & drop reorder indexes ---
+  const dragStartIndex = useRef(null);
+
+  // --- NEW: video trimming settings per file name ---
+  const [trimMap, setTrimMap] = useState({}); // { fileName: { start, end } }
+
+  // --- NEW: retry state ---
+  const [lastFailedPayload, setLastFailedPayload] = useState(null); // store form data metadata for retry
+
+  // --- NSFW model state ---
+  const [nsfwModel, setNsfwModel] = useState(null);
+  const [nsfwLoading, setNsfwLoading] = useState(true);
+
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const dropZoneRef = useRef(null);
@@ -96,12 +165,32 @@ const CreatePost = () => {
     }
   }, [content]);
 
+  // Load NSFW model once
+  useEffect(() => {
+    let cancelled = false;
+    const loadModel = async () => {
+      try {
+        setNsfwLoading(true);
+        // nsfwjs.load() will download the model — ensure network allowed
+        const model = await nsfwjs.load(); // default loads model from CDN
+        if (!cancelled) {
+          setNsfwModel(model);
+        }
+      } catch (err) {
+        console.error('Failed to load NSFW model', err);
+        toast.error('NSFW filter failed to load — uploads will not be scanned.');
+      } finally {
+        if (!cancelled) setNsfwLoading(false);
+      }
+    };
+    loadModel();
+    return () => { cancelled = true; };
+  }, []);
+
   const handleContentChange = (e) => {
     setContent(e.target.value);
   };
 
-  // --- REMOVED: Client-side video compression (Backend handles it now) ---
-  
   // --- Get video duration for display ---
   const getVideoDuration = (file) => {
     return new Promise((resolve) => {
@@ -121,7 +210,41 @@ const CreatePost = () => {
     });
   };
 
-  // --- UPDATED: File processing WITHOUT client-side compression ---
+  // --- NSFW check for images ---
+  const isImageNSFW = async (file) => {
+    if (!nsfwModel) {
+      // if model not loaded, be permissive but warn
+      console.warn('NSFW model not ready, skipping check');
+      return false;
+    }
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = async () => {
+        try {
+          const predictions = await nsfwModel.classify(img);
+          // predictions: [{className, probability}, ...]
+          const nsfwProb = predictions.reduce((acc, p) => {
+            if (p.className === 'Porn' || p.className === 'Hentai' || p.className === 'Sexy') {
+              return acc + p.probability;
+            }
+            return acc;
+          }, 0);
+          // If combined NSFW categories exceed threshold (0.7), treat as NSFW
+          resolve(nsfwProb >= 0.7);
+        } catch (err) {
+          console.error('NSFW classify error', err);
+          resolve(false);
+        }
+      };
+      img.onerror = () => {
+        resolve(false);
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  // --- UPDATED: File processing (with NSFW scanning) ---
   const processFiles = async (files) => {
     if (media.length + files.length > 4) {
       toast.error('Maximum 4 media files allowed per post.');
@@ -139,6 +262,24 @@ const CreatePost = () => {
               return null;
             }
             
+            // For images: run NSFW check (if model loaded)
+            if (file.type.startsWith('image/')) {
+              try {
+                if (!nsfwLoading && nsfwModel) {
+                  const nsfw = await isImageNSFW(file);
+                  if (nsfw) {
+                    toast.error(`Upload blocked: "${file.name}" appears to contain nudity or explicit content.`);
+                    return null;
+                  }
+                }
+              } catch (err) {
+                console.error('NSFW check error', err);
+                // fallback: allow upload but warn
+              }
+              // set default filter/blur
+              return file;
+            }
+
             // For videos, just check duration and show info
             if (file.type.startsWith('video/')) {
               try {
@@ -157,8 +298,9 @@ const CreatePost = () => {
                   }
                 }));
                 
-                // REMOVED: Client-side compression
-                // Backend will handle compression with Cloudinary
+                // Provide default trimming (full length)
+                setTrimMap(prev => ({ ...prev, [file.name]: { start: 0, end: Math.round(duration) } }));
+                
                 return file;
                 
               } catch (error) {
@@ -167,7 +309,6 @@ const CreatePost = () => {
                 return null;
               }
             }
-            return file;
           } else {
             toast.error(`File "${file.name}" is not a supported image or video.`);
             return null;
@@ -176,7 +317,18 @@ const CreatePost = () => {
       );
       
       const validFiles = processedFiles.filter(file => file !== null);
-      setMedia(prev => [...prev, ...validFiles]);
+      setMedia(prev => {
+        // append files
+        const next = [...prev, ...validFiles];
+        // ensure previewLoaded and filtersMap arrays grow
+        setPreviewLoaded(pl => [...pl, ...validFiles.map(() => false)]);
+        validFiles.forEach((f, idx) => {
+          const index = prev.length + idx;
+          setFiltersMap(m => ({ ...m, [index]: { brightness: 1, contrast: 1, saturate: 1 } }));
+          setBlurMap(b => ({ ...b, [index]: false }));
+        });
+        return next;
+      });
       
       // Show success message
       if (validFiles.length > 0) {
@@ -203,6 +355,53 @@ const CreatePost = () => {
   const handleMediaSelect = (e) => {
     const files = Array.from(e.target.files);
     processFiles(files);
+  };
+
+  const handleReplaceSelect = async (e) => {
+    const filesArr = Array.from(e.target.files);
+    if (!filesArr.length || replaceIndex === null) return;
+    const file = filesArr[0];
+
+    // NSFW check if image
+    if (file.type.startsWith('image/') && nsfwModel && !nsfwLoading) {
+      try {
+        const nsfw = await isImageNSFW(file);
+        if (nsfw) {
+          toast.error(`Upload blocked: "${file.name}" appears to contain nudity or explicit content.`);
+          if (replaceInputRef.current) replaceInputRef.current.value = '';
+          setReplaceIndex(null);
+          return;
+        }
+      } catch (err) {
+        console.error('NSFW error on replace', err);
+      }
+    }
+
+    // Replace file at replaceIndex
+    setMedia(prev => {
+      const copy = [...prev];
+      copy[replaceIndex] = file;
+      // reset previewLoaded for that index
+      setPreviewLoaded(pl => {
+        const p = [...pl];
+        p[replaceIndex] = false;
+        return p;
+      });
+      // reset filters/blur for replaced item
+      setFiltersMap(m => ({ ...m, [replaceIndex]: { brightness: 1, contrast: 1, saturate: 1 } }));
+      setBlurMap(b => ({ ...b, [replaceIndex]: false }));
+      if (file.type.startsWith('video/')) {
+        getVideoDuration(file).then(d => {
+          setVideoUploadStatus(prev => ({ ...prev, [file.name]: { duration: Math.round(d), status: 'ready' } }));
+          setTrimMap(prev => ({ ...prev, [file.name]: { start: 0, end: Math.round(d) } }));
+        });
+      }
+      return copy;
+    });
+
+    // clear
+    setReplaceIndex(null);
+    if (replaceInputRef.current) replaceInputRef.current.value = '';
   };
 
   const handleDragEnter = (e) => { 
@@ -240,9 +439,30 @@ const CreatePost = () => {
         delete newStatus[fileToRemove.name];
         return newStatus;
       });
+      setTrimMap(prev => {
+        const copy = { ...prev };
+        delete copy[fileToRemove.name];
+        return copy;
+      });
     }
     
     setMedia(media.filter((_, i) => i !== index));
+    setPreviewLoaded(pl => pl.filter((_, i) => i !== index));
+    setFiltersMap(m => {
+      // rebuild a compacted filters map to keep indexes aligned
+      const newMap = {};
+      media.filter((_, i) => i !== index).forEach((_, idx) => {
+        newMap[idx] = m[i] || { brightness: 1, contrast: 1, saturate: 1 };
+      });
+      return newMap;
+    });
+    setBlurMap(b => {
+      const newMap = {};
+      media.filter((_, i) => i !== index).forEach((_, idx) => {
+        newMap[idx] = b[i] || false;
+      });
+      return newMap;
+    });
   };
 
   // --- CROP HANDLERS ---
@@ -287,6 +507,13 @@ const CreatePost = () => {
             newMediaArray[editingIndex] = croppedFile;
             setMedia(newMediaArray);
 
+            // reset previewLoaded for this index
+            setPreviewLoaded(pl => {
+              const copy = [...pl];
+              copy[editingIndex] = false;
+              return copy;
+            });
+
             handleCloseCropModal();
             toast.success('Image cropped successfully');
         } catch (e) {
@@ -302,7 +529,152 @@ const CreatePost = () => {
     setEditingIndex(null);
   };
 
-  // --- UTILS ---
+  // --- REORDER HANDLERS (native HTML5 DnD) ---
+  const onDragStartThumb = (e, index) => {
+    dragStartIndex.current = index;
+    try {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(index));
+    } catch (err) {
+      // some browsers require try/catch for setData
+    }
+  };
+
+  const onDragOverThumb = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const onDropThumb = (e, index) => {
+    e.preventDefault();
+    const fromIndex = dragStartIndex.current !== null ? dragStartIndex.current : parseInt(e.dataTransfer.getData('text/plain'), 10);
+    const toIndex = index;
+    if (fromIndex === toIndex) return;
+
+    setMedia(prev => {
+      const copy = [...prev];
+      const [moved] = copy.splice(fromIndex, 1);
+      copy.splice(toIndex, 0, moved);
+      return copy;
+    });
+
+    // reorder previewLoaded, filtersMap, blurMap accordingly
+    setPreviewLoaded(prev => {
+      const copy = [...prev];
+      const [moved] = copy.splice(fromIndex, 1);
+      copy.splice(toIndex, 0, moved);
+      return copy;
+    });
+
+    setFiltersMap(prev => {
+      const arr = Array.from({ length: Object.keys(prev).length }, (_, i) => prev[i] || { brightness: 1, contrast: 1, saturate: 1 });
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      const next = {};
+      arr.forEach((v, i) => (next[i] = v));
+      return next;
+    });
+
+    setBlurMap(prev => {
+      const arr = Array.from({ length: Object.keys(prev).length }, (_, i) => prev[i] || false);
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      const next = {};
+      arr.forEach((v, i) => (next[i] = v));
+      return next;
+    });
+
+    dragStartIndex.current = null;
+  };
+
+  // --- FILTER CONTROL HANDLERS ---
+  const updateFilterForIndex = (index, newFilters) => {
+    setFiltersMap(prev => ({ ...prev, [index]: { ...(prev[index] || { brightness: 1, contrast: 1, saturate: 1 }), ...newFilters } }));
+  };
+
+  // --- NSFW BLUR TOGGLE ---
+  const toggleBlurForIndex = (index) => {
+    setBlurMap(prev => ({ ...prev, [index]: !prev[index] }));
+  };
+
+  // --- REPLACE MEDIA ---
+  const triggerReplace = (index) => {
+    setReplaceIndex(index);
+    if (replaceInputRef.current) replaceInputRef.current.click();
+  };
+
+  // --- VIDEO TRIM HANDLERS ---
+  const updateTrimForFile = (fileName, { start, end }) => {
+    setTrimMap(prev => ({ ...prev, [fileName]: { start, end } }));
+  };
+
+  // --- PREVIEW ONLOAD HANDLER (skeleton removal) ---
+  const handlePreviewLoaded = (index) => {
+    setPreviewLoaded(prev => {
+      const copy = [...prev];
+      copy[index] = true;
+      return copy;
+    });
+  };
+
+  // --- AI CAPTION (backend) ---
+  const handleGenerateCaption = async () => {
+    if (!media.length) {
+      toast.error('Add at least one media to generate caption.');
+      return;
+    }
+    setPreparingFiles(true);
+    try {
+      const form = new FormData();
+      media.forEach((f) => form.append('media', f));
+      const token = await getToken();
+      const { data } = await api.post('/api/ai/caption', form, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (data?.caption) {
+        setContent(prev => prev ? `${prev}\n\n${data.caption}` : data.caption);
+        toast.success('Caption generated and added to your content.');
+      } else {
+        toast.error('Caption service returned no caption.');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to generate caption. Make sure /api/ai/caption exists.');
+    } finally {
+      setPreparingFiles(false);
+    }
+  };
+
+  // --- NSFW AUTO-DETECT ON DEMAND (server) ---
+  const handleAutoDetectNSFW = async (index) => {
+    const file = media[index];
+    if (!file || !file.type.startsWith('image/')) {
+      toast.error('NSFW detection works on images only.');
+      return;
+    }
+    setPreparingFiles(true);
+    try {
+      const form = new FormData();
+      form.append('media', file);
+      const token = await getToken();
+      const { data } = await api.post('/api/media/nsfw-check', form, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // expects { nsfw: true/false }
+      if (data?.nsfw) {
+        setBlurMap(prev => ({ ...prev, [index]: true }));
+        toast('Image flagged as NSFW and blurred.');
+      } else {
+        toast.success('Image appears safe.');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('NSFW detection failed. Implement /api/media/nsfw-check server endpoint.');
+    } finally {
+      setPreparingFiles(false);
+    }
+  };
+
   const getMediaType = (file) => {
     return file.type.startsWith('video/') ? 'video' : 'image';
   };
@@ -316,13 +688,39 @@ const CreatePost = () => {
   };
 
   const formatDuration = (seconds) => {
-    if (!seconds) return '';
+    if (!seconds && seconds !== 0) return '';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // --- UPDATED: Submit WITHOUT client-side compression ---
+  // --- PREPARE MEDIA BEFORE UPLOAD: apply image filters & compression ---
+  const prepareMediaForUpload = async (currentMedia) => {
+    const prepared = await Promise.all(currentMedia.map(async (file, index) => {
+      if (file.type.startsWith('image/')) {
+        const filters = filtersMap[index] || { brightness: 1, contrast: 1, saturate: 1 };
+        // normalize filter values to CSS-friendly multipliers
+        const conv = {
+          brightness: filters.brightness ?? 1,
+          contrast: filters.contrast ?? 1,
+          saturate: filters.saturate ?? 1
+        };
+        try {
+          const processed = await processImageFileWithFilters(file, { maxDim: 1280, quality: 0.8, filters: { brightness: conv.brightness, contrast: conv.contrast, saturate: conv.saturate }});
+          return processed;
+        } catch (err) {
+          console.error('Image processing failed, using original file', err);
+          return file;
+        }
+      } else {
+        // videos left as-is; trimming metadata will be sent to server.
+        return file;
+      }
+    }));
+    return prepared;
+  };
+
+  // --- SUBMIT (with retry support) ---
   const handleSubmit = async () => {
     if (!media.length && !content.trim()) {
       toast.error('Please add some content or media to your post.');
@@ -335,10 +733,22 @@ const CreatePost = () => {
     const postType = media.length && content.trim() ? 'text_with_media' : media.length ? 'media' : 'text';
 
     try {
+      setPreparingFiles(true);
+
+      // Prepare images (apply filters & compress)
+      const mediaToUpload = await prepareMediaForUpload(media);
+
       const formData = new FormData();
       formData.append('content', content);
       formData.append('post_type', postType);
-      media.forEach((file) => { formData.append('media', file); });
+      // include trim metadata & blur flags and filters map as JSON fields as well
+      formData.append('media_meta', JSON.stringify({
+        trims: trimMap,
+        filters: filtersMap,
+        blurred: blurMap
+      }));
+
+      mediaToUpload.forEach((file) => { formData.append('media', file); });
 
       const token = await getToken();
       
@@ -354,7 +764,6 @@ const CreatePost = () => {
       });
 
       if (data.success) {
-        // Show appropriate success message
         const hasVideos = media.some(f => getMediaType(f) === 'video');
         if (hasVideos) {
           toast.success('Post created! Videos are being processed...', {
@@ -370,15 +779,29 @@ const CreatePost = () => {
         setMedia([]); 
         setUploadProgress(0);
         setVideoUploadStatus({});
+        setFiltersMap({});
+        setBlurMap({});
+        setPreviewLoaded([]);
+        setTrimMap({});
+        setLastFailedPayload(null);
         
-        // Navigate back after delay
+        // Navigate back after short delay (kept same)
         setTimeout(() => navigate('/'), 1000);
       } else {
-        throw new Error(data.message);
+        throw new Error(data.message || 'Server returned failure');
       }
     } catch (error) {
       console.error('Error publishing post:', error);
-      
+
+      // Save retry payload metadata (we can save minimal meta and keep files in memory)
+      setLastFailedPayload({
+        content,
+        media,
+        filtersMap,
+        blurMap,
+        trimMap
+      });
+
       // Improved error messages
       if (error.response?.data?.message?.includes('Cloudinary')) {
         toast.error('Video upload service is temporarily unavailable. Please try again later.');
@@ -392,7 +815,24 @@ const CreatePost = () => {
     } finally {
       setLoading(false); 
       setUploadProgress(0);
+      setPreparingFiles(false);
     }
+  };
+
+  // --- RETRY UPLOAD using lastFailedPayload if available ---
+  const handleRetryUpload = async () => {
+    if (!lastFailedPayload) {
+      toast.error('Nothing to retry.');
+      return;
+    }
+    // restore content & media & maps
+    setContent(lastFailedPayload.content || '');
+    setMedia(lastFailedPayload.media || []);
+    setFiltersMap(lastFailedPayload.filtersMap || {});
+    setBlurMap(lastFailedPayload.blurMap || {});
+    setTrimMap(lastFailedPayload.trimMap || {});
+    // re-call submit (it will re-prepare & upload)
+    await handleSubmit();
   };
 
   const hasVideos = media.some(file => getMediaType(file) === 'video');
@@ -477,6 +917,16 @@ const CreatePost = () => {
                 disabled={media.length >= 4 || preparingFiles || loading} 
               />
 
+              {/* Hidden replace input */}
+              <input
+                ref={replaceInputRef}
+                type="file"
+                accept="image/*,video/*"
+                hidden
+                onChange={handleReplaceSelect}
+                disabled={preparingFiles || loading}
+              />
+
               {media.length === 0 && (
                 <label htmlFor="media-upload" className="flex flex-col items-center justify-center cursor-pointer text-center">
                   <div className={`p-4 rounded-full mb-4 transition-colors ${
@@ -503,12 +953,25 @@ const CreatePost = () => {
                        const isVideo = getMediaType(file) === 'video';
                        const fileName = file.name;
                        const videoStatus = videoUploadStatus[fileName];
-                       
+                       const filters = filtersMap[index] || { brightness: 1, contrast: 1, saturate: 1 };
+                       const isPreviewLoaded = !!previewLoaded[index];
+
                        return (
-                      <div key={index} className={`relative group/item overflow-hidden rounded-xl border border-gray-100 bg-gray-900 shadow-sm ${
-                        isVideo ? 'aspect-video' : 'aspect-square'
-                      }`}>
-                        
+                      <div
+                        key={index}
+                        draggable
+                        onDragStart={(e) => onDragStartThumb(e, index)}
+                        onDragOver={(e) => onDragOverThumb(e, index)}
+                        onDrop={(e) => onDropThumb(e, index)}
+                        className={`relative group/item overflow-hidden rounded-xl border border-gray-100 bg-gray-900 shadow-sm ${
+                          isVideo ? 'aspect-video' : 'aspect-square'
+                        }`}
+                      >
+                        {/* Loading Skeleton */}
+                        {!isPreviewLoaded && (
+                          <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-gray-700 via-gray-800 to-gray-700" />
+                        )}
+
                         {/* Media Display */}
                         {isVideo ? (
                           <div className="relative w-full h-full">
@@ -517,19 +980,56 @@ const CreatePost = () => {
                               className='w-full h-full object-cover' 
                               controls 
                               playsInline
+                              onLoadedData={() => handlePreviewLoaded(index)}
                             >
                               Your browser does not support the video tag.
                             </video>
+
+                            {/* Video trim UI overlay */}
+                            <div className="absolute left-2 bottom-2 right-2 bg-black/50 backdrop-blur-sm p-2 rounded-md text-xs text-white flex flex-col gap-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span>Trim</span>
+                                <span>{videoStatus?.duration ? formatDuration(videoStatus.duration) : ''}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={videoStatus?.duration || 60}
+                                  value={trimMap[fileName]?.start ?? 0}
+                                  onChange={(e) => updateTrimForFile(fileName, { start: Number(e.target.value), end: trimMap[fileName]?.end ?? (videoStatus?.duration || 0) })}
+                                  className="flex-1"
+                                />
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={videoStatus?.duration || 60}
+                                  value={trimMap[fileName]?.end ?? (videoStatus?.duration || 0)}
+                                  onChange={(e) => updateTrimForFile(fileName, { start: trimMap[fileName]?.start ?? 0, end: Number(e.target.value) })}
+                                  className="flex-1"
+                                />
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span>Start: {formatDuration(trimMap[fileName]?.start ?? 0)}</span>
+                                <span>End: {formatDuration(trimMap[fileName]?.end ?? videoStatus?.duration ?? 0)}</span>
+                              </div>
+                            </div>
                           </div>
                         ) : (
-                          <img 
-                            src={URL.createObjectURL(file)} 
-                            className='w-full h-full object-cover transition-opacity group-hover/item:opacity-90' 
-                            alt={`Preview ${index}`} 
-                          />
+                          <div className="w-full h-full">
+                            <img 
+                              src={URL.createObjectURL(file)} 
+                              className='w-full h-full object-cover transition-opacity group-hover/item:opacity-90' 
+                              alt={`Preview ${index}`}
+                              onLoad={() => handlePreviewLoaded(index)}
+                              style={{
+                                filter: `brightness(${filters.brightness}) contrast(${filters.contrast}) saturate(${filters.saturate}) ${blurMap[index] ? 'blur(6px)' : ''}`
+                              }}
+                            />
+                          </div>
                         )}
                         
-                        {/* Top Right Controls (Delete & Crop) */}
+                        {/* Top Right Controls (Delete & Crop & Replace) */}
                         <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover/item:opacity-100 transition-opacity duration-200">
                             {/* Crop Button (Images Only) */}
                             {!isVideo && !loading && !preparingFiles && (
@@ -541,6 +1041,14 @@ const CreatePost = () => {
                                     <CropIcon className="w-4 h-4"/>
                                 </button>
                             )}
+                            {/* Replace Button */}
+                            <button
+                              onClick={(e) => { e.preventDefault(); triggerReplace(index); }}
+                              className='p-1.5 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-yellow-500 transition-colors'
+                              title="Replace"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                            </button>
                             {/* Delete Button */}
                             <button 
                               onClick={(e) => { e.preventDefault(); handleMediaRemove(index); }} 
@@ -552,8 +1060,8 @@ const CreatePost = () => {
                             </button>
                         </div>
 
-                        {/* File Info Badge */}
-                        <div className="absolute bottom-2 left-2 flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-md rounded-md text-[10px] font-medium text-white pointer-events-none">
+                        {/* Bottom Left Controls: File Info + Filters + Blur + Auto-Detect */}
+                        <div className="absolute bottom-2 left-2 flex items-center gap-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded-md text-[10px] font-medium text-white pointer-events-auto">
                           {isVideo ? <FileVideo className="w-3 h-3" /> : <FileImage className="w-3 h-3" />}
                           <span>{formatFileSize(file.size)}</span>
                           {isVideo && videoStatus?.duration && (
@@ -562,6 +1070,60 @@ const CreatePost = () => {
                               <Clock className="w-3 h-3" />
                               <span>{formatDuration(videoStatus.duration)}</span>
                             </>
+                          )}
+                        </div>
+
+                        {/* Bottom Right: Filter Controls expanded on hover */}
+                        <div className="absolute bottom-2 right-2 opacity-0 group-hover/item:opacity-100 transition-opacity duration-200">
+                          {!isVideo && (
+                            <div className="flex gap-1 items-center bg-black/60 p-2 rounded-md">
+                              <div className="flex flex-col text-xs text-white gap-1 pr-2">
+                                <label className="flex items-center gap-1">
+                                  <span className="text-[10px]">B</span>
+                                  <input
+                                    type="range"
+                                    min={0.5}
+                                    max={1.5}
+                                    step={0.05}
+                                    value={(filtersMap[index]?.brightness ?? 1)}
+                                    onChange={(e) => updateFilterForIndex(index, { brightness: Number(e.target.value) })}
+                                  />
+                                </label>
+                                <label className="flex items-center gap-1">
+                                  <span className="text-[10px]">C</span>
+                                  <input
+                                    type="range"
+                                    min={0.5}
+                                    max={1.5}
+                                    step={0.05}
+                                    value={(filtersMap[index]?.contrast ?? 1)}
+                                    onChange={(e) => updateFilterForIndex(index, { contrast: Number(e.target.value) })}
+                                  />
+                                </label>
+                                <label className="flex items-center gap-1">
+                                  <span className="text-[10px]">S</span>
+                                  <input
+                                    type="range"
+                                    min={0.5}
+                                    max={2}
+                                    step={0.05}
+                                    value={(filtersMap[index]?.saturate ?? 1)}
+                                    onChange={(e) => updateFilterForIndex(index, { saturate: Number(e.target.value) })}
+                                  />
+                                </label>
+                              </div>
+
+                              <div className="flex flex-col gap-1">
+                                <button onClick={() => toggleBlurForIndex(index)} className="px-2 py-1 rounded-md bg-white/10 text-white text-xs">Blur</button>
+                                <button onClick={() => handleAutoDetectNSFW(index)} className="px-2 py-1 rounded-md bg-white/10 text-white text-xs">Auto-detect</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {isVideo && (
+                            <div className="flex gap-1 items-center bg-black/60 p-2 rounded-md">
+                              <button onClick={() => triggerReplace(index)} className="px-2 py-1 rounded-md bg-white/10 text-white text-xs">Replace</button>
+                            </div>
                           )}
                         </div>
 
@@ -641,6 +1203,25 @@ const CreatePost = () => {
                 >
                   <ImageIcon className="w-5 h-5" />
                 </label>
+
+                <button
+                  onClick={handleGenerateCaption}
+                  className="px-3 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200"
+                  disabled={preparingFiles || loading}
+                >
+                  Generate Caption
+                </button>
+
+                {lastFailedPayload && (
+                  <button
+                    onClick={handleRetryUpload}
+                    className="px-3 py-2 rounded-full text-sm bg-yellow-100 hover:bg-yellow-200"
+                    disabled={loading || preparingFiles}
+                  >
+                    Retry Upload
+                  </button>
+                )}
+
                 <button 
                   disabled={loading || preparingFiles || (!media.length && !content.trim())} 
                   onClick={handleSubmit} 
