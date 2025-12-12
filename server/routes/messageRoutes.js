@@ -18,7 +18,8 @@ import {
     endCall,
     // NEW: Socket.io status endpoints
     getOnlineUsers,
-    getSocketStatus
+    getSocketStatus,
+    getSocketInfo  // 🆕 ADD THIS IMPORT
 } from '../controllers/messageController.js';
 import { protect } from '../middlewares/auth.js';
 import { imageUpload, audioUpload } from '../configs/multer.js';
@@ -77,18 +78,7 @@ messageRouter.get('/online-users', protect, getOnlineUsers);
 // Get WebSocket connection status
 messageRouter.get('/ws-status', protect, getSocketStatus);
 
-// Get user's WebSocket connection info
-messageRouter.get('/ws-info/:userId', protect, async (req, res) => {
-    const { onlineUsers } = await import('../controllers/messageController.js');
-    const isOnline = onlineUsers.has(req.params.userId);
-    
-    res.json({
-        success: true,
-        userId: req.params.userId,
-        isOnline: isOnline,
-        socketId: isOnline ? onlineUsers.get(req.params.userId) : null,
-        timestamp: new Date().toISOString()
-    });
-});
+// Get user's WebSocket connection info - 🆕 USE THE CONTROLLER FUNCTION
+messageRouter.get('/ws-info/:userId', protect, getSocketInfo);
 
 export default messageRouter;

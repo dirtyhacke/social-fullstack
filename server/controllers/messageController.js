@@ -2061,3 +2061,47 @@ export const getSocketStatus = async (req, res) => {
         res.json({ success: false, message: error.message });
     }
 };
+// Get WebSocket connection info for a specific user
+export const getSocketInfo = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const user = await User.findById(userId).select('full_name profile_picture lastSeen');
+        
+        if (!user) {
+            return res.json({ 
+                success: false, 
+                message: 'User not found' 
+            });
+        }
+
+        const isOnline = onlineUsers.has(userId);
+        const socketId = isOnline ? onlineUsers.get(userId) : null;
+        
+        console.log('🔌 Socket info check:', {
+            userId,
+            isOnline,
+            socketId,
+            totalOnline: onlineUsers.size
+        });
+
+        res.json({
+            success: true,
+            userId,
+            isOnline,
+            socketId,
+            userName: user.full_name,
+            userAvatar: user.profile_picture,
+            lastSeen: user.lastSeen,
+            timestamp: new Date().toISOString(),
+            totalOnlineUsers: onlineUsers.size
+        });
+        
+    } catch (error) {
+        console.error('Error getting socket info:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to get socket info'
+        });
+    }
+};
