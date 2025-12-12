@@ -37,8 +37,12 @@
     "play-dl": "^1.9.7",
     "redis": "^5.10.0",
     "sharp": "^0.34.5",
+    "simple-peer": "^9.11.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "undici": "^7.16.0",
     "uuid": "^13.0.0",
+    "webrtc-adapter": "^9.0.3",
     "ytdl-core": "^4.11.5"
   },
   "devDependencies": {

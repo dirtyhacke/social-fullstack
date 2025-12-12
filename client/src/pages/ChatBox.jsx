@@ -4,7 +4,8 @@ import {
     Globe, Search, Languages as LanguagesIcon, MessageSquare as MessageSquareIcon, Loader,
     Circle, Clock, Mic, Square, Reply, CornerUpLeft, User, MoreVertical,
     Check, CheckCheck, Palette, Settings, Volume2, VolumeX, Trash2, AlertTriangle,
-    MousePointer, Phone, Video, PhoneOff, VideoOff, MicOff, Volume1
+    MousePointer, Phone, Video, PhoneOff, VideoOff, MicOff, Volume1,
+    Wifi, WifiOff, Users
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -646,6 +647,8 @@ const ChatBox = () => {
         return localStorage.getItem('chatTheme') || 'default';
     });
     const [isLoading, setIsLoading] = useState(false);
+    const [onlineUsers, setOnlineUsers] = useState(new Map());
+    const [wsConnectionStatus, setWsConnectionStatus] = useState(null);
     
     // Fixed State Management for Message Actions
     const [showMessageActions, setShowMessageActions] = useState(null);
@@ -655,7 +658,7 @@ const ChatBox = () => {
     const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
     const [longPressActive, setLongPressActive] = useState(false);
 
-    // FIXED: Enhanced Call States - BOTH USERS WILL SEE THE CALL
+    // FIXED: Enhanced Call States
     const { 
         incomingCall, 
         activeCall, 
@@ -710,6 +713,47 @@ const ChatBox = () => {
     const { playSound, soundsEnabled, toggleSounds } = useChatSounds();
     const currentTheme = CHAT_THEMES.find(theme => theme.id === selectedTheme) || CHAT_THEMES[0];
 
+    // 🆕 Fetch online users and WebSocket status
+    const fetchOnlineUsers = useCallback(async () => {
+        try {
+            const token = await getToken();
+            const response = await api.get('/api/messages/online-users', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (response.data.success) {
+                const onlineMap = new Map();
+                response.data.onlineUsers.forEach(user => {
+                    onlineMap.set(user.userId, user.socketId);
+                });
+                setOnlineUsers(onlineMap);
+                
+                // Update current user's online status
+                if (userId && onlineMap.has(userId)) {
+                    setIsUserOnline(true);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching online users:', error);
+        }
+    }, [getToken, userId]);
+
+    const fetchWebSocketStatus = useCallback(async () => {
+        try {
+            const token = await getToken();
+            const response = await api.get('/api/messages/ws-status', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (response.data.success) {
+                setWsConnectionStatus(response.data.status);
+            }
+        } catch (error) {
+            console.error('Error fetching WebSocket status:', error);
+            setWsConnectionStatus('disconnected');
+        }
+    }, [getToken]);
+
     // FIXED: Enhanced Call Timer
     useEffect(() => {
         if (activeCall && activeCall.status === 'connected') {
@@ -763,7 +807,7 @@ const ChatBox = () => {
         };
     }, [activeCall, initializeMedia, createPeerConnection, stopMedia]);
 
-    // FIXED: Handle incoming calls and automatically show call interface for BOTH users
+    // 🆕 FIXED: Handle incoming calls and online status updates
     useEffect(() => {
         if (incomingCall && incomingCall.fromUserId === userId) {
             console.log('📞 Incoming call detected for this chat:', incomingCall);
@@ -871,6 +915,23 @@ const ChatBox = () => {
             setIsDeleting(false);
         }
     };
+
+    // 🆕 Enhanced: Check if user is online via WebSocket
+    const checkUserOnlineStatus = useCallback(async (targetUserId) => {
+        try {
+            const token = await getToken();
+            const response = await api.get(`/api/messages/ws-info/${targetUserId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            
+            if (response.data.success) {
+                return response.data;
+            }
+        } catch (error) {
+            console.error('Error checking user online status:', error);
+        }
+        return null;
+    }, [getToken]);
 
     // FIXED: Enhanced Handle Long Press on Message
     const handleLongPress = (message, event) => {
@@ -1097,6 +1158,20 @@ const ChatBox = () => {
         }
     };
 
+    // 🆕 Enhanced Mark Message as Seen
+    const markMessageAsSeen = async (messageId) => {
+        try {
+            const token = await getToken();
+            await api.post('/api/messages/mark-seen', {
+                message_id: messageId
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+        } catch (error) {
+            console.error('Error marking message as seen:', error);
+        }
+    };
+
     // FIXED: Reply/Mention Functionality
     const handleReply = (message) => {
         if (!message) return;
@@ -1109,9 +1184,11 @@ const ChatBox = () => {
         setReplyingTo(null);
     };
 
-    // FIXED: Enhanced Call Functions with WebRTC - BOTH USERS WILL SEE THE CALL
+    // FIXED: Enhanced Call Functions with WebRTC
     const initiateCall = async (type) => {
-        if (!isUserOnline) {
+        // 🆕 Check if user is online via WebSocket
+        const onlineStatus = await checkUserOnlineStatus(userId);
+        if (!onlineStatus?.isOnline) {
             toast.error('User is offline. Cannot start call.');
             return;
         }
@@ -1149,7 +1226,6 @@ const ChatBox = () => {
                             status: 'calling',
                             startedAt: new Date().toISOString(),
                             isInitiator: true,
-                            // ADDED: Make sure both users can see this call
                             fromUserId: currentUser?.id,
                             fromUserName: currentUser?.fullName || currentUser?.username,
                             fromUserAvatar: currentUser?.imageUrl
@@ -1187,14 +1263,13 @@ const ChatBox = () => {
                 });
 
                 if (response.data.success) {
-                    // FIXED: Move call from incoming to active - BOTH USERS SEE THE CALL
+                    // FIXED: Move call from incoming to active
                     if (setActiveCall && setIncomingCall) {
                         setActiveCall({
                             ...incomingCall,
                             status: 'connected',
                             connectedAt: new Date().toISOString(),
                             isInitiator: false,
-                            // ADDED: Ensure proper user identification
                             toUserId: currentUser?.id,
                             toUserName: currentUser?.fullName || currentUser?.username,
                             toUserAvatar: currentUser?.imageUrl
@@ -1252,7 +1327,7 @@ const ChatBox = () => {
                 });
             }
             
-            // Clear call states - BOTH USERS WILL SEE THE CALL END
+            // Clear call states
             if (setActiveCall) setActiveCall(null);
             if (setIncomingCall) setIncomingCall(null);
             
@@ -1336,16 +1411,19 @@ const ChatBox = () => {
                 const updatedConnections = connections.map(conn => ({
                     ...conn,
                     lastSeen: lastSeenData.lastSeenData[conn._id]?.lastSeen,
-                    isOnline: lastSeenData.lastSeenData[conn._id]?.isOnline
+                    isOnline: lastSeenData.lastSeenData[conn._id]?.isOnline || onlineUsers.has(conn._id)
                 }));
                 setConnectionsWithStatus(updatedConnections);
             } else {
-                setConnectionsWithStatus(connections);
+                setConnectionsWithStatus(connections.map(conn => ({
+                    ...conn,
+                    isOnline: onlineUsers.has(conn._id)
+                })));
             }
         }
     };
 
-    // FIXED: Enhanced SSE Setup with proper call synchronization
+    // 🆕 FIXED: Enhanced SSE Setup with WebSocket status updates
     const setupSSE = useCallback(async () => {
         if (!currentUser?.id) return;
 
@@ -1362,6 +1440,7 @@ const ChatBox = () => {
 
             eventSourceRef.current.onopen = () => {
                 console.log('✅ SSE connection established for user:', currentUser.id);
+                setWsConnectionStatus('connected');
             };
 
             eventSourceRef.current.onmessage = (event) => {
@@ -1375,6 +1454,8 @@ const ChatBox = () => {
                                 setIsUserOnline(true);
                                 setLastSeen(new Date());
                             }
+                            // Update online users map
+                            setOnlineUsers(prev => new Map(prev.set(data.userId, data.socketId)));
                             updateConnectionsWithStatus();
                             break;
                             
@@ -1383,6 +1464,12 @@ const ChatBox = () => {
                                 setIsUserOnline(false);
                                 setLastSeen(new Date());
                             }
+                            // Remove from online users map
+                            setOnlineUsers(prev => {
+                                const newMap = new Map(prev);
+                                newMap.delete(data.userId);
+                                return newMap;
+                            });
                             updateConnectionsWithStatus();
                             break;
                             
@@ -1403,6 +1490,10 @@ const ChatBox = () => {
                                 dispatch(addMessage(data.message));
                                 if (data.sound) {
                                     playSound(data.sound);
+                                }
+                                // Mark message as seen if it's from this user
+                                if (data.message.from_user_id?._id === userId) {
+                                    markMessageAsSeen(data.message._id);
                                 }
                             }
                             break;
@@ -1467,7 +1558,6 @@ const ChatBox = () => {
                             }
                             break;
 
-                        // FIXED: Handle call connected event for BOTH users
                         case 'call_connected':
                             console.log('🔗 Call connected via SSE:', data);
                             if (setActiveCall && data.callId === activeCall?.callId) {
@@ -1480,6 +1570,19 @@ const ChatBox = () => {
                                 toast.success('Call connected!');
                             }
                             break;
+
+                        // 🆕 Handle WebSocket status updates
+                        case 'websocket_connected':
+                            console.log('🔗 WebSocket connected:', data);
+                            setWsConnectionStatus('connected');
+                            // Refresh online users when WebSocket reconnects
+                            fetchOnlineUsers();
+                            break;
+
+                        case 'websocket_disconnected':
+                            console.log('🔌 WebSocket disconnected:', data);
+                            setWsConnectionStatus('disconnected');
+                            break;
                     }
                 } catch (error) {
                     console.error('Error parsing SSE data:', error);
@@ -1488,6 +1591,7 @@ const ChatBox = () => {
 
             eventSourceRef.current.onerror = (error) => {
                 console.error('SSE connection error:', error);
+                setWsConnectionStatus('disconnected');
                 setTimeout(() => {
                     if (currentUser?.id) {
                         setupSSE();
@@ -1497,9 +1601,10 @@ const ChatBox = () => {
 
         } catch (error) {
             console.error('Error setting up SSE:', error);
+            setWsConnectionStatus('disconnected');
             setTimeout(() => setupSSE(), 5000);
         }
-    }, [currentUser?.id, userId, getToken, dispatch, playSound, isCalling, activeCall, incomingCall, setActiveCall, setIncomingCall]);
+    }, [currentUser?.id, userId, getToken, dispatch, playSound, isCalling, activeCall, incomingCall, setActiveCall, setIncomingCall, fetchOnlineUsers]);
 
     const fetchUserMessages = async () => {
         try {
@@ -1533,7 +1638,6 @@ const ChatBox = () => {
 
             console.log('✅ Image selected:', file.name, file.type, file.size);
             
-            // 🆕 FIXED: Create a new File object with proper metadata
             const imageFile = new File([file], file.name, {
                 type: file.type,
                 lastModified: file.lastModified
@@ -1573,7 +1677,6 @@ const ChatBox = () => {
             if (image) {
                 if (image instanceof File) {
                     console.log('🖼️ Sending image:', image.name, image.type, image.size);
-                    // 🆕 FIXED: Append the file with proper field name
                     formData.append('image', image, image.name);
                 } else {
                     toast.error('Invalid image file');
@@ -1585,19 +1688,13 @@ const ChatBox = () => {
                 formData.append('reply_to', replyingTo._id);
             }
 
-            // 🆕 FIXED: Log FormData contents for debugging
-            console.log('📤 FormData contents:');
-            for (let [key, value] of formData.entries()) {
-                console.log(`${key}:`, value);
-            }
-
             setShowEmojiPicker(false);
             setIsLoading(true);
 
             const { data } = await api.post('/api/messages/send', formData, {
                 headers: { 
                     Authorization: `Bearer ${token}`,
-                    'Content-Type': 'multipart/form-data', // 🆕 ADDED: Explicit content type
+                    'Content-Type': 'multipart/form-data',
                 }
             });
 
@@ -1615,7 +1712,6 @@ const ChatBox = () => {
             }
         } catch (error) {
             console.error('❌ Error sending message:', error);
-            // 🆕 FIXED: Better error handling
             if (error.response?.status === 413) {
                 toast.error('Image file too large. Please select a smaller image.');
             } else if (error.response?.data?.message) {
@@ -1694,6 +1790,10 @@ const ChatBox = () => {
         setIsConnectionsListVisible(false);
         fetchUserLastSeen();
         updateConnectionsWithStatus();
+        
+        // 🆕 Fetch initial WebSocket status and online users
+        fetchWebSocketStatus();
+        fetchOnlineUsers();
 
         return () => {
             if (typingTimeoutRef.current) {
@@ -1734,6 +1834,17 @@ const ChatBox = () => {
             }
         };
     }, [setupSSE]);
+
+    // 🆕 Update online status periodically
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (userId) {
+                checkUserOnlineStatus(userId);
+            }
+        }, 30000); // Check every 30 seconds
+
+        return () => clearInterval(interval);
+    }, [userId, checkUserOnlineStatus]);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -1791,11 +1902,11 @@ const ChatBox = () => {
           .catch(error => console.error("Error fetching stickers:", error));
     }, []);
 
-    // Settings Dropdown Component
+    // 🆕 Enhanced Settings Dropdown Component with WebSocket status
     const SettingsDropdown = () => (
         <div 
             ref={settingsRef}
-            className="absolute right-2 top-14 w-64 bg-white border border-gray-200 rounded-xl shadow-2xl z-30 overflow-hidden"
+            className="absolute right-2 top-14 w-72 bg-white border border-gray-200 rounded-xl shadow-2xl z-30 overflow-hidden"
         >
             <div className="p-4 border-b border-gray-100">
                 <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -1805,6 +1916,35 @@ const ChatBox = () => {
             </div>
             
             <div className="p-4">
+                {/* WebSocket Connection Status */}
+                <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                        {wsConnectionStatus === 'connected' ? 
+                            <Wifi className="w-4 h-4 text-green-500" /> : 
+                            <WifiOff className="w-4 h-4 text-red-500" />
+                        }
+                        Connection
+                    </div>
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                        wsConnectionStatus === 'connected' ? 
+                            'bg-green-100 text-green-700' : 
+                            'bg-red-100 text-red-700'
+                    }`}>
+                        {wsConnectionStatus || 'checking...'}
+                    </span>
+                </div>
+
+                {/* Online Users Count */}
+                <div className="flex items-center justify-between mb-4 p-3 bg-blue-50 rounded-lg">
+                    <div className="flex items-center gap-2 text-sm font-medium text-blue-700">
+                        <Users className="w-4 h-4" />
+                        Online Users
+                    </div>
+                    <span className="text-sm font-bold text-blue-800">
+                        {onlineUsers.size}
+                    </span>
+                </div>
+
                 {/* Sound Toggle */}
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -1955,9 +2095,8 @@ const ChatBox = () => {
         </div>
     );
 
-    // FIXED: Incoming Call Modal for this specific chat - NOW SHOWS FOR RECEIVER
+    // FIXED: Incoming Call Modal for this specific chat
     const ChatIncomingCallModal = () => {
-        // Only show if the incoming call is for this chat user
         const isCallForThisChat = incomingCall && incomingCall.fromUserId === userId;
         
         if (!isCallForThisChat) return null;
@@ -2003,9 +2142,8 @@ const ChatBox = () => {
         );
     };
 
-    // FIXED: Enhanced Active Call Interface with REAL WebRTC - NOW SHOWS FOR BOTH USERS
+    // FIXED: Enhanced Active Call Interface with REAL WebRTC
     const ActiveCallInterface = () => {
-        // FIXED: Show active call interface for BOTH users involved in the call
         const isCallWithThisUser = activeCall && 
             (activeCall.toUserId === userId || activeCall.fromUserId === userId || 
              activeCall.toUserId === currentUser?.id || activeCall.fromUserId === currentUser?.id);
@@ -2469,14 +2607,30 @@ const ChatBox = () => {
         );
     };
 
-    // Connections List Component
+    // 🆕 Enhanced Connections List Component with WebSocket status
     const ConnectionsList = () => (
         <div 
             ref={connectionsListRef}
             className='w-full md:w-80 border-r border-gray-200 bg-white h-full overflow-y-auto flex-shrink-0'
         >
             <div className='p-4 border-b border-gray-100 sticky top-0 bg-white z-10'>
-                <h2 className='text-xl font-bold text-slate-800'>Connections</h2>
+                <div className="flex items-center justify-between mb-2">
+                    <h2 className='text-xl font-bold text-slate-800'>Connections</h2>
+                    <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${
+                            wsConnectionStatus === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+                        }`} />
+                        <span className="text-xs text-gray-500">
+                            {wsConnectionStatus === 'connected' ? 'Live' : 'Offline'}
+                        </span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <Users className="w-4 h-4" />
+                    <span>{onlineUsers.size} online</span>
+                    <span className="text-gray-400">•</span>
+                    <span>{connections.length} total</span>
+                </div>
             </div>
             
             {(connectionsWithStatus.length > 0 ? connectionsWithStatus : connections).length === 0 ? (
@@ -2487,7 +2641,7 @@ const ChatBox = () => {
             ) : (
                 (connectionsWithStatus.length > 0 ? connectionsWithStatus : connections).map((connection) => {
                     const isSelected = connection._id === userId;
-                    const isOnline = connection.isOnline;
+                    const isOnline = connection.isOnline || onlineUsers.has(connection._id);
                     const lastSeen = connection.lastSeen;
                     
                     return (
@@ -2593,6 +2747,14 @@ const ChatBox = () => {
                                 ) : (
                                     <span className="text-gray-500 truncate">Offline</span>
                                 )}
+                                {/* 🆕 WebSocket connection indicator */}
+                                <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${
+                                    wsConnectionStatus === 'connected' ? 
+                                        'bg-green-100 text-green-700' : 
+                                        'bg-red-100 text-red-700'
+                                }`}>
+                                    {wsConnectionStatus === 'connected' ? 'Live' : 'Offline'}
+                                </span>
                             </p>
                             {/* Enhanced Typing Indicator */}
                             {isTyping && (
@@ -2615,7 +2777,7 @@ const ChatBox = () => {
                             <div className="flex gap-1 mr-1 sm:mr-2">
                                 <button
                                     onClick={() => initiateCall('voice')}
-                                    disabled={isCalling}
+                                    disabled={isCalling || wsConnectionStatus !== 'connected'}
                                     className="p-2 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     title="Voice Call"
                                 >
@@ -2623,7 +2785,7 @@ const ChatBox = () => {
                                 </button>
                                 <button
                                     onClick={() => initiateCall('video')}
-                                    disabled={isCalling}
+                                    disabled={isCalling || wsConnectionStatus !== 'connected'}
                                     className="p-2 rounded-full bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     title="Video Call"
                                 >
@@ -2980,10 +3142,10 @@ const ChatBox = () => {
             {/* Clear Chat Confirmation Modal */}
             {showClearChatConfirm && <ClearChatConfirmation />}
 
-            {/* Incoming Call Modal - NOW SHOWS FOR RECEIVER */}
+            {/* Incoming Call Modal */}
             <ChatIncomingCallModal />
 
-            {/* Active Call Interface - NOW SHOWS FOR BOTH USERS */}
+            {/* Active Call Interface */}
             {activeCall && activeCall.status === 'connected' && <ActiveCallInterface />}
         </div>
     );
