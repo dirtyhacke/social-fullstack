@@ -17,7 +17,8 @@ import {
     endCall,
     sendWebRTCOffer,
     sendWebRTCAnswer,
-    sendWebRTCCandidate
+    sendWebRTCCandidate,
+    getWebRTCData ,
 } from '../controllers/messageController.js';
 import { protect } from '../middlewares/auth.js';
 import { imageUpload, audioUpload } from '../configs/multer.js';
@@ -69,6 +70,6 @@ messageRouter.post('/call/end', protect, endCall);
 messageRouter.post('/webrtc/offer', protect, sendWebRTCOffer);
 messageRouter.post('/webrtc/answer', protect, sendWebRTCAnswer);
 messageRouter.post('/webrtc/candidate', protect, sendWebRTCCandidate);
-
+messageRouter.get('/webrtc/data/:from_user_id', protect, getWebRTCData);
 
 export default messageRouter;

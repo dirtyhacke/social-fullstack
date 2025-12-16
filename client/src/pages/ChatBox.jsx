@@ -329,6 +329,7 @@ const isTouchEvent = (event) => {
 };
 
 // FIXED WebRTC Hook with Proper Signaling
+// FIXED WebRTC Hook with Proper Signaling
 const useWebRTC = (userId, currentUser, callContext) => {
     const [localStream, setLocalStream] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
@@ -342,6 +343,10 @@ const useWebRTC = (userId, currentUser, callContext) => {
     const peerConnectionRef = useRef(null);
     const streamRef = useRef(null);
     const { getToken } = useAuth();
+    
+    // 🆕 Store pending ICE candidates until peer connection is ready
+    const pendingCandidates = useRef([]);
+    const pendingAnswerRef = useRef(null);
 
     // WebRTC configuration
     const configuration = {
@@ -399,6 +404,19 @@ const useWebRTC = (userId, currentUser, callContext) => {
         } catch (error) {
             console.error('Error sending WebRTC candidate:', error);
             throw error;
+        }
+    };
+
+    const getWebRTCData = async () => {
+        try {
+            const token = await getToken();
+            const response = await api.get(`/api/messages/webrtc/data/${userId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error) {
+            console.error('Error getting WebRTC data:', error);
+            return null;
         }
     };
 
@@ -515,6 +533,33 @@ const useWebRTC = (userId, currentUser, callContext) => {
             };
 
             peerConnectionRef.current = pc;
+            
+            // 🆕 Process any pending ICE candidates
+            if (pendingCandidates.current.length > 0) {
+                console.log(`🔄 Processing ${pendingCandidates.current.length} pending ICE candidates`);
+                for (const candidate of pendingCandidates.current) {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                        console.log('✅ Added pending ICE candidate');
+                    } catch (error) {
+                        console.error('❌ Error adding pending ICE candidate:', error);
+                    }
+                }
+                pendingCandidates.current = [];
+            }
+            
+            // 🆕 Apply pending answer if exists
+            if (pendingAnswerRef.current) {
+                console.log('🔄 Applying pending WebRTC answer');
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(pendingAnswerRef.current));
+                    console.log('✅ Applied pending remote description');
+                    pendingAnswerRef.current = null;
+                } catch (error) {
+                    console.error('❌ Error applying pending answer:', error);
+                }
+            }
+            
             return pc;
         } catch (error) {
             console.error('❌ Error creating peer connection:', error);
@@ -557,7 +602,10 @@ const useWebRTC = (userId, currentUser, callContext) => {
             console.log('📡 Handling incoming WebRTC answer');
             
             if (!peerConnectionRef.current) {
-                throw new Error('No peer connection');
+                console.log('⚠️ No peer connection yet, storing answer for later');
+                // Store the answer for later
+                pendingAnswerRef.current = answer;
+                return;
             }
             
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
@@ -575,7 +623,10 @@ const useWebRTC = (userId, currentUser, callContext) => {
             console.log('📡 Handling incoming ICE candidate');
             
             if (!peerConnectionRef.current) {
-                throw new Error('No peer connection');
+                console.log('⚠️ No peer connection yet, storing candidate for later');
+                // Store candidate in pending queue
+                pendingCandidates.current.push(candidate);
+                return;
             }
             
             await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
@@ -615,6 +666,29 @@ const useWebRTC = (userId, currentUser, callContext) => {
             throw error;
         }
     }, [initializeMedia, createPeerConnection, sendWebRTCOffer]);
+
+    // Check for any pending WebRTC data on mount
+    useEffect(() => {
+        const checkPendingWebRTCData = async () => {
+            try {
+                const data = await getWebRTCData();
+                if (data?.success) {
+                    if (data.pendingOffer) {
+                        console.log('📡 Found pending WebRTC offer');
+                        handleIncomingOffer(data.pendingOffer.offer, data.pendingOffer.call_type);
+                    }
+                    if (data.pendingAnswer) {
+                        console.log('📡 Found pending WebRTC answer');
+                        handleIncomingAnswer(data.pendingAnswer.answer);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking pending WebRTC data:', error);
+            }
+        };
+        
+        checkPendingWebRTCData();
+    }, []);
 
     // Toggle camera
     const toggleCamera = useCallback(async () => {
@@ -669,6 +743,10 @@ const useWebRTC = (userId, currentUser, callContext) => {
     const stopMedia = useCallback(() => {
         console.log('🛑 Stopping all media...');
         
+        // Clear pending data
+        pendingCandidates.current = [];
+        pendingAnswerRef.current = null;
+        
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => {
                 track.stop();
@@ -713,7 +791,6 @@ const useWebRTC = (userId, currentUser, callContext) => {
         stopMedia
     };
 };
-
 // --- Main Component ---
 const ChatBox = () => {
     const callContext = React.useContext(CallContext);
@@ -1406,152 +1483,180 @@ const ChatBox = () => {
     };
 
     // FIXED: Enhanced SSE Setup
-    const setupSSE = useCallback(async () => {
-        if (!currentUser?.id) return;
+ // In your ChatBox.jsx, update the SSE handler:
 
-        try {
-            const token = await getToken();
-            
-            if (eventSourceRef.current) {
-                eventSourceRef.current.close();
-            }
+const setupSSE = useCallback(async () => {
+    if (!currentUser?.id) return;
 
-            const sseUrl = `https://pixo-toj7.onrender.com/api/messages/sse/${currentUser.id}?token=${token}`;
-            
-            eventSourceRef.current = new EventSource(sseUrl);
+    try {
+        const token = await getToken();
+        
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+        }
 
-            eventSourceRef.current.onopen = () => {
-                console.log('✅ SSE connection established for user:', currentUser.id);
-            };
+        const sseUrl = `https://pixo-toj7.onrender.com/api/messages/sse/${currentUser.id}?token=${token}`;
+        
+        eventSourceRef.current = new EventSource(sseUrl);
 
-            eventSourceRef.current.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    switch (data.type) {
-                        case 'user_online':
-                            if (data.userId === userId) {
-                                setIsUserOnline(true);
-                                setLastSeen(new Date());
-                            }
-                            updateConnectionsWithStatus();
-                            break;
-                            
-                        case 'user_offline':
-                            if (data.userId === userId) {
-                                setIsUserOnline(false);
-                                setLastSeen(new Date());
-                            }
-                            updateConnectionsWithStatus();
-                            break;
-                            
-                        case 'typing_start':
-                            if (data.fromUserId === userId) {
-                                setIsTyping(true);
-                            }
-                            break;
-                            
-                        case 'typing_stop':
-                            if (data.fromUserId === userId) {
-                                setIsTyping(false);
-                            }
-                            break;
-                            
-                        case 'new_message':
-                            if (data.message) {
-                                dispatch(addMessage(data.message));
-                                if (data.sound) {
-                                    playSound(data.sound);
-                                }
-                            }
-                            break;
-                            
-                        case 'message_deleted':
-                            if (data.messageId) {
-                                fetchUserMessages();
-                            }
-                            break;
+        eventSourceRef.current.onopen = () => {
+            console.log('✅ SSE connection established for user:', currentUser.id);
+        };
 
-                        case 'call_incoming':
-                            console.log('📞 Incoming call via SSE:', data);
-                            if (setIncomingCall) {
-                                setIncomingCall({
-                                    callId: data.callId,
-                                    callType: data.callType,
-                                    fromUserId: data.fromUserId,
-                                    fromUserName: data.fromUserName,
-                                    fromUserAvatar: data.fromUserAvatar,
-                                    timestamp: data.timestamp
-                                });
+        eventSourceRef.current.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('📡 SSE Event received:', data);
+                
+                switch (data.type) {
+                    case 'user_online':
+                        if (data.userId === userId) {
+                            setIsUserOnline(true);
+                            setLastSeen(new Date());
+                        }
+                        updateConnectionsWithStatus();
+                        break;
+                        
+                    case 'user_offline':
+                        if (data.userId === userId) {
+                            setIsUserOnline(false);
+                            setLastSeen(new Date());
+                        }
+                        updateConnectionsWithStatus();
+                        break;
+                        
+                    case 'typing_start':
+                        if (data.fromUserId === userId) {
+                            setIsTyping(true);
+                        }
+                        break;
+                        
+                    case 'typing_stop':
+                        if (data.fromUserId === userId) {
+                            setIsTyping(false);
+                        }
+                        break;
+                        
+                    case 'new_message':
+                        if (data.message) {
+                            dispatch(addMessage(data.message));
+                            if (data.sound) {
+                                playSound(data.sound);
                             }
-                            playSound('incoming_call');
-                            break;
-                            
-                        case 'call_accepted':
-                            console.log('✅ Call accepted via SSE:', data);
-                            if (isCalling) {
-                                setIsCalling(false);
-                                if (setActiveCall) {
-                                    setActiveCall(prev => ({
-                                        ...prev,
-                                        status: 'connected',
-                                        connectedAt: new Date().toISOString()
-                                    }));
-                                }
-                                toast.success('Call accepted!');
-                            }
-                            break;
+                        }
+                        break;
+                        
+                    case 'message_deleted':
+                        if (data.messageId) {
+                            fetchUserMessages();
+                        }
+                        break;
 
-                        case 'call_rejected':
-                            console.log('❌ Call rejected via SSE:', data);
-                            if (isCalling) {
-                                setIsCalling(false);
-                                if (setActiveCall) setActiveCall(null);
-                                toast.error('Call rejected');
-                            }
-                            break;
-
-                        case 'call_ended':
-                            console.log('📞 Call ended via SSE:', data);
-                            if (activeCall || incomingCall) {
-                                setIsCalling(false);
-                                if (setActiveCall) setActiveCall(null);
-                                if (setIncomingCall) setIncomingCall(null);
-                                toast.info(`Call ended ${data.duration ? `(${data.duration}s)` : ''}`);
-                            }
-                            break;
-
-                        case 'call_connected':
-                            console.log('🔗 Call connected via SSE:', data);
-                            if (setActiveCall && data.callId === activeCall?.callId) {
+                    case 'call_incoming':
+                        console.log('📞 Incoming call via SSE:', data);
+                        if (setIncomingCall) {
+                            setIncomingCall({
+                                callId: data.callId,
+                                callType: data.callType,
+                                fromUserId: data.fromUserId,
+                                fromUserName: data.fromUserName,
+                                fromUserAvatar: data.fromUserAvatar,
+                                timestamp: data.timestamp
+                            });
+                        }
+                        playSound('incoming_call');
+                        break;
+                        
+                    case 'call_accepted':
+                        console.log('✅ Call accepted via SSE:', data);
+                        if (isCalling) {
+                            setIsCalling(false);
+                            if (setActiveCall) {
                                 setActiveCall(prev => ({
                                     ...prev,
                                     status: 'connected',
                                     connectedAt: new Date().toISOString()
                                 }));
-                                toast.success('Call connected!');
                             }
-                            break;
-                    }
-                } catch (error) {
-                    console.error('Error parsing SSE data:', error);
+                            toast.success('Call accepted!');
+                        }
+                        break;
+
+                    case 'call_rejected':
+                        console.log('❌ Call rejected via SSE:', data);
+                        if (isCalling) {
+                            setIsCalling(false);
+                            if (setActiveCall) setActiveCall(null);
+                            toast.error('Call rejected');
+                        }
+                        break;
+
+                    case 'call_ended':
+                        console.log('📞 Call ended via SSE:', data);
+                        if (activeCall || incomingCall) {
+                            setIsCalling(false);
+                            if (setActiveCall) setActiveCall(null);
+                            if (setIncomingCall) setIncomingCall(null);
+                            toast.info(`Call ended ${data.duration ? `(${data.duration}s)` : ''}`);
+                        }
+                        break;
+
+                    case 'call_connected':
+                        console.log('🔗 Call connected via SSE:', data);
+                        if (setActiveCall && data.callId === activeCall?.callId) {
+                            setActiveCall(prev => ({
+                                ...prev,
+                                status: 'connected',
+                                connectedAt: new Date().toISOString()
+                            }));
+                            toast.success('Call connected!');
+                        }
+                        break;
+                        
+                    // 🆕 WebRTC Signaling Events
+                    case 'webrtc_offer':
+                        console.log('📡 Received WebRTC offer from:', data.fromUserId);
+                        if (data.fromUserId === userId) {
+                            // Small delay to ensure UI is ready
+                            setTimeout(() => {
+                                handleIncomingOffer(data.offer, data.callType);
+                            }, 300);
+                        }
+                        break;
+                        
+                    case 'webrtc_answer':
+                        console.log('📡 Received WebRTC answer from:', data.fromUserId);
+                        if (data.fromUserId === userId) {
+                            handleIncomingAnswer(data.answer);
+                        }
+                        break;
+                        
+                    case 'webrtc_candidate':
+                        console.log('📡 Received WebRTC ICE candidate from:', data.fromUserId);
+                        if (data.fromUserId === userId) {
+                            handleIncomingCandidate(data.candidate);
+                        }
+                        break;
                 }
-            };
+            } catch (error) {
+                console.error('Error parsing SSE data:', error);
+            }
+        };
 
-            eventSourceRef.current.onerror = (error) => {
-                console.error('SSE connection error:', error);
-                setTimeout(() => {
-                    if (currentUser?.id) {
-                        setupSSE();
-                    }
-                }, 5000);
-            };
+        eventSourceRef.current.onerror = (error) => {
+            console.error('SSE connection error:', error);
+            setTimeout(() => {
+                if (currentUser?.id) {
+                    setupSSE();
+                }
+            }, 5000);
+        };
 
-        } catch (error) {
-            console.error('Error setting up SSE:', error);
-            setTimeout(() => setupSSE(), 5000);
-        }
-    }, [currentUser?.id, userId, getToken, dispatch, playSound, isCalling, activeCall, incomingCall, setActiveCall, setIncomingCall]);
+    } catch (error) {
+        console.error('Error setting up SSE:', error);
+        setTimeout(() => setupSSE(), 5000);
+    }
+}, [currentUser?.id, userId, getToken, dispatch, playSound, isCalling, activeCall, incomingCall, setActiveCall, setIncomingCall, handleIncomingOffer, handleIncomingAnswer, handleIncomingCandidate]);
 
     const fetchUserMessages = async () => {
         try {

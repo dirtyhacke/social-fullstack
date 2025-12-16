@@ -17,6 +17,10 @@ const typingUsers = new Map();
 // 🆕 Track active calls
 const activeCalls = new Map();
 
+// 🆕 Track WebRTC offers/answers
+const webrtcOffers = new Map();
+const webrtcAnswers = new Map();
+
 // Update user's last seen timestamp
 export const updateLastSeen = async (userId) => {
     try {
@@ -205,13 +209,12 @@ export const getUsersLastSeen = async (req, res) => {
 // 🆕 IMPROVED: Send message to specific user via SSE with better logging
 export const sendSSEMessage = (userId, data) => {
     console.log(`🔍 Looking for SSE connection for user: ${userId}`);
-    console.log(`📊 Available connections:`, Array.from(connections.keys()));
     
     const connection = connections.get(userId);
     if (connection) {
         try {
             const messageString = `data: ${JSON.stringify(data)}\n\n`;
-            console.log(`📤 Sending SSE message to user: ${userId}`, data);
+            console.log(`📤 Sending SSE message to user: ${userId}`, data.type);
             connection.write(messageString);
             return true;
         } catch (error) {
@@ -224,14 +227,12 @@ export const sendSSEMessage = (userId, data) => {
         }
     }
     console.log(`❌ No SSE connection found for user: ${userId}`);
-    console.log(`📋 Current online users:`, Array.from(onlineUsers));
     return false;
 };
 
 // Controller function for the SSE endpoint
 export const sseController = (req, res) => {
     console.log('🚀 SSE Controller called for user:', req.params.userId);
-    console.log('🔑 User ID from params:', req.params.userId);
     setupSSE(req, res);
 };
 
@@ -258,8 +259,6 @@ export const initiateCall = async (req, res) => {
         const { to_user_id, call_type } = req.body; // 'video' or 'voice'
 
         console.log(`📞 Call initiated from ${userId} to ${to_user_id} (${call_type})`);
-        console.log(`🔍 Checking if recipient ${to_user_id} is online...`);
-        console.log(`📋 Online users:`, Array.from(onlineUsers));
 
         // Check if recipient is online
         const isRecipientOnline = onlineUsers.has(to_user_id);
@@ -394,6 +393,13 @@ export const sendWebRTCOffer = async (req, res) => {
             });
         }
 
+        // Store offer temporarily
+        webrtcOffers.set(`${userId}_${to_user_id}`, {
+            offer,
+            call_type,
+            timestamp: new Date().toISOString()
+        });
+
         // Send offer to recipient via SSE
         const offerSent = sendSSEMessage(to_user_id, {
             type: 'webrtc_offer',
@@ -404,6 +410,7 @@ export const sendWebRTCOffer = async (req, res) => {
         });
 
         if (!offerSent) {
+            webrtcOffers.delete(`${userId}_${to_user_id}`);
             return res.json({ 
                 success: false, 
                 message: 'Failed to send offer. User might be offline.' 
@@ -428,6 +435,12 @@ export const sendWebRTCAnswer = async (req, res) => {
 
         console.log(`📡 WebRTC Answer from ${userId} to ${to_user_id}`);
 
+        // Store answer temporarily
+        webrtcAnswers.set(`${to_user_id}_${userId}`, {
+            answer,
+            timestamp: new Date().toISOString()
+        });
+
         // Send answer to caller via SSE
         const answerSent = sendSSEMessage(to_user_id, {
             type: 'webrtc_answer',
@@ -437,6 +450,7 @@ export const sendWebRTCAnswer = async (req, res) => {
         });
 
         if (!answerSent) {
+            webrtcAnswers.delete(`${to_user_id}_${userId}`);
             return res.json({ 
                 success: false, 
                 message: 'Failed to send answer. User might be offline.' 
@@ -483,6 +497,30 @@ export const sendWebRTCCandidate = async (req, res) => {
 
     } catch (error) {
         console.log('❌ Error sending WebRTC ICE candidate:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// 🆕 Get pending WebRTC data
+export const getWebRTCData = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { from_user_id } = req.params;
+
+        const offerKey = `${from_user_id}_${userId}`;
+        const answerKey = `${userId}_${from_user_id}`;
+
+        const pendingOffer = webrtcOffers.get(offerKey);
+        const pendingAnswer = webrtcAnswers.get(answerKey);
+
+        res.json({
+            success: true,
+            pendingOffer,
+            pendingAnswer
+        });
+
+    } catch (error) {
+        console.log('❌ Error getting WebRTC data:', error);
         res.json({ success: false, message: error.message });
     }
 };
@@ -639,6 +677,12 @@ export const endCall = async (req, res) => {
         activeCalls.delete(userId);
         activeCalls.delete(otherUserId);
 
+        // Clean up WebRTC data
+        webrtcOffers.delete(`${userId}_${otherUserId}`);
+        webrtcOffers.delete(`${otherUserId}_${userId}`);
+        webrtcAnswers.delete(`${userId}_${otherUserId}`);
+        webrtcAnswers.delete(`${otherUserId}_${userId}`);
+
         // Get user info for notification
         const enderInfo = await getUserName(userId);
 
@@ -776,7 +820,6 @@ export const sendVoiceMessage = async (req, res) => {
 };
 
 // Send Message (Keep your existing ImageKit logic)
-// FIXED: Send Message with proper memory storage handling
 export const sendMessage = async (req, res) => {
     try {
         const { userId } = req.auth();
@@ -811,20 +854,13 @@ export const sendMessage = async (req, res) => {
         if (image) {
             try {
                 console.log('🖼️ Processing image upload...');
-                console.log('📁 Image details:', {
-                    originalname: image.originalname,
-                    mimetype: image.mimetype,
-                    size: image.size,
-                    buffer: image.buffer ? `Present (${image.buffer.length} bytes)` : 'Missing'
-                });
 
-                // 🆕 FIXED: Use image.buffer directly (memory storage)
                 if (!image.buffer) {
                     throw new Error('Image buffer is missing');
                 }
 
                 const response = await imagekit.upload({
-                    file: image.buffer, // Use buffer directly
+                    file: image.buffer,
                     fileName: image.originalname || `image-${Date.now()}.jpg`,
                     folder: '/chat-images',
                     useUniqueFileName: true
