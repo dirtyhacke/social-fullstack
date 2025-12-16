@@ -84,6 +84,8 @@ const PostModal = React.memo(({
     const [mutedVideos, setMutedVideos] = useState({});
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [commentToDelete, setCommentToDelete] = useState(null);
+    const [likes, setLikes] = useState(Array.isArray(post?.likes) ? post.likes : []);
+    const [hasUserLiked, setHasUserLiked] = useState(false);
 
     const modalRef = useRef(null);
     const videoRefs = useRef({});
@@ -142,6 +144,37 @@ const PostModal = React.memo(({
             [index]: !prev[index]
         }));
     }, []);
+
+    // Like functionality for PostModal
+    const handleLike = async () => { 
+        if (!post?._id) return;
+
+        try {
+            const token = await getToken();
+            const { data } = await api.post(`/api/post/like`, 
+                { postId: post._id }, 
+                { 
+                    headers: { Authorization: `Bearer ${token}` },
+                    timeout: 5000
+                }
+            )
+            if (data.success){
+               toast.success(data.message)
+               setLikes(prev => {
+                if (hasUserLiked) {
+                    return prev.filter(id => id !== currentUser?._id);
+                } else {
+                    return [...(prev || []), currentUser?._id];
+                }
+               });
+               setHasUserLiked(!hasUserLiked);
+            } else {
+                toast(data.message)
+            }
+        } catch (error) {
+            toast.error(error.message)
+        }
+    }
 
     // Close modal on ESC key
     useEffect(() => {
@@ -370,6 +403,12 @@ const PostModal = React.memo(({
                             </div>
 
                             <div className='flex items-center gap-2 relative'>
+                                {/* Like Button in Modal */}
+                                <button onClick={handleLike} className='flex items-center gap-1.5 p-2 rounded-full transition-colors hover:bg-red-50 hover:text-red-500' title="Like">
+                                    <Heart className={`w-5 h-5 ${hasUserLiked ? 'text-red-500 fill-red-500' : 'text-gray-500'}`} />
+                                    <span className='font-medium text-sm'>{likes.length || 0}</span>
+                                </button>
+
                                 {isPostOwner && (
                                     <button
                                         className='p-1 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition'
@@ -455,7 +494,7 @@ const PostModal = React.memo(({
                                                         style={protectiveStyles}
                                                         onContextMenu={(e) => e.preventDefault()}
                                                         onPlay={() => handleVideoPlay(index)}
-                                                        muted={mutedVideos[index] || false}
+                                                        muted={mutedVideos[index] || true} // Changed to true by default
                                                         playsInline
                                                         preload="metadata"
                                                     >
@@ -683,37 +722,38 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
         return [];
     }, [post?.media_urls, post?.image_urls]);
 
-    const [likes, setLikes] = useState(Array.isArray(post?.likes_count) ? post.likes_count : [])
-    const [commentsCount, setCommentsCount] = useState(post?.comments_count || 0)
-    const [sharesCount, setSharesCount] = useState(post?.shares_count || 0)
-    const [showCommentBox, setShowCommentBox] = useState(false)
-    const [showComments, setShowComments] = useState(false)
-    const [comments, setComments] = useState([])
-    const [commentText, setCommentText] = useState('')
-    const [isCommenting, setIsCommenting] = useState(false)
-    const [editingComment, setEditingComment] = useState(null)
-    const [editCommentText, setEditCommentText] = useState('')
-    const [showMenu, setShowMenu] = useState(null) 
-    const [isFetchingComments, setIsFetchingComments] = useState(false)
-    const [showPostMenu, setShowPostMenu] = useState(false) 
-    const [showPostModal, setShowPostModal] = useState(false) 
-    const [playingVideo, setPlayingVideo] = useState(null)
-    const [mutedVideos, setMutedVideos] = useState({})
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-    const [isDeleting, setIsDeleting] = useState(false)
+    const [likes, setLikes] = useState(Array.isArray(post?.likes) ? post.likes : []);
+    const [hasUserLiked, setHasUserLiked] = useState(false);
+    const [commentsCount, setCommentsCount] = useState(post?.comments_count || 0);
+    const [sharesCount, setSharesCount] = useState(post?.shares_count || 0);
+    const [showCommentBox, setShowCommentBox] = useState(false);
+    const [showComments, setShowComments] = useState(false);
+    const [comments, setComments] = useState([]);
+    const [commentText, setCommentText] = useState('');
+    const [isCommenting, setIsCommenting] = useState(false);
+    const [editingComment, setEditingComment] = useState(null);
+    const [editCommentText, setEditCommentText] = useState('');
+    const [showMenu, setShowMenu] = useState(null); 
+    const [isFetchingComments, setIsFetchingComments] = useState(false);
+    const [showPostMenu, setShowPostMenu] = useState(false); 
+    const [showPostModal, setShowPostModal] = useState(false); 
+    const [playingVideo, setPlayingVideo] = useState(null);
+    const [mutedVideos, setMutedVideos] = useState({});
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     
     // Reels states - ADDED FOR REELS FUNCTIONALITY
-    const [showReels, setShowReels] = useState(false)
-    const [reelsData, setReelsData] = useState([])
-    const [initialReelIndex, setInitialReelIndex] = useState(0)
+    const [showReels, setShowReels] = useState(false);
+    const [reelsData, setReelsData] = useState([]);
+    const [initialReelIndex, setInitialReelIndex] = useState(0);
 
-    const currentUser = useSelector((state) => state.user.value)
-    const { getToken } = useAuth()
-    const navigate = useNavigate()
-    const postCardRef = useRef(null)
-    const videoRefs = useRef({})
-    const observerRef = useRef(null)
-    const commentsFetched = useRef(false)
+    const currentUser = useSelector((state) => state.user.value);
+    const { getToken } = useAuth();
+    const navigate = useNavigate();
+    const postCardRef = useRef(null);
+    const videoRefs = useRef({});
+    const observerRef = useRef(null);
+    const commentsFetched = useRef(false);
 
     const isPostOwner = post?.user?._id === currentUser?._id;
 
@@ -794,7 +834,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                 username: post.user?.username || '@user',
                 fullName: post.user?.full_name || 'User',
                 caption: post.content || '',
-                likes: Array.isArray(post.likes_count) ? post.likes_count.length : (post.likes_count || 0),
+                likes: likes.length,
                 comments: post.comments_count || 0,
                 shares: post.shares_count || 0,
                 userProfile: post.user?.profile_picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(post.user?.full_name || 'User')}&background=random`,
@@ -809,7 +849,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                 createdAt: post.createdAt,
                 user: post.user,
                 userId: post.user?._id,
-                userHasLiked: Array.isArray(post.likes_count) ? post.likes_count.includes(currentUser?._id) : false,
+                userHasLiked: hasUserLiked,
                 userReelsCount: 1
             }];
             
@@ -818,7 +858,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
             setShowReels(true);
             document.body.style.overflow = 'hidden';
         }
-    }, [post, mediaData, currentUser?._id, pauseAllVideos]);
+    }, [post, mediaData, likes.length, hasUserLiked, pauseAllVideos]);
 
     // Close Reels - ADDED FOR REELS FUNCTIONALITY
     const handleCloseReels = useCallback(() => {
@@ -915,8 +955,21 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
     }, [showReels, pauseAllVideos]);
 
     useEffect(() => {
-        setCommentsCount(post?.comments_count || 0)
-    }, [post?.comments_count])
+        setCommentsCount(post?.comments_count || 0);
+    }, [post?.comments_count]);
+
+    // FIXED: Update likes when post prop changes and currentUser is available
+    useEffect(() => {
+        if (currentUser && post) {
+            if (Array.isArray(post.likes)) {
+                setLikes(post.likes);
+                setHasUserLiked(post.likes.includes(currentUser._id));
+            } else if (Array.isArray(post.likes_count)) {
+                setLikes(post.likes_count);
+                setHasUserLiked(post.likes_count.includes(currentUser._id));
+            }
+        }
+    }, [post, currentUser]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -940,21 +993,21 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
             const { data } = await api.get(`/api/post/shares/count/${post._id}`, {
                 headers: { Authorization: `Bearer ${token}` },
                 timeout: 5000
-            })
+            });
             if (data.success) {
-                setSharesCount(data.count || 0)
+                setSharesCount(data.count || 0);
             }
         } catch (error) {
-            console.log('Error fetching shares count:', error)
+            console.log('Error fetching shares count:', error);
         }
-    }
+    };
 
     const fetchComments = async () => { 
         if (!post?._id || commentsFetched.current) {
             return;
         }
 
-        setIsFetchingComments(true)
+        setIsFetchingComments(true);
         try {
             const token = await getToken();
             const { data } = await api.get(`/api/post/comments/${post._id}`, {
@@ -963,22 +1016,37 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
             });
 
             if (data.success) {
-                setComments(data.comments || [])
-                setCommentsCount(data.comments?.length || 0)
+                setComments(data.comments || []);
+                setCommentsCount(data.comments?.length || 0);
                 commentsFetched.current = true;
             }
         } catch (error) {
-            console.error('Error fetching comments:', error)
+            console.error('Error fetching comments:', error);
             if (error.code !== 'ECONNABORTED') {
-                toast.error('Failed to load comments.')
+                toast.error('Failed to load comments.');
             }
         } finally {
-            setIsFetchingComments(false)
+            setIsFetchingComments(false);
         }
-    }
+    };
 
+    // FIXED: Updated handleLike function with immediate UI update
     const handleLike = async () => { 
         if (!post?._id) return;
+
+        // Immediately update UI for better user experience
+        const previousLikes = [...likes];
+        const previousHasUserLiked = hasUserLiked;
+        
+        if (hasUserLiked) {
+            // Unlike
+            setLikes(prev => prev.filter(id => id !== currentUser?._id));
+            setHasUserLiked(false);
+        } else {
+            // Like
+            setLikes(prev => [...(prev || []), currentUser?._id]);
+            setHasUserLiked(true);
+        }
 
         try {
             const token = await getToken();
@@ -988,39 +1056,43 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                     headers: { Authorization: `Bearer ${token}` },
                     timeout: 5000
                 }
-            )
+            );
             if (data.success){
-               toast.success(data.message)
-               setLikes(prev =>{
-                if(prev?.includes(currentUser?._id)){
-                    return prev.filter(id=> id !== currentUser?._id)
-                }else{
-                    return [...(prev || []), currentUser?._id]
-                }
-               })
-            }else{
-                toast(data.message)
+               toast.success(data.message);
+               // Update with server response if needed
+               if (data.likes) {
+                   setLikes(data.likes);
+                   setHasUserLiked(data.likes.includes(currentUser?._id));
+               }
+            } else {
+                toast(data.message);
+                // Revert if error
+                setLikes(previousLikes);
+                setHasUserLiked(previousHasUserLiked);
             }
         } catch (error) {
-            toast.error(error.message)
+            toast.error(error.message || 'Failed to like post');
+            // Revert if error
+            setLikes(previousLikes);
+            setHasUserLiked(previousHasUserLiked);
         }
-    }
+    };
 
     const handleCommentClick = () => {
-        setShowCommentBox(!showCommentBox)
-    }
+        setShowCommentBox(!showCommentBox);
+    };
 
     const handleShowComments = async () => {
         if (!showComments) {
-            await fetchComments()
+            await fetchComments();
         }
-        setShowComments(!showComments)
-    }
+        setShowComments(!showComments);
+    };
 
     const handleAddComment = async () => { 
-        if (!commentText.trim() || !post?._id) return
+        if (!commentText.trim() || !post?._id) return;
 
-        setIsCommenting(true)
+        setIsCommenting(true);
         try {
             const token = await getToken();
             const { data } = await api.post(`/api/post/comment`, 
@@ -1029,33 +1101,33 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                     headers: { Authorization: `Bearer ${token}` },
                     timeout: 10000
                 }
-            )
+            );
             if (data.success) {
-                toast.success('Comment added!')
-                setCommentsCount(prev => prev + 1)
-                setCommentText('')
-                setShowCommentBox(false)
+                toast.success('Comment added!');
+                setCommentsCount(prev => prev + 1);
+                setCommentText('');
+                setShowCommentBox(false);
                 commentsFetched.current = false;
-                await fetchComments()
+                await fetchComments();
             } else {
-                toast.error(data.message || 'Failed to add comment')
+                toast.error(data.message || 'Failed to add comment');
             }
         } catch (error) {
-            toast.error(error.message || 'Failed to add comment')
+            toast.error(error.message || 'Failed to add comment');
         } finally {
-            setIsCommenting(false)
+            setIsCommenting(false);
         }
-    }
+    };
     
     const handleEditComment = (comment) => { 
         if (!comment?._id) return;
-        setEditingComment(comment._id)
-        setEditCommentText(comment?.content || '')
-        setShowMenu(null)
-    }
+        setEditingComment(comment._id);
+        setEditCommentText(comment?.content || '');
+        setShowMenu(null);
+    };
 
     const handleUpdateComment = async (commentId) => {
-        if (!editCommentText.trim() || !commentId) return
+        if (!editCommentText.trim() || !commentId) return;
 
         try {
             const token = await getToken();
@@ -1065,16 +1137,16 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                     headers: { Authorization: `Bearer ${token}` },
                     timeout: 10000
                 }
-            )
-            toast.success('Comment updated!')
-            setEditingComment(null)
-            setEditCommentText('')
+            );
+            toast.success('Comment updated!');
+            setEditingComment(null);
+            setEditCommentText('');
             commentsFetched.current = false;
-            await fetchComments()
+            await fetchComments();
         } catch (error) {
-            toast.error('Failed to update comment.')
+            toast.error('Failed to update comment.');
         }
-    }
+    };
 
     const handleDeleteComment = async (commentId) => { 
         if (!commentId) return;
@@ -1086,21 +1158,21 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                     headers: { Authorization: `Bearer ${token}` },
                     timeout: 10000
                 }
-            )
-            toast.success('Comment deleted!')
-            setCommentsCount(prev => Math.max(0, prev - 1))
-            setShowMenu(null)
+            );
+            toast.success('Comment deleted!');
+            setCommentsCount(prev => Math.max(0, prev - 1));
+            setShowMenu(null);
             commentsFetched.current = false;
-            await fetchComments()
+            await fetchComments();
         } catch (error) {
-            toast.error('Failed to delete comment.')
+            toast.error('Failed to delete comment.');
         }
-    }
+    };
 
     const cancelEdit = () => {
-        setEditingComment(null)
-        setEditCommentText('')
-    }
+        setEditingComment(null);
+        setEditCommentText('');
+    };
 
     const handleShare = async () => { 
         if (!post?._id) return;
@@ -1113,24 +1185,24 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                     headers: { Authorization: `Bearer ${token}` },
                     timeout: 5000
                 }
-            )
+            );
             if (data.success) {
-                toast.success('Post shared successfully!')
-                setSharesCount(prev => prev + 1)
-                const postUrl = `${window.location.origin}/post/${post._id}`
-                navigator.clipboard.writeText(postUrl)
-                toast('Post link copied to clipboard!')
+                toast.success('Post shared successfully!');
+                setSharesCount(prev => prev + 1);
+                const postUrl = `${window.location.origin}/post/${post._id}`;
+                navigator.clipboard.writeText(postUrl);
+                toast('Post link copied to clipboard!');
             } else {
-                toast.error(data.message || 'Failed to share post')
+                toast.error(data.message || 'Failed to share post');
             }
         } catch (error) {
-            toast.error(error.message || 'Failed to share post')
+            toast.error(error.message || 'Failed to share post');
         }
-    }
+    };
 
     const isCurrentUserComment = (comment) => {
-        return comment?.user?._id === currentUser?._id
-    }
+        return comment?.user?._id === currentUser?._id;
+    };
     
     // Edit Post Functionality
     const handleEditPost = () => {
@@ -1140,13 +1212,13 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
         } else {
             toast.success('Edit post functionality - Replace media option would open here');
         }
-    }
+    };
 
     // Delete Post Functionality
     const handleDeletePost = () => {
         setShowPostMenu(false);
         setShowDeleteConfirm(true);
-    }
+    };
 
     const confirmDeletePost = async () => {
         if (!post?._id) {
@@ -1368,7 +1440,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                                             }}
                                             playsInline
                                             preload="metadata"
-                                            muted={mutedVideos[index] || false}
+                                            muted={mutedVideos[index] !== undefined ? mutedVideos[index] : true} // Changed: default to muted
                                         >
                                             <source src={media.url} type="video/mp4" />
                                             Your browser does not support the video tag.
@@ -1399,7 +1471,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                                             onClick={(e) => toggleMute(index, e)}
                                             className="absolute top-2 left-2 bg-black/70 text-white p-1.5 rounded hover:bg-black/90 transition"
                                         >
-                                            {mutedVideos[index] ? (
+                                            {mutedVideos[index] || mutedVideos[index] === undefined ? ( // Show muted icon by default
                                                 <VolumeX className="w-3 h-3 sm:w-4 sm:h-4" />
                                             ) : (
                                                 <Volume2 className="w-3 h-3 sm:w-4 sm:h-4" />
@@ -1421,9 +1493,10 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                 {/* Actions Bar */}
                 <div className='flex items-center justify-between text-gray-600 text-sm pt-3 border-t border-gray-100'>
                     <div className='flex items-center gap-3'>
+                        {/* FIXED: Updated like button with immediate state change */}
                         <button onClick={handleLike} className='flex items-center gap-1.5 p-2 rounded-full transition-colors hover:bg-red-50 hover:text-red-500' title="Like">
-                            <Heart className={`w-5 h-5 ${likes?.includes(currentUser?._id) ? 'text-red-500 fill-red-500' : 'text-gray-500'}`} />
-                            <span className='font-medium text-sm'>{likes?.length || 0}</span>
+                            <Heart className={`w-5 h-5 ${hasUserLiked ? 'text-red-500 fill-red-500' : 'text-gray-500'}`} />
+                            <span className='font-medium text-sm'>{likes.length || 0}</span>
                         </button>
                         
                         <button onClick={handleCommentClick} className='flex items-center gap-1.5 p-2 rounded-full transition-colors hover:bg-blue-50 hover:text-blue-500' title="Comment">
@@ -1553,7 +1626,7 @@ const PostCard = React.memo(({ post, onEdit, onDelete }) => {
                 )}
             </div>
         </>
-    )
-})
+    );
+});
 
 export default PostCard;

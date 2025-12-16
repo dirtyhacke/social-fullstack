@@ -1,81 +1,116 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { assets } from '../assets/assets'
-import StoriesBar from '../components/StoriesBar'
-import PostCard from '../components/PostCard'
-import RecentMessages from '../components/RecentMessages'
-import { useAuth } from '@clerk/clerk-react'
-import api from '../api/axios'
-import toast from 'react-hot-toast'
-import { Zap, CornerDownRight, MessageCircle, User } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import React, { useEffect, useState, useCallback } from 'react';
+import { assets } from '../assets/assets';
+import StoriesBar from '../components/StoriesBar';
+import PostCard from '../components/PostCard';
+import RecentMessages from '../components/RecentMessages';
+import { useAuth } from '@clerk/clerk-react';
+import api from '../api/axios';
+import toast from 'react-hot-toast';
+import { Zap, CornerDownRight, MessageCircle, User, Bell, Search } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
-// Skeleton Components with graceful gliding effect
-const PostCardSkeleton = () => {
-    return (
-        <div className='bg-white rounded-xl shadow-lg p-4 sm:p-5 space-y-4 w-full max-w-2xl border border-gray-100 overflow-hidden mx-auto'>
-            {/* Gliding overlay */}
-            <div className='absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent animate-glide z-10'></div>
-            
-            {/* User Info Skeleton */}
-            <div className='flex items-center justify-between relative'>
-                <div className='flex items-center gap-3'>
-                    <div className='w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 relative overflow-hidden'></div>
-                    <div className='space-y-2'>
-                        <div className='h-4 w-28 sm:w-32 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                        <div className='h-3 w-20 sm:w-24 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                    </div>
-                </div>
-                <div className='w-5 h-5 sm:w-6 sm:h-6 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-            </div>
-            
-            {/* Content Skeleton */}
-            <div className='space-y-2 relative'>
-                <div className='h-4 w-full bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                <div className='h-4 w-3/4 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                <div className='h-4 w-1/2 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-            </div>
-            
-            {/* Media Skeleton */}
-            <div className='grid grid-cols-2 gap-2 relative'>
-                <div className='h-40 sm:h-48 bg-gradient-to-r from-gray-100 to-gray-200 rounded-lg relative overflow-hidden'></div>
-                <div className='h-40 sm:h-48 bg-gradient-to-r from-gray-100 to-gray-200 rounded-lg relative overflow-hidden'></div>
-            </div>
-            
-            {/* Actions Skeleton */}
-            <div className='flex items-center justify-between pt-3 border-t border-gray-100 relative'>
-                <div className='flex items-center gap-4 sm:gap-6'>
-                    <div className='flex items-center gap-2'>
-                        <div className='w-4 h-4 sm:w-5 sm:h-5 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                        <div className='h-4 w-6 sm:w-8 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                    </div>
-                    <div className='flex items-center gap-2'>
-                        <div className='w-4 h-4 sm:w-5 sm:h-5 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                        <div className='h-4 w-6 sm:w-8 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                    </div>
-                    <div className='flex items-center gap-2'>
-                        <div className='w-4 h-4 sm:w-5 sm:h-5 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                        <div className='h-4 w-6 sm:w-8 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-                    </div>
-                </div>
-                <div className='h-4 w-20 sm:w-24 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden'></div>
-            </div>
-        </div>
+// --- STYLES FOR SHIMMER ANIMATION ---
+const shimmerStyles = `
+  @keyframes shimmer {
+    100% { transform: translateX(100%); }
+  }
+  .animate-shimmer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0,
+      rgba(255, 255, 255, 0.2) 20%,
+      rgba(255, 255, 255, 0.5) 60%,
+      rgba(255, 255, 255, 0)
     );
-};
+    animation: shimmer 2s infinite;
+  }
+`;
+
+// --- SKELETON COMPONENTS ---
 
 const StoriesBarSkeleton = () => {
     return (
-        <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-4 px-2 sm:px-0 relative">
-            {[1, 2, 3, 4, 5, 6].map((item) => (
-                <div key={item} className="flex flex-col items-center gap-2 relative overflow-hidden flex-shrink-0">
-                    <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/60 to-transparent animate-glide z-10"></div>
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 border-2 border-gray-300 relative overflow-hidden"></div>
-                    <div className="h-3 w-10 sm:w-12 bg-gradient-to-r from-gray-100 to-gray-200 rounded relative overflow-hidden"></div>
-                </div>
-            ))}
+        <div className="bg-white border border-gray-100 rounded-xl p-4 mb-5 shadow-sm">
+            <div className="flex gap-4 overflow-x-auto no-scrollbar">
+                {[1, 2, 3, 4, 5, 6, 7].map((item) => (
+                    <div key={item} className="flex flex-col items-center gap-2 flex-shrink-0">
+                        <div className="relative w-16 h-16 rounded-full bg-gray-200 overflow-hidden">
+                            <div className="animate-shimmer"></div>
+                        </div>
+                        <div className="relative h-3 w-12 bg-gray-200 rounded overflow-hidden">
+                            <div className="animate-shimmer"></div>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
+
+const PostCardSkeleton = () => {
+    return (
+        <div className='bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6'>
+            {/* Header */}
+            <div className='p-4 flex items-center justify-between'>
+                <div className='flex items-center gap-3'>
+                    <div className='relative w-10 h-10 rounded-full bg-gray-200 overflow-hidden'>
+                        <div className="animate-shimmer"></div>
+                    </div>
+                    <div className='space-y-2'>
+                        <div className='relative h-4 w-32 bg-gray-200 rounded overflow-hidden'>
+                            <div className="animate-shimmer"></div>
+                        </div>
+                        <div className='relative h-3 w-20 bg-gray-200 rounded overflow-hidden'>
+                            <div className="animate-shimmer"></div>
+                        </div>
+                    </div>
+                </div>
+                <div className='relative h-5 w-5 bg-gray-200 rounded-full overflow-hidden'>
+                    <div className="animate-shimmer"></div>
+                </div>
+            </div>
+            
+            {/* Image Placeholder - Aspect Ratio Preservation */}
+            <div className='relative w-full aspect-[4/3] bg-gray-200 overflow-hidden'>
+                <div className="animate-shimmer"></div>
+            </div>
+            
+            {/* Footer Actions */}
+            <div className='p-4 space-y-3'>
+                <div className='flex justify-between items-center'>
+                    <div className='flex gap-4'>
+                        {[1, 2, 3].map(i => (
+                             <div key={i} className='relative w-6 h-6 bg-gray-200 rounded-full overflow-hidden'>
+                                <div className="animate-shimmer"></div>
+                             </div>
+                        ))}
+                    </div>
+                     <div className='relative w-6 h-6 bg-gray-200 rounded-full overflow-hidden'>
+                        <div className="animate-shimmer"></div>
+                     </div>
+                </div>
+                
+                {/* Caption Lines */}
+                <div className='space-y-2 mt-3'>
+                    <div className='relative h-4 w-full bg-gray-200 rounded overflow-hidden'>
+                        <div className="animate-shimmer"></div>
+                    </div>
+                    <div className='relative h-4 w-2/3 bg-gray-200 rounded overflow-hidden'>
+                        <div className="animate-shimmer"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- MAIN FEED COMPONENT ---
 
 const Feed = () => {
   const [feeds, setFeeds] = useState([]);
@@ -85,7 +120,6 @@ const Feed = () => {
   const fetchFeeds = useCallback(async () => {
     try {
       setLoading(true);
-      
       const token = await getToken();
       const { data } = await api.get('/api/post/feed', {
         headers: { Authorization: `Bearer ${token}` },
@@ -94,7 +128,6 @@ const Feed = () => {
 
       if (data.success) {
         setFeeds(data.posts || []);
-        console.log(`✅ Loaded ${data.posts?.length || 0} posts in feed`);
       } else {
         toast.error(data.message || 'Failed to load feed');
         setFeeds([]);
@@ -112,158 +145,165 @@ const Feed = () => {
     fetchFeeds();
   }, [fetchFeeds]);
 
-  // Add CSS for the glide animation
-  const glideStyles = `
-    @keyframes glide {
-      0% {
-        transform: translateX(-100%);
-      }
-      100% {
-        transform: translateX(100%);
-      }
-    }
-    .animate-glide {
-      animation: glide 1.5s ease-in-out infinite;
-    }
-  `;
-
-  // Handle post deletion from feed
   const handleDeletePost = (deletedPostId) => {
     setFeeds(prevFeeds => prevFeeds.filter(post => post._id !== deletedPostId));
     toast.success('Post deleted successfully!');
   };
 
-  // Handle post edit (if you implement editing)
   const handleEditPost = (updatedPost) => {
     setFeeds(prevFeeds => 
-      prevFeeds.map(post => 
-        post._id === updatedPost._id ? updatedPost : post
-      )
+      prevFeeds.map(post => post._id === updatedPost._id ? updatedPost : post)
     );
     toast.success('Post updated successfully!');
   };
 
   return (
-    <>
-      <style>{glideStyles}</style>
+    <div className="min-h-screen bg-gray-50/50">
+      <style>{shimmerStyles}</style>
       
-      {/* Instagram-style Fixed Header */}
-      <div className='fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm'>
-        <div className='flex items-center gap-3'>
-          {/* Logo */}
-          <img 
-            src={assets.logo} 
-            className='w-8 h-8' 
-            alt="PixoNet Logo" 
-          />
-          <h1 className='text-xl font-bold text-gray-900 hidden sm:block'>
-            <span className="text-green-600">Pixo</span>Net
-          </h1>
-        </div>
+      {/* --- Header (Mobile Optimized) --- */}
+      <div className='fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200 transition-all duration-300'>
+        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
+            <div className="flex items-center justify-between h-16">
+                {/* Logo */}
+                <div className='flex items-center gap-2 cursor-pointer' onClick={() => window.scrollTo({top:0, behavior:'smooth'})}>
+                    <img src={assets.logo} className='w-8 h-8 object-contain' alt="Logo" />
+                    <h1 className='text-xl font-bold tracking-tight hidden sm:block text-gray-900'>
+                        <span className="text-blue-600">Pixo</span>Net
+                    </h1>
+                </div>
 
-        {/* Instagram-style Icons */}
-        <div className='flex items-center gap-4'>
-          {/* My Profile Button */}
-          <Link 
-            to="/profile"
-            className='p-2 rounded-full text-gray-700 hover:text-green-600 hover:bg-gray-100 transition-colors duration-200'
-            title="My Profile"
-          >
-            <User className='w-5 h-5 sm:w-6 sm:h-6' />
-          </Link>
+                {/* Search Bar (Hidden on small mobile) */}
+                <div className="hidden md:flex items-center bg-gray-100 rounded-full px-4 py-2 w-64">
+                    <Search className="w-4 h-4 text-gray-500 mr-2" />
+                    <input type="text" placeholder="Search..." className="bg-transparent border-none focus:outline-none text-sm w-full" />
+                </div>
 
-          {/* Message Button */}
-          <Link 
-            to="/messages"
-            className='p-2 rounded-full text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors duration-200'
-            title="Messages"
-          >
-            <MessageCircle className='w-5 h-5 sm:w-6 sm:h-6' />
-          </Link>
-        </div>
-      </div>
-
-      {/* Main Content with padding for fixed header */}
-      <div className='pt-16 max-w-7xl mx-auto px-3 sm:px-4 md:px-6 flex justify-center items-start gap-4 lg:gap-8'>
-        
-        {/* Main Content Column */}
-        <div className='flex flex-col w-full max-w-2xl flex-shrink-0'>
-          
-          {/* Stories Bar */}
-          <div className='mb-4 sm:mb-6'>
-            {loading ? <StoriesBarSkeleton /> : <StoriesBar />}
-          </div>
-
-          {/* Post Feed */}
-          <div className='space-y-4 sm:space-y-6'>
-            {loading ? (
-              // Show skeleton posts while loading with graceful gliding effect
-              [1, 2, 3].map((item) => (
-                <PostCardSkeleton key={item} />
-              ))
-            ) : feeds.length > 0 ? (
-              feeds.map((post) => (
-                <PostCard 
-                  key={post._id} 
-                  post={post}
-                  onDelete={handleDeletePost}
-                  onEdit={handleEditPost}
-                />
-              ))
-            ) : (
-              <div className="p-6 sm:p-8 text-center bg-white rounded-xl shadow-lg border border-gray-100 mt-6 sm:mt-10 mx-2 sm:mx-0">
-                <div className="text-4xl mb-3 sm:mb-4">📷</div>
-                <p className="text-lg sm:text-xl font-semibold text-gray-700">No posts in your feed yet.</p>
-                <p className="text-gray-500 mt-2 text-sm sm:text-base">Follow more people to see content here!</p>
-                <button 
-                  onClick={fetchFeeds}
-                  className="mt-4 px-5 sm:px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition duration-200 text-sm sm:text-base flex items-center gap-2 mx-auto"
-                >
-                  Check for New Posts
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Sidebar - Hidden on mobile and tablet, visible on xl screens */}
-        <div className='hidden xl:block w-full max-w-xs mt-16'>
-          <div className='sticky top-20 flex flex-col gap-6'>
-            
-            {/* Sponsored Ad Card */}
-            <div className='bg-white p-5 rounded-xl border border-indigo-100 shadow-lg'>
-              <h3 className='flex items-center gap-2 text-indigo-600 font-bold text-sm mb-3 uppercase'>
-                <Zap className='w-4 h-4'/> Sponsored
-              </h3>
-              
-              {/* Ad Image */}
-              <img 
-                src={assets.sponsored_img} 
-                className='w-full h-auto object-cover rounded-lg mb-3 border border-gray-100' 
-                alt="Sponsored content" 
-                loading="lazy"
-              />
-              
-              {/* Ad Text */}
-              <div>
-                <p className='text-slate-800 font-semibold text-md mb-1'>Email Marketing Platform</p>
-                <p className='text-slate-500 text-sm'>Supercharge your marketing with a powerful, easy-to-use platform built for results.</p>
-              </div>
-
-              {/* Call to Action */}
-              <button className='mt-4 w-full flex items-center justify-center gap-2 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm font-semibold transition duration-200'>
-                Learn More <CornerDownRight className='w-4 h-4'/>
-              </button>
+                {/* Icons */}
+                <div className='flex items-center gap-2 sm:gap-4'>
+                    <Link to="/messages" className='p-2.5 rounded-full text-gray-600 hover:bg-gray-100 hover:text-blue-600 transition-all relative'>
+                        <MessageCircle className='w-6 h-6' />
+                        {/* Notification Dot Example */}
+                        <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full"></span>
+                    </Link>
+                    <Link to="/notifications" className='p-2.5 rounded-full text-gray-600 hover:bg-gray-100 hover:text-blue-600 transition-all hidden sm:block'>
+                        <Bell className='w-6 h-6' />
+                    </Link>
+                    <Link to="/profile" className='p-1 rounded-full hover:ring-2 hover:ring-blue-100 transition-all ml-1'>
+                        <div className="w-9 h-9 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold shadow-sm">
+                            <User className="w-5 h-5" />
+                        </div>
+                    </Link>
+                </div>
             </div>
-            
-            {/* Recent Messages Component */}
-            <RecentMessages />
-            
-          </div>
         </div>
       </div>
-    </>
-  )
+
+      {/* --- Main Layout --- */}
+      <div className='pt-20 pb-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
+        <div className='grid grid-cols-1 lg:grid-cols-12 gap-8'>
+            
+            {/* Left Sidebar (Optional Navigation - Hidden on Mobile) */}
+            {/* If you don't have a left sidebar, we can center the feed or span it */}
+            
+            {/* --- Feed Column (Center) --- */}
+            <div className='lg:col-span-8 xl:col-span-7 mx-auto w-full max-w-2xl lg:max-w-none'>
+                
+                {/* Stories Section */}
+                <div className='mb-6'>
+                    {loading ? <StoriesBarSkeleton /> : <StoriesBar />}
+                </div>
+
+                {/* Posts Feed */}
+                <div className='space-y-6'>
+                    {loading ? (
+                        <>
+                            <PostCardSkeleton />
+                            <PostCardSkeleton />
+                            <PostCardSkeleton />
+                        </>
+                    ) : feeds.length > 0 ? (
+                        feeds.map((post) => (
+                            <PostCard 
+                                key={post._id} 
+                                post={post}
+                                onDelete={handleDeletePost}
+                                onEdit={handleEditPost}
+                            />
+                        ))
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-16 bg-white rounded-2xl shadow-sm border border-gray-100 text-center px-4">
+                            <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mb-4 animate-bounce">
+                                <span className="text-4xl">📸</span>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">No Posts Yet</h3>
+                            <p className="text-gray-500 max-w-xs mx-auto mb-6">
+                                Your feed looks a bit empty. Follow some people or create your first post!
+                            </p>
+                            <button 
+                                onClick={fetchFeeds}
+                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+                            >
+                                Refresh Feed
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* --- Right Sidebar (Desktop Only) --- */}
+            <div className='hidden lg:block lg:col-span-4 xl:col-span-5 space-y-6'>
+                <div className="sticky top-24 space-y-6">
+                    
+                    {/* Sponsored Card */}
+                    <div className='bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden group'>
+                        <div className="p-4 border-b border-gray-50 flex items-center justify-between">
+                             <span className='flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider'>
+                                <Zap className='w-3 h-3 text-yellow-500 fill-yellow-500'/> Sponsored
+                            </span>
+                            <span className="text-xs text-gray-400">Ad</span>
+                        </div>
+                        
+                        <div className="p-4">
+                            <div className="relative overflow-hidden rounded-xl mb-3">
+                                <img 
+                                    src={assets.sponsored_img} 
+                                    className='w-full h-48 object-cover transform group-hover:scale-105 transition-transform duration-500' 
+                                    alt="Sponsored" 
+                                />
+                                <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
+                            </div>
+                            
+                            <h3 className='font-bold text-gray-900 text-lg leading-tight mb-1'>
+                                Premium Marketing Tools
+                            </h3>
+                            <p className='text-gray-500 text-sm leading-relaxed mb-4'>
+                                Boost your reach with our AI-driven marketing analytics. Start your free trial today.
+                            </p>
+
+                            <button className='w-full py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-900 font-semibold rounded-lg text-sm transition-colors border border-gray-200 flex items-center justify-center gap-2 group-hover:border-blue-200 group-hover:text-blue-600'>
+                                Learn More <CornerDownRight className='w-4 h-4'/>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Recent Messages / Suggestions */}
+                    <RecentMessages />
+                    
+                    {/* Footer Links (Optional) */}
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 px-2 text-xs text-gray-400">
+                        <a href="#" className="hover:underline">Privacy</a>
+                        <a href="#" className="hover:underline">Terms</a>
+                        <a href="#" className="hover:underline">Advertising</a>
+                        <span>© 2024 PixoNet</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default Feed;

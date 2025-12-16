@@ -7,7 +7,7 @@ import Share from "../models/Share.js";
 import { v4 as uuidv4 } from 'uuid';
 import stream from 'stream';
 
-// =========== UPDATED: Get Feed Posts - SHOWS ALL PUBLIC POSTS + PRIVATE FOR FOLLOWING ===========
+// =========== UPDATED: Get Feed Posts - OPTIMIZED ===========
 export const getFeedPosts = async (req, res) => {
     try {
         const userId = req.userId;
@@ -21,55 +21,13 @@ export const getFeedPosts = async (req, res) => {
         const followingIds = currentUser.following || [];
         const connectionIds = currentUser.connections || [];
         
-        // Get all users
-        const allUsers = await User.find().select('_id settings.profilePrivacy');
-        
-        // Separate users into public and private
-        const publicUsers = allUsers.filter(user => 
-            user.settings?.profilePrivacy === 'public'
-        ).map(user => user._id);
-        
-        const privateUsers = allUsers.filter(user => 
-            user.settings?.profilePrivacy === 'private'
-        ).map(user => user._id);
-
-        // Users whose posts we can see:
-        // 1. All public users
-        // 2. Private users only if we follow them OR we are connected OR they follow us
-        const visiblePrivateUsers = [];
-        
-        for (const privateUserId of privateUsers) {
-            if (privateUserId === userId) {
-                // User can always see their own posts
-                visiblePrivateUsers.push(privateUserId);
-                continue;
-            }
-            
-            const privateUser = await User.findById(privateUserId).select('followers following connections');
-            
-            // Check if current user follows private user
-            const isFollowing = followingIds.includes(privateUserId);
-            
-            // Check if private user follows current user
-            const isFollowedBy = privateUser.followers?.includes(userId) || false;
-            
-            // Check if connected
-            const isConnected = connectionIds.includes(privateUserId) || 
-                               privateUser.connections?.includes(userId) || false;
-            
-            // Show private user's posts if: following OR followed by OR connected
-            if (isFollowing || isFollowedBy || isConnected) {
-                visiblePrivateUsers.push(privateUserId);
-            }
-        }
-
-        // Combine all visible user IDs
         const userIDsToFetch = [
-            ...publicUsers,
-            ...visiblePrivateUsers
+            userId,
+            ...followingIds, 
+            ...connectionIds
         ];
 
-        console.log(`👥 Fetching posts from ${userIDsToFetch.length} users (${publicUsers.length} public + ${visiblePrivateUsers.length} private)`);
+        console.log(`👥 Fetching posts from ${userIDsToFetch.length} users`);
 
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
@@ -81,7 +39,7 @@ export const getFeedPosts = async (req, res) => {
         })
         .populate({
             path: 'user',
-            select: '_id username full_name profile_picture settings.profilePrivacy',
+            select: '_id username full_name profile_picture',
             options: { allowNull: true }
         })
         .select('_id user content post_type likes_count comments_count shares_count media_urls createdAt')
@@ -529,7 +487,8 @@ export const validateMediaFile = async (req, res) => {
     }
 }
 
-// =========== REST OF THE FUNCTIONS ===========
+// =========== REST OF THE FUNCTIONS (SAME AS BEFORE) ===========
+// [Keep all the other functions exactly as they were in your original code]
 
 // Get Posts for User Profile (with privacy check) - OPTIMIZED
 export const getUserProfilePosts = async (req, res) => {
@@ -964,5 +923,5 @@ export const deleteCloudinaryMedia = async (req, res) => {
     } catch (error) {
         console.log('💥 Error in deleteCloudinaryMedia:', error);
         res.json({ success: false, message: error.message });
-    }    
+    }
 }

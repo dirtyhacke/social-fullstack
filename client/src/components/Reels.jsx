@@ -10,7 +10,7 @@ const Reels = ({ onClose }) => {
     const { getToken, userId } = useAuth();
     const navigate = useNavigate();
     
-    // State management - ALL LOGIC SAME
+    // State management
     const [reels, setReels] = useState([]);
     const [posts, setPosts] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -41,9 +41,18 @@ const Reels = ({ onClose }) => {
     const commentInputRef = useRef(null);
     const containerRef = useRef(null);
     const observerRef = useRef(null);
-    const canvasRef = useRef(null);
 
-    // Fetch reels from API - SAME LOGIC
+    // Simple helper functions to get current content
+    const getCurrentContent = () => {
+        return contentType === 'reels' ? reels : posts;
+    };
+
+    const getCurrentItem = () => {
+        const content = getCurrentContent();
+        return content[currentIndex];
+    };
+
+    // Fetch reels from API
     const fetchReels = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -93,17 +102,16 @@ const Reels = ({ onClose }) => {
                     };
                 });
                 
-                setReels(videoPosts);
+                // Shuffle reels for random order
+                const shuffledReels = [...videoPosts].sort(() => Math.random() - 0.5);
+                setReels(shuffledReels);
                 
+                // Initialize liked state
                 const initialLikedState = {};
-                videoPosts.forEach(reel => {
-                    if (reel.userHasLiked) {
-                        initialLikedState[reel.id] = true;
-                    }
+                shuffledReels.forEach(reel => {
+                    initialLikedState[reel.id] = reel.userHasLiked || false;
                 });
                 setLikedReels(initialLikedState);
-                
-                console.log(`✅ Loaded ${videoPosts.length} reels`);
                 
                 if (posts.length === 0) {
                     fetchPosts();
@@ -119,9 +127,9 @@ const Reels = ({ onClose }) => {
         } finally {
             setIsLoading(false);
         }
-    }, [getToken, userId]);
+    }, [getToken, userId, posts.length]);
 
-    // Fetch posts from API - SAME LOGIC
+    // Fetch posts from API
     const fetchPosts = useCallback(async () => {
         setIsLoadingPosts(true);
         try {
@@ -171,17 +179,17 @@ const Reels = ({ onClose }) => {
                     };
                 });
                 
-                setPosts(imagePosts);
+                // Shuffle posts for random order
+                const shuffledPosts = [...imagePosts].sort(() => Math.random() - 0.5);
+                setPosts(shuffledPosts);
                 
+                // Initialize liked state
                 const initialLikedState = {};
-                imagePosts.forEach(post => {
-                    if (post.userHasLiked) {
-                        initialLikedState[post.id] = true;
-                    }
+                shuffledPosts.forEach(post => {
+                    initialLikedState[post.id] = post.userHasLiked || false;
                 });
                 setLikedPosts(initialLikedState);
                 
-                console.log(`✅ Loaded ${imagePosts.length} posts`);
             } else {
                 toast.error(data.message || 'Failed to load posts');
                 setPosts([]);
@@ -199,20 +207,10 @@ const Reels = ({ onClose }) => {
         fetchReels();
     }, [fetchReels]);
 
-    // Get current content - SAME LOGIC
-    const getCurrentContent = () => {
-        return contentType === 'reels' ? reels : posts;
-    };
-
-    const getCurrentItem = () => {
-        const content = getCurrentContent();
-        return content[currentIndex];
-    };
-
-    // Setup Intersection Observer - SAME LOGIC
+    // Setup Intersection Observer
     useEffect(() => {
         const content = getCurrentContent();
-        if (content.length === 0) return;
+        if (content.length === 0 || !containerRef.current) return;
 
         const options = {
             root: containerRef.current,
@@ -229,14 +227,11 @@ const Reels = ({ onClose }) => {
                     
                     if (contentType === 'reels') {
                         setIsPlaying(true);
-                        
                         const video = videoRefs.current[index];
-                        if (video) {
-                            video.muted = false;
-                            video.play().catch(error => {
-                                console.log('Auto-play failed:', error);
+                        if (video && video.paused) {
+                            video.play().catch(() => {
                                 video.muted = true;
-                                video.play().catch(e => console.log('Muted autoplay also failed:', e));
+                                video.play().catch(console.log);
                             });
                         }
                     }
@@ -245,7 +240,6 @@ const Reels = ({ onClose }) => {
                         const video = videoRefs.current[index];
                         if (video) {
                             video.pause();
-                            video.muted = true;
                         }
                     }
                 }
@@ -253,22 +247,73 @@ const Reels = ({ onClose }) => {
         };
 
         observerRef.current = new IntersectionObserver(handleIntersection, options);
-
         const contentContainers = document.querySelectorAll('.content-container');
+        
         contentContainers.forEach(container => {
-            if (observerRef.current) {
-                observerRef.current.observe(container);
-            }
+            observerRef.current?.observe(container);
         });
 
         return () => {
-            if (observerRef.current) {
-                observerRef.current.disconnect();
+            observerRef.current?.disconnect();
+        };
+    }, [reels.length, posts.length, contentType]);
+
+    // Handle keyboard navigation for desktop
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (showComments || showShareMenu || showMoreMenu || showDownloadProgress) return;
+            
+            const content = getCurrentContent();
+            
+            switch(e.key) {
+                case 'ArrowUp':
+                    e.preventDefault();
+                    if (currentIndex > 0) {
+                        setCurrentIndex(prev => prev - 1);
+                        if (contentType === 'reels') setIsPlaying(true);
+                    }
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    if (currentIndex < content.length - 1) {
+                        setCurrentIndex(prev => prev + 1);
+                        if (contentType === 'reels') setIsPlaying(true);
+                    }
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    if (contentType === 'reels') {
+                        setIsPlaying(prev => !prev);
+                    }
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    onClose();
+                    break;
+                case 'l':
+                case 'L':
+                    e.preventDefault();
+                    handleLike();
+                    break;
+                case 'c':
+                case 'C':
+                    e.preventDefault();
+                    const currentItem = getCurrentItem();
+                    if (currentItem?.id) loadComments(currentItem.id);
+                    break;
+                case 's':
+                case 'S':
+                    e.preventDefault();
+                    handleSave();
+                    break;
             }
         };
-    }, [reels, posts, contentType]);
 
-    // Manual play/pause - SAME LOGIC
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [currentIndex, contentType, showComments, showShareMenu, showMoreMenu, showDownloadProgress]);
+
+    // Manual play/pause control
     useEffect(() => {
         if (contentType !== 'reels') return;
         
@@ -277,30 +322,28 @@ const Reels = ({ onClose }) => {
 
         if (isPlaying) {
             currentVideo.muted = false;
-            currentVideo.play().catch(error => {
-                console.log('Manual play failed:', error);
+            currentVideo.play().catch(() => {
                 currentVideo.muted = true;
-                currentVideo.play().catch(e => console.log('Muted play also failed:', e));
+                currentVideo.play().catch(console.log);
             });
         } else {
             currentVideo.pause();
         }
     }, [currentIndex, isPlaying, contentType]);
 
-    // Stop all videos - SAME LOGIC
+    // Cleanup videos on unmount
     useEffect(() => {
         return () => {
             videoRefs.current.forEach(video => {
                 if (video) {
                     video.pause();
                     video.currentTime = 0;
-                    video.muted = true;
                 }
             });
         };
     }, []);
 
-    // Handle download - SAME LOGIC
+    // Handle download
     const handleDownload = async () => {
         const currentItem = getCurrentItem();
         if (!currentItem || isDownloading || downloadedReels[currentItem.id]) return;
@@ -310,152 +353,83 @@ const Reels = ({ onClose }) => {
         setDownloadProgress(0);
 
         try {
-            setDownloadProgress(10);
-            
             const downloadUrl = contentType === 'reels' ? currentItem.videoUrl : currentItem.imageUrl;
             const response = await fetch(downloadUrl);
+            
             if (!response.ok) throw new Error('Failed to fetch content');
             
-            const contentLength = response.headers.get('content-length');
-            const total = parseInt(contentLength || '0');
-            const reader = response.body.getReader();
-            let received = 0;
-            let chunks = [];
+            const blob = await response.blob();
+            setDownloadProgress(50);
 
-            while (true) {
-                setDownloadProgress(20);
-                const { done, value } = await reader.read();
-                
-                if (done) break;
-                
-                chunks.push(value);
-                received += value.length;
-                
-                if (total > 0) {
-                    const progress = Math.min(20 + (received / total * 70), 90);
-                    setDownloadProgress(progress);
-                }
-            }
-
-            setDownloadProgress(90);
-            const blob = new Blob(chunks, { 
-                type: contentType === 'reels' ? 'video/mp4' : 'image/jpeg' 
-            });
-
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
             if (contentType === 'reels') {
-                const blobUrl = URL.createObjectURL(blob);
                 const video = document.createElement('video');
-                video.src = blobUrl;
+                video.src = URL.createObjectURL(blob);
                 
-                await new Promise((resolve, reject) => {
+                await new Promise((resolve) => {
                     video.onloadedmetadata = resolve;
-                    video.onerror = reject;
                 });
-
+                
+                video.currentTime = 0;
                 await video.play();
                 video.pause();
-                video.currentTime = 0;
-
-                await new Promise((resolve) => {
-                    video.oncanplay = resolve;
-                });
-
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
                 
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
-
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                ctx.font = 'bold 48px Arial';
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('pixo', canvas.width / 2, canvas.height / 2);
-                
-                ctx.font = 'bold 24px Arial';
-                ctx.fillText('pixo', canvas.width - 60, canvas.height - 30);
-
-                canvas.toBlob(async (canvasBlob) => {
-                    if (!canvasBlob) {
-                        throw new Error('Failed to create watermarked video');
-                    }
-
-                    const downloadUrl = URL.createObjectURL(canvasBlob);
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = `pixo_reel_${currentItem.id}.mp4`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    
-                    URL.revokeObjectURL(downloadUrl);
-                    URL.revokeObjectURL(blobUrl);
-
-                    setDownloadedReels(prev => ({
-                        ...prev,
-                        [currentItem.id]: true
-                    }));
-
-                    setDownloadProgress(100);
-                    toast.success('Reel downloaded with watermark!');
-                    
-                    setTimeout(() => {
-                        setShowDownloadProgress(false);
-                        setIsDownloading(false);
-                        setDownloadProgress(0);
-                    }, 1500);
-
-                }, 'video/mp4');
+                URL.revokeObjectURL(video.src);
             } else {
                 const img = new Image();
                 img.src = URL.createObjectURL(blob);
                 
-                await new Promise((resolve, reject) => {
+                await new Promise((resolve) => {
                     img.onload = resolve;
-                    img.onerror = reject;
                 });
-
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
                 
                 canvas.width = img.width;
                 canvas.height = img.height;
-
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                ctx.font = 'bold 48px Arial';
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText('pixo', canvas.width / 2, canvas.height / 2);
-                
-                ctx.font = 'bold 24px Arial';
-                ctx.fillText('pixo', canvas.width - 60, canvas.height - 30);
-
-                const downloadUrl = canvas.toDataURL('image/jpeg', 0.9);
-                const a = document.createElement('a');
-                a.href = downloadUrl;
-                a.download = `pixo_post_${currentItem.id}.jpg`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-
-                setDownloadedReels(prev => ({
-                    ...prev,
-                    [currentItem.id]: true
-                }));
-
-                setDownloadProgress(100);
-                toast.success('Post downloaded with watermark!');
-                
-                setTimeout(() => {
-                    setShowDownloadProgress(false);
-                    setIsDownloading(false);
-                    setDownloadProgress(0);
-                }, 1500);
+                URL.revokeObjectURL(img.src);
             }
+
+            // Add watermark
+            ctx.font = 'bold 48px Arial';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('pixo', canvas.width / 2, canvas.height / 2);
+            
+            ctx.font = 'bold 24px Arial';
+            ctx.fillText('pixo', canvas.width - 60, canvas.height - 30);
+
+            setDownloadProgress(80);
+
+            const downloadUrlObj = contentType === 'reels' 
+                ? canvas.toDataURL('video/mp4')
+                : canvas.toDataURL('image/jpeg', 0.9);
+            
+            const a = document.createElement('a');
+            a.href = downloadUrlObj;
+            a.download = `pixo_${contentType === 'reels' ? 'reel' : 'post'}_${currentItem.id}.${contentType === 'reels' ? 'mp4' : 'jpg'}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setDownloadedReels(prev => ({
+                ...prev,
+                [currentItem.id]: true
+            }));
+
+            setDownloadProgress(100);
+            toast.success(`${contentType === 'reels' ? 'Reel' : 'Post'} downloaded with watermark!`);
+            
+            setTimeout(() => {
+                setShowDownloadProgress(false);
+                setIsDownloading(false);
+                setDownloadProgress(0);
+            }, 1500);
 
         } catch (error) {
             console.error('Download error:', error);
@@ -466,33 +440,15 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Share options - SAME LOGIC
-    const shareOptions = [
-        { icon: <Copy className="w-5 h-5" />, label: 'Copy Link', action: () => handleCopyLink() },
-        { icon: <SendSolid className="w-5 h-5" />, label: 'Send to', action: () => toast('Send to feature coming soon') },
-        { icon: <Link className="w-5 h-5" />, label: 'Share to', action: () => toast('Share to feature coming soon') },
-        { 
-            icon: downloadedReels[getCurrentItem()?.id] ? 
-                <CheckCircle className="w-5 h-5 text-green-500" /> : 
-                <DownloadIcon className="w-5 h-5" />, 
-            label: downloadedReels[getCurrentItem()?.id] ? 'Downloaded' : 'Download', 
-            action: () => handleDownload() 
-        },
-    ];
-
-    // Handle scroll/swipe - SAME LOGIC
+    // Handle scroll/swipe
     const handleScroll = (direction) => {
         const content = getCurrentContent();
         if (direction === 'down' && currentIndex < content.length - 1) {
             setCurrentIndex(prev => prev + 1);
-            if (contentType === 'reels') {
-                setIsPlaying(true);
-            }
+            if (contentType === 'reels') setIsPlaying(true);
         } else if (direction === 'up' && currentIndex > 0) {
             setCurrentIndex(prev => prev - 1);
-            if (contentType === 'reels') {
-                setIsPlaying(true);
-            }
+            if (contentType === 'reels') setIsPlaying(true);
         }
         
         setShowComments(false);
@@ -501,7 +457,7 @@ const Reels = ({ onClose }) => {
         setShowDownloadProgress(false);
     };
 
-    // Handle wheel scroll - SAME LOGIC
+    // Handle wheel scroll for desktop
     const handleWheel = (e) => {
         if (Math.abs(e.deltaY) > 10) {
             handleScroll(e.deltaY > 0 ? 'down' : 'up');
@@ -509,7 +465,7 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Touch handling - SAME LOGIC
+    // Touch handling
     let touchStartY = 0;
     const handleTouchStart = (e) => {
         touchStartY = e.touches[0].clientY;
@@ -524,7 +480,7 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Handle profile click - SAME LOGIC
+    // Handle profile click
     const handleProfileClick = (userId, username) => {
         videoRefs.current.forEach(video => {
             if (video) {
@@ -537,14 +493,14 @@ const Reels = ({ onClose }) => {
         navigate(`/profile/${userId || username}`);
     };
 
-    // Handle single tap - SAME LOGIC
+    // Handle single tap
     const handleSingleTap = () => {
         if (contentType === 'reels') {
             setIsPlaying(!isPlaying);
         }
     };
 
-    // Handle double tap - SAME LOGIC
+    // Handle double tap
     const handleDoubleTap = () => {
         const currentTime = new Date().getTime();
         const tapLength = currentTime - lastTapTime.current;
@@ -565,10 +521,46 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Like functionality - SAME LOGIC
+    // Like functionality - FIXED with optimistic updates
     const handleLike = async () => {
         const currentItem = getCurrentItem();
         if (!currentItem || isLiking[currentItem.id]) return;
+
+        // Get current liked state
+        const currentLikedState = contentType === 'reels' 
+            ? likedReels[currentItem.id] 
+            : likedPosts[currentItem.id];
+        
+        // Optimistically update UI
+        if (contentType === 'reels') {
+            setLikedReels(prev => ({
+                ...prev,
+                [currentItem.id]: !currentLikedState
+            }));
+            
+            setReels(prev => prev.map((reel, index) => 
+                index === currentIndex 
+                    ? { 
+                        ...reel, 
+                        likes: !currentLikedState ? reel.likes + 1 : Math.max(0, reel.likes - 1) 
+                    }
+                    : reel
+            ));
+        } else {
+            setLikedPosts(prev => ({
+                ...prev,
+                [currentItem.id]: !currentLikedState
+            }));
+            
+            setPosts(prev => prev.map((post, index) => 
+                index === currentIndex 
+                    ? { 
+                        ...post, 
+                        likes: !currentLikedState ? post.likes + 1 : Math.max(0, post.likes - 1) 
+                    }
+                    : post
+            ));
+        }
 
         setIsLiking(prev => ({ ...prev, [currentItem.id]: true }));
         
@@ -584,6 +576,7 @@ const Reels = ({ onClose }) => {
             if (data.success) {
                 const isNowLiked = data.liked;
                 
+                // Sync with server response
                 if (contentType === 'reels') {
                     setLikedReels(prev => ({
                         ...prev,
@@ -614,19 +607,59 @@ const Reels = ({ onClose }) => {
                     ));
                 }
                 
-                toast.success(isNowLiked ? 'Liked!' : 'Unliked');
+               // toast.success(isNowLiked ? 'Liked!' : 'Unliked');
             } else {
-                toast.error(data.message || 'Failed to like');
+                //toast.error(data.message || 'Failed to like');
+                // Revert optimistic update on error
+                revertLikeUpdate(currentLikedState);
             }
         } catch (error) {
             console.error('Error liking:', error);
             toast.error(error.response?.data?.message || 'Failed to like');
+            // Revert optimistic update on error
+            revertLikeUpdate(currentLikedState);
         } finally {
             setIsLiking(prev => ({ ...prev, [currentItem.id]: false }));
         }
     };
 
-    // Save functionality - SAME LOGIC
+    // Helper function to revert like update
+    const revertLikeUpdate = (originalLikedState) => {
+        const currentItem = getCurrentItem();
+        if (!currentItem) return;
+
+        if (contentType === 'reels') {
+            setLikedReels(prev => ({
+                ...prev,
+                [currentItem.id]: originalLikedState
+            }));
+            
+            setReels(prev => prev.map((reel, index) => 
+                index === currentIndex 
+                    ? { 
+                        ...reel, 
+                        likes: originalLikedState ? reel.likes + 1 : Math.max(0, reel.likes - 1) 
+                    }
+                    : reel
+            ));
+        } else {
+            setLikedPosts(prev => ({
+                ...prev,
+                [currentItem.id]: originalLikedState
+            }));
+            
+            setPosts(prev => prev.map((post, index) => 
+                index === currentIndex 
+                    ? { 
+                        ...post, 
+                        likes: originalLikedState ? post.likes + 1 : Math.max(0, post.likes - 1) 
+                    }
+                    : post
+            ));
+        }
+    };
+
+    // Save functionality
     const handleSave = async () => {
         const currentItem = getCurrentItem();
         if (!currentItem) return;
@@ -655,7 +688,7 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Load comments - SAME LOGIC
+    // Load comments
     const loadComments = async (itemId) => {
         if (!itemId) return;
         
@@ -684,21 +717,24 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Close comments - SAME LOGIC
+    // Close comments
     const handleCloseComments = () => {
         setShowComments(false);
         setCurrentComments([]);
         setCommentText('');
     };
 
-    // Add comment - SAME LOGIC
+    // Add comment
     const handleAddComment = async () => {
-        if (!commentText.trim() || !getCurrentItem()) return;
+        if (!commentText.trim()) return;
+        
+        const currentItem = getCurrentItem();
+        if (!currentItem) return;
 
         try {
             const token = await getToken();
             const { data } = await api.post('/api/post/comment', {
-                postId: getCurrentItem().id,
+                postId: currentItem.id,
                 content: commentText.trim()
             }, {
                 headers: { Authorization: `Bearer ${token}` }
@@ -707,7 +743,7 @@ const Reels = ({ onClose }) => {
             if (data.success && data.comment) {
                 const newComment = {
                     ...data.comment,
-                    user: getCurrentItem().user
+                    user: currentItem.user
                 };
                 setCurrentComments(prev => [newComment, ...prev]);
                 
@@ -734,7 +770,7 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Delete comment - SAME LOGIC
+    // Delete comment
     const handleDeleteComment = async (commentId) => {
         try {
             const token = await getToken();
@@ -767,7 +803,7 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Update comment - SAME LOGIC
+    // Update comment
     const handleUpdateComment = async (commentId, newContent) => {
         try {
             const token = await getToken();
@@ -792,14 +828,17 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Reply to comment - SAME LOGIC
+    // Reply to comment
     const handleReplyComment = async (commentId, replyText, username) => {
         if (!replyText.trim()) return;
+
+        const currentItem = getCurrentItem();
+        if (!currentItem) return;
 
         try {
             const token = await getToken();
             const { data } = await api.post('/api/post/comment', {
-                postId: getCurrentItem().id,
+                postId: currentItem.id,
                 content: `@${username} ${replyText.trim()}`,
                 parentCommentId: commentId
             }, {
@@ -809,7 +848,7 @@ const Reels = ({ onClose }) => {
             if (data.success && data.comment) {
                 const newReply = {
                     ...data.comment,
-                    user: getCurrentItem().user
+                    user: currentItem.user
                 };
                 setCurrentComments(prev => [newReply, ...prev]);
                 
@@ -835,7 +874,7 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Share functionality - SAME LOGIC
+    // Share functionality
     const handleShare = async () => {
         const currentItem = getCurrentItem();
         if (!currentItem) return;
@@ -873,7 +912,7 @@ const Reels = ({ onClose }) => {
         }
     };
 
-    // Toggle content type - SAME LOGIC
+    // Toggle content type
     const toggleContentType = (type) => {
         if (contentType !== type) {
             setContentType(type);
@@ -889,15 +928,18 @@ const Reels = ({ onClose }) => {
         setShowMoreMenu(false);
     };
 
-    // More menu options - SAME LOGIC
-    const moreOptions = [
+    // Share options
+    const shareOptions = [
+        { icon: <Copy className="w-5 h-5" />, label: 'Copy Link', action: () => handleCopyLink() },
+        { icon: <SendSolid className="w-5 h-5" />, label: 'Send to', action: () => toast('Send to feature coming soon') },
+        { icon: <Link className="w-5 h-5" />, label: 'Share to', action: () => toast('Share to feature coming soon') },
         { 
-            icon: contentType === 'reels' ? <Image className="w-5 h-5" /> : <Video className="w-5 h-5" />, 
-            label: contentType === 'reels' ? 'Switch to Posts' : 'Switch to Reels', 
-            action: () => toggleContentType(contentType === 'reels' ? 'posts' : 'reels') 
+            icon: downloadedReels[getCurrentItem()?.id] ? 
+                <CheckCircle className="w-5 h-5 text-green-500" /> : 
+                <DownloadIcon className="w-5 h-5" />, 
+            label: downloadedReels[getCurrentItem()?.id] ? 'Downloaded' : 'Download', 
+            action: () => handleDownload() 
         },
-        { icon: <Flag className="w-5 h-5" />, label: 'Report', action: () => toast('Report feature coming soon') },
-        { icon: <X className="w-5 h-5" />, label: 'Not Interested', action: () => toast('Not interested feature coming soon') },
     ];
 
     const handleCopyLink = async () => {
@@ -910,25 +952,30 @@ const Reels = ({ onClose }) => {
         setShowShareMenu(false);
     };
 
-    // Handle back from comments - SAME LOGIC
-    const handleBackFromComments = () => {
-        handleCloseComments();
-    };
-
-    // Handle closing reels - SAME LOGIC
+    // Handle closing reels
     const handleCloseReels = () => {
         videoRefs.current.forEach(video => {
             if (video) {
                 video.pause();
                 video.currentTime = 0;
-                video.muted = true;
             }
         });
         
         onClose();
     };
 
-    // Handle clicking outside menus - SAME LOGIC
+    // More menu options
+    const moreOptions = [
+        { 
+            icon: contentType === 'reels' ? <Image className="w-5 h-5" /> : <Video className="w-5 h-5" />, 
+            label: contentType === 'reels' ? 'Switch to Posts' : 'Switch to Reels', 
+            action: () => toggleContentType(contentType === 'reels' ? 'posts' : 'reels') 
+        },
+        { icon: <Flag className="w-5 h-5" />, label: 'Report', action: () => toast('Report feature coming soon') },
+        { icon: <X className="w-5 h-5" />, label: 'Not Interested', action: () => toast('Not interested feature coming soon') },
+    ];
+
+    // Handle clicking outside menus
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (showShareMenu && !e.target.closest('.share-menu')) {
@@ -943,31 +990,20 @@ const Reels = ({ onClose }) => {
         return () => document.removeEventListener('click', handleClickOutside);
     }, [showShareMenu, showMoreMenu]);
 
-    // Clean UI: Desktop responsive container
-    const currentContent = getCurrentContent();
-    const currentItem = getCurrentItem();
-
-    // Loading state - Updated for desktop
+    // Loading state
     if (isLoading && contentType === 'reels') {
         return (
             <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
                 <div className="w-full max-w-2xl h-full md:h-[85vh] md:my-auto md:rounded-2xl md:overflow-hidden bg-gray-900 relative">
-                    {/* Loading skeleton */}
                     <div className="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 animate-pulse"></div>
-                    
-                    {/* Top bar skeleton */}
                     <div className="absolute top-0 left-0 right-0 z-10 p-4 flex items-center justify-between">
                         <div className="w-8 h-8 bg-gray-800 rounded-full animate-pulse"></div>
                         <div className="w-24 h-6 bg-gray-800 rounded animate-pulse"></div>
                         <div className="w-8 h-8 bg-gray-800 rounded-full animate-pulse"></div>
                     </div>
-                    
-                    {/* Content skeleton */}
                     <div className="absolute top-16 bottom-20 left-4 right-4">
                         <div className="h-full bg-gradient-to-r from-gray-800 to-gray-900 animate-pulse rounded-lg"></div>
                     </div>
-                    
-                    {/* Bottom actions skeleton */}
                     <div className="absolute bottom-4 left-4 right-4">
                         <div className="flex justify-between">
                             <div className="space-y-2">
@@ -986,7 +1022,10 @@ const Reels = ({ onClose }) => {
         );
     }
 
-    // No content state - Updated for desktop
+    const currentContent = getCurrentContent();
+    const currentItem = getCurrentItem();
+
+    // No content state
     if (currentContent.length === 0 && ((contentType === 'reels' && !isLoading) || (contentType === 'posts' && !isLoadingPosts))) {
         return (
             <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
@@ -1028,48 +1067,44 @@ const Reels = ({ onClose }) => {
             >
                 {/* Download Progress Overlay */}
                 {showDownloadProgress && (
-                    <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center">
-                        <div className="bg-gray-900 rounded-2xl p-8 max-w-md w-full mx-4 flex flex-col items-center">
+                    <div className="absolute inset-0 z-50 bg-black/90 flex items-center justify-center backdrop-blur-sm">
+                        <div className="bg-gray-900 rounded-xl p-6 max-w-sm w-full mx-4 flex flex-col items-center border border-gray-800">
                             {downloadProgress === 100 ? (
                                 <>
-                                    <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mb-4">
-                                        <CheckCircle className="w-12 h-12 text-green-500" />
+                                    <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mb-4">
+                                        <CheckCircle className="w-8 h-8 text-green-500" />
                                     </div>
-                                    <h3 className="text-white text-xl font-bold mb-2">Download Complete!</h3>
-                                    <p className="text-gray-300 text-center mb-6">
-                                        {contentType === 'reels' ? 'Reel' : 'Post'} downloaded with "pixo" watermark
+                                    <h3 className="text-white text-lg font-semibold mb-2">Download Complete!</h3>
+                                    <p className="text-gray-300 text-center text-sm mb-4">
+                                        {contentType === 'reels' ? 'Reel' : 'Post'} downloaded with watermark
                                     </p>
                                     <button
                                         onClick={() => setShowDownloadProgress(false)}
-                                        className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-full font-semibold text-white transition-colors"
+                                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-medium text-white transition-colors w-full"
                                     >
-                                        Continue Viewing
+                                        Continue
                                     </button>
                                 </>
                             ) : (
                                 <>
-                                    <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
-                                        <DownloadIcon className="w-12 h-12 text-blue-500 animate-bounce" />
+                                    <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
+                                        <DownloadIcon className="w-8 h-8 text-blue-500 animate-pulse" />
                                     </div>
-                                    <h3 className="text-white text-xl font-bold mb-6">
+                                    <h3 className="text-white text-lg font-semibold mb-4">
                                         Downloading {contentType === 'reels' ? 'Reel' : 'Post'}
                                     </h3>
                                     
-                                    <div className="w-full bg-gray-800 rounded-full h-3 mb-4 overflow-hidden">
+                                    <div className="w-full bg-gray-800 rounded-full h-2 mb-3 overflow-hidden">
                                         <div 
                                             className="bg-blue-500 h-full rounded-full transition-all duration-300 ease-out"
                                             style={{ width: `${downloadProgress}%` }}
                                         />
                                     </div>
                                     
-                                    <div className="flex justify-between w-full text-sm mb-2">
-                                        <span className="text-gray-300">Adding watermark...</span>
-                                        <span className="text-white font-semibold">{Math.round(downloadProgress)}%</span>
+                                    <div className="flex justify-between w-full text-sm mb-1">
+                                        <span className="text-gray-300">Processing...</span>
+                                        <span className="text-white font-medium">{Math.round(downloadProgress)}%</span>
                                     </div>
-                                    
-                                    <p className="text-gray-400 text-sm text-center">
-                                        The {contentType === 'reels' ? 'reel' : 'post'} will include "pixo" watermark
-                                    </p>
                                     
                                     <button
                                         onClick={() => {
@@ -1077,9 +1112,9 @@ const Reels = ({ onClose }) => {
                                             setShowDownloadProgress(false);
                                             setDownloadProgress(0);
                                         }}
-                                        className="mt-6 px-4 py-2 text-gray-400 hover:text-white transition-colors text-sm"
+                                        className="mt-4 px-3 py-1.5 text-gray-400 hover:text-white transition-colors text-sm"
                                     >
-                                        Cancel Download
+                                        Cancel
                                     </button>
                                 </>
                             )}
@@ -1087,21 +1122,27 @@ const Reels = ({ onClose }) => {
                     </div>
                 )}
 
-                {/* Header - Only show when not in comments */}
+                {/* Clean Minimal Header */}
                 {!showComments && (
-                    <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent">
+                    <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between p-4">
                         <button
                             onClick={handleCloseReels}
-                            className="p-2 rounded-full bg-black/50 text-white hover:bg-white/20 transition-colors backdrop-blur-sm"
+                            className="p-2 rounded-full bg-black/40 text-white hover:bg-white/10 transition-colors backdrop-blur-md"
                         >
                             <ChevronLeft className="w-5 h-5" />
                         </button>
-                        <h1 className="text-white text-lg font-semibold">
-                            {contentType === 'reels' ? 'Reels' : 'Posts'}
-                        </h1>
-                        <div className="flex items-center gap-2 px-3 py-1 bg-black/50 rounded-full backdrop-blur-sm">
-                            <User className="w-4 h-4 text-white" />
-                            <span className="text-white text-sm font-medium">{currentContent.length}</span>
+                        
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-black/40 backdrop-blur-md rounded-lg">
+                            <span className="text-white text-sm font-medium">
+                                {contentType === 'reels' ? 'Reels' : 'Posts'}
+                            </span>
+                            {/*<span className="text-white/60 text-xs">
+                                • {currentIndex + 1} of {currentContent.length}
+                            </span>*/}
+                        </div>
+                        
+                        <div className="w-9 h-9 rounded-full bg-transparent from-purple-500 to-blue-500 flex items-center justify-center ">
+                           {/* <User className="w-4 h-4 text-white" /> */}
                         </div>
                     </div>
                 )}
@@ -1110,7 +1151,7 @@ const Reels = ({ onClose }) => {
                 {currentContent.map((item, index) => (
                     <div
                         key={item.id}
-                        className={`content-container absolute inset-0 transition-transform duration-300 ease-in-out ${
+                        className={`content-container absolute inset-0 transition-transform duration-300 ease-out ${
                             index === currentIndex ? 'translate-y-0' : index < currentIndex ? '-translate-y-full' : 'translate-y-full'
                         }`}
                         data-index={index}
@@ -1118,7 +1159,10 @@ const Reels = ({ onClose }) => {
                         {/* Double tap heart animation */}
                         {showDoubleTapHeart && index === currentIndex && (
                             <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                                <HeartSolid className="w-32 h-32 text-white fill-current animate-ping" />
+                                <div className="relative">
+                                    <HeartSolid className="w-24 h-24 text-white/90 fill-current animate-ping" />
+                                    <HeartSolid className="absolute inset-0 w-24 h-24 text-white fill-current" />
+                                </div>
                             </div>
                         )}
 
@@ -1134,134 +1178,117 @@ const Reels = ({ onClose }) => {
                                 muted={index !== currentIndex}
                             />
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-black">
+                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-900 to-black">
                                 <img
                                     ref={el => imageRefs.current[index] = el}
                                     src={item.imageUrl}
                                     alt={item.caption}
                                     className="max-w-full max-h-full object-contain"
+                                    loading="lazy"
                                 />
                             </div>
                         )}
                         
                         {/* Play/Pause overlay - Only for videos */}
                         {contentType === 'reels' && !isPlaying && index === currentIndex && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-5 pointer-events-none">
-                                <div className="p-4 rounded-full bg-black/60 border-2 border-white/20">
-                                    {isPlaying ? (
-                                        <Pause className="w-16 h-16 text-white" />
-                                    ) : (
-                                        <Play className="w-16 h-16 text-white" />
-                                    )}
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20 z-5 pointer-events-none">
+                                <div className="p-3 rounded-full bg-black/40 backdrop-blur-sm">
+                                    <Play className="w-8 h-8 text-white" />
                                 </div>
                             </div>
                         )}
 
                         {/* Bottom gradient overlay */}
                         {!showComments && (
-                            <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
+                            <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black via-black/60 to-transparent pointer-events-none" />
                         )}
 
-                        {/* User info and caption - LEFT SIDE */}
+                        {/* User info and caption - CLEAN UI */}
                         {!showComments && (
-                            <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none p-6">
+                            <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none p-5">
                                 <div className="flex items-end justify-between">
                                     {/* Left content */}
-                                    <div className="flex-1 pr-24">
+                                    <div className="flex-1 pr-20">
                                         {/* User info */}
                                         <div className="flex items-center gap-3 mb-3">
                                             <button
                                                 onClick={() => handleProfileClick(item.userId, item.username)}
-                                                className="flex items-center gap-3 pointer-events-auto hover:opacity-80 transition-opacity"
+                                                className="flex items-center gap-3 pointer-events-auto group"
                                             >
-                                                <img
-                                                    src={item.userProfile}
-                                                    alt={item.username}
-                                                    className="w-10 h-10 rounded-full border-2 border-white object-cover"
-                                                />
+                                                <div className="relative">
+                                                    <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-blue-500 rounded-full opacity-60 blur group-hover:opacity-100 transition duration-200"></div>
+                                                    <img
+                                                        src={item.userProfile}
+                                                        alt={item.username}
+                                                        className="relative w-9 h-9 rounded-full border border-white/20 object-cover"
+                                                    />
+                                                </div>
                                                 <div className="flex flex-col items-start">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-white font-semibold">
+                                                        <span className="text-white font-medium text-sm">
                                                             {item.username}
                                                         </span>
                                                         {item.isVerified && (
-                                                            <span className="text-blue-400 text-sm">✓</span>
+                                                            <div className="w-3 h-3 bg-blue-500 rounded-full flex items-center justify-center">
+                                                                <span className="text-white text-[8px]">✓</span>
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    {/* Content count badge */}
-                                                    <div className="flex items-center gap-1 mt-1">
-                                                        {contentType === 'reels' && item.userReelsCount > 0 && (
-                                                            <>
-                                                                <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
-                                                                    <Play className="w-2 h-2 text-white" />
-                                                                </div>
-                                                                <span className="text-white/80 text-xs">
-                                                                    {item.userReelsCount} reel{item.userReelsCount !== 1 ? 's' : ''}
-                                                                </span>
-                                                            </>
-                                                        )}
-                                                        {contentType === 'posts' && item.userPostsCount > 0 && (
-                                                            <>
-                                                                <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
-                                                                    <Image className="w-2 h-2 text-white" />
-                                                                </div>
-                                                                <span className="text-white/80 text-xs">
-                                                                    {item.userPostsCount} post{item.userPostsCount !== 1 ? 's' : ''}
-                                                                </span>
-                                                            </>
-                                                        )}
-                                                    </div>
+                                                    {contentType === 'reels' && (
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <Music className="w-2.5 h-2.5 text-white/60" />
+                                                            <span className="text-white/60 text-xs">{item.music}</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </button>
                                         </div>
                                         
                                         {/* Caption */}
-                                        <p className="text-white text-sm mb-3 line-clamp-2">
+                                        <p className="text-white text-sm mb-3 line-clamp-2 font-light">
                                             {item.caption}
                                         </p>
                                         
-                                        {/* Music and location */}
-                                        <div className="flex items-center gap-3 text-white/80 text-xs">
-                                            {contentType === 'reels' && (
-                                                <div className="flex items-center gap-2">
-                                                    <Music className="w-3 h-3" />
-                                                    <span>{item.music}</span>
-                                                </div>
-                                            )}
+                                        {/* Location and timestamp */}
+                                        <div className="flex items-center gap-2 text-white/60 text-xs">
                                             {item.location && (
-                                                <span>• {item.location}</span>
+                                                <span className="bg-white/10 px-2 py-0.5 rounded-full backdrop-blur-sm">
+                                                    {item.location}
+                                                </span>
                                             )}
+                                            <span>•</span>
+                                            <span>{item.timestamp}</span>
                                         </div>
                                     </div>
 
-                                    {/* Right side - Actions */}
-                                    <div className="flex flex-col items-center gap-4 pointer-events-auto">
+                                    {/* Right side - Clean Actions */}
+                                    <div className="flex flex-col items-center gap-3 pointer-events-auto">
                                         {/* Like */}
                                         <div className="flex flex-col items-center">
                                             <button
                                                 onClick={handleLike}
                                                 disabled={isLiking[item.id]}
-                                                className={`p-2 rounded-full transition-colors ${
+                                                className={`p-2.5 rounded-full transition-all duration-200 ${
                                                     contentType === 'reels' 
-                                                        ? (likedReels[item.id] ? 'bg-red-500/20' : 'bg-black/50 hover:bg-white/20')
-                                                        : (likedPosts[item.id] ? 'bg-red-500/20' : 'bg-black/50 hover:bg-white/20')
-                                                } ${isLiking[item.id] ? 'opacity-50 cursor-not-allowed' : ''} backdrop-blur-sm`}
+                                                        ? (likedReels[item.id] ? 'bg-red-500/20 hover:bg-red-500/30' : 'bg-black/40 hover:bg-white/10')
+                                                        : (likedPosts[item.id] ? 'bg-red-500/20 hover:bg-red-500/30' : 'bg-black/40 hover:bg-white/10')
+                                                } ${isLiking[item.id] ? 'opacity-50 cursor-not-allowed' : ''} backdrop-blur-md`}
                                             >
                                                 {contentType === 'reels' ? (
                                                     likedReels[item.id] ? (
-                                                        <HeartSolid className="w-6 h-6 text-red-500 fill-current" />
+                                                        <HeartSolid className="w-5 h-5 text-red-500 fill-current" />
                                                     ) : (
-                                                        <Heart className="w-6 h-6 text-white" />
+                                                        <Heart className="w-5 h-5 text-white" />
                                                     )
                                                 ) : (
                                                     likedPosts[item.id] ? (
-                                                        <HeartSolid className="w-6 h-6 text-red-500 fill-current" />
+                                                        <HeartSolid className="w-5 h-5 text-red-500 fill-current" />
                                                     ) : (
-                                                        <Heart className="w-6 h-6 text-white" />
+                                                        <Heart className="w-5 h-5 text-white" />
                                                     )
                                                 )}
                                             </button>
-                                            <span className="text-white text-xs mt-1 font-semibold">
+                                            <span className="text-white text-xs mt-1 font-medium">
                                                 {item.likes > 1000 ? `${(item.likes / 1000).toFixed(1)}k` : item.likes}
                                             </span>
                                         </div>
@@ -1270,11 +1297,11 @@ const Reels = ({ onClose }) => {
                                         <div className="flex flex-col items-center">
                                             <button
                                                 onClick={() => loadComments(item.id)}
-                                                className="p-2 rounded-full bg-black/50 hover:bg-white/20 transition-colors backdrop-blur-sm"
+                                                className="p-2.5 rounded-full bg-black/40 hover:bg-white/10 transition-all duration-200 backdrop-blur-md"
                                             >
-                                                <MessageCircle className="w-6 h-6 text-white" />
+                                                <MessageCircle className="w-5 h-5 text-white" />
                                             </button>
-                                            <span className="text-white text-xs mt-1 font-semibold">
+                                            <span className="text-white text-xs mt-1 font-medium">
                                                 {item.comments > 1000 ? `${(item.comments / 1000).toFixed(1)}k` : item.comments}
                                             </span>
                                         </div>
@@ -1283,26 +1310,26 @@ const Reels = ({ onClose }) => {
                                         <div className="flex flex-col items-center relative share-menu">
                                             <button
                                                 onClick={() => setShowShareMenu(!showShareMenu)}
-                                                className="p-2 rounded-full bg-black/50 hover:bg-white/20 transition-colors backdrop-blur-sm"
+                                                className="p-2.5 rounded-full bg-black/40 hover:bg-white/10 transition-all duration-200 backdrop-blur-md"
                                             >
-                                                <Send className="w-6 h-6 text-white" />
+                                                <Send className="w-5 h-5 text-white" />
                                             </button>
-                                            <span className="text-white text-xs mt-1 font-semibold">
+                                            <span className="text-white text-xs mt-1 font-medium">
                                                 {item.shares > 1000 ? `${(item.shares / 1000).toFixed(1)}k` : item.shares}
                                             </span>
                                             
                                             {/* Share menu */}
                                             {showShareMenu && index === currentIndex && (
-                                                <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 backdrop-blur-sm rounded-xl shadow-2xl py-2 min-w-[160px] z-20 border border-gray-800">
+                                                <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 backdrop-blur-md rounded-lg shadow-xl py-1.5 min-w-[140px] z-20 border border-gray-800">
                                                     {shareOptions.map((option, idx) => (
                                                         <button
                                                             key={idx}
                                                             onClick={option.action}
                                                             disabled={isDownloading && option.label === 'Download'}
-                                                            className={`w-full px-4 py-2 text-left text-white hover:bg-gray-800/80 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed text-sm`}
+                                                            className={`w-full px-3 py-2 text-left text-white hover:bg-gray-800/80 flex items-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-colors`}
                                                         >
                                                             {option.icon}
-                                                            <span>{option.label}</span>
+                                                            <span className="text-xs">{option.label}</span>
                                                         </button>
                                                     ))}
                                                 </div>
@@ -1313,13 +1340,13 @@ const Reels = ({ onClose }) => {
                                         <div className="flex flex-col items-center">
                                             <button
                                                 onClick={handleSave}
-                                                className={`p-2 rounded-full transition-colors backdrop-blur-sm ${
+                                                className={`p-2.5 rounded-full transition-all duration-200 backdrop-blur-md ${
                                                     contentType === 'reels'
-                                                        ? (savedReels[item.id] ? 'bg-yellow-500/20' : 'bg-black/50 hover:bg-white/20')
-                                                        : (savedPosts[item.id] ? 'bg-yellow-500/20' : 'bg-black/50 hover:bg-white/20')
+                                                        ? (savedReels[item.id] ? 'bg-yellow-500/20 hover:bg-yellow-500/30' : 'bg-black/40 hover:bg-white/10')
+                                                        : (savedPosts[item.id] ? 'bg-yellow-500/20 hover:bg-yellow-500/30' : 'bg-black/40 hover:bg-white/10')
                                                 }`}
                                             >
-                                                <Bookmark className={`w-6 h-6 ${
+                                                <Bookmark className={`w-5 h-5 ${
                                                     contentType === 'reels'
                                                         ? (savedReels[item.id] ? 'fill-yellow-500 text-yellow-500' : 'text-white')
                                                         : (savedPosts[item.id] ? 'fill-yellow-500 text-yellow-500' : 'text-white')
@@ -1331,22 +1358,22 @@ const Reels = ({ onClose }) => {
                                         <div className="flex flex-col items-center relative more-menu">
                                             <button
                                                 onClick={() => setShowMoreMenu(!showMoreMenu)}
-                                                className="p-2 rounded-full bg-black/50 hover:bg-white/20 transition-colors backdrop-blur-sm"
+                                                className="p-2.5 rounded-full bg-black/40 hover:bg-white/10 transition-all duration-200 backdrop-blur-md"
                                             >
-                                                <MoreVertical className="w-6 h-6 text-white" />
+                                                <MoreVertical className="w-5 h-5 text-white" />
                                             </button>
                                             
                                             {/* More menu */}
                                             {showMoreMenu && index === currentIndex && (
-                                                <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 backdrop-blur-sm rounded-xl shadow-2xl py-2 min-w-[160px] z-20 border border-gray-800">
+                                                <div className="absolute bottom-full right-0 mb-2 bg-gray-900/95 backdrop-blur-md rounded-lg shadow-xl py-1.5 min-w-[140px] z-20 border border-gray-800">
                                                     {moreOptions.map((option, idx) => (
                                                         <button
                                                             key={idx}
                                                             onClick={option.action}
-                                                            className="w-full px-4 py-2 text-left text-white hover:bg-gray-800/80 flex items-center gap-3 text-sm"
+                                                            className="w-full px-3 py-2 text-left text-white hover:bg-gray-800/80 flex items-center gap-2.5 text-sm transition-colors"
                                                         >
                                                             {option.icon}
-                                                            <span>{option.label}</span>
+                                                            <span className="text-xs">{option.label}</span>
                                                         </button>
                                                     ))}
                                                 </div>
@@ -1357,19 +1384,22 @@ const Reels = ({ onClose }) => {
                             </div>
                         )}
 
-                        {/* Comments Sidebar */}
+                        {/* Comments Sidebar - Professional Design */}
                         {showComments && index === currentIndex && (
-                            <div className="absolute inset-0 z-30 bg-black">
+                            <div className="absolute inset-0 z-30 bg-black/95 backdrop-blur-sm">
                                 {/* Comments header */}
                                 <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black to-transparent p-4">
                                     <div className="flex items-center justify-between">
                                         <button
-                                            onClick={handleBackFromComments}
+                                            onClick={handleCloseComments}
                                             className="p-2 text-white hover:bg-white/10 rounded-full transition-colors"
                                         >
                                             <ChevronLeft className="w-5 h-5" />
                                         </button>
-                                        <h2 className="text-white text-lg font-semibold">Comments</h2>
+                                        <div className="flex flex-col items-center">
+                                            <h2 className="text-white text-base font-medium">Comments</h2>
+                                            <span className="text-white/60 text-xs">{currentComments.length} comments</span>
+                                        </div>
                                         <div className="w-10"></div>
                                     </div>
                                 </div>
@@ -1377,19 +1407,19 @@ const Reels = ({ onClose }) => {
                                 {/* Comments list */}
                                 <div className="absolute top-16 bottom-20 left-0 right-0 overflow-y-auto px-4">
                                     {loadingComments ? (
-                                        <div className="flex flex-col gap-4 p-4">
+                                        <div className="flex flex-col gap-3 p-4">
                                             {[...Array(3)].map((_, i) => (
                                                 <div key={i} className="flex gap-3 animate-pulse">
-                                                    <div className="w-10 h-10 bg-gray-800 rounded-full"></div>
+                                                    <div className="w-8 h-8 bg-gray-800 rounded-full"></div>
                                                     <div className="flex-1 space-y-2">
-                                                        <div className="h-4 bg-gray-800 rounded w-1/4"></div>
-                                                        <div className="h-3 bg-gray-800 rounded w-3/4"></div>
+                                                        <div className="h-3 bg-gray-800 rounded w-1/4"></div>
+                                                        <div className="h-2.5 bg-gray-800 rounded w-3/4"></div>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
                                     ) : currentComments.length > 0 ? (
-                                        <div className="pb-4">
+                                        <div className="pb-4 space-y-3">
                                             {currentComments.map(comment => (
                                                 <ReelComment
                                                     key={comment._id}
@@ -1402,41 +1432,39 @@ const Reels = ({ onClose }) => {
                                             ))}
                                         </div>
                                     ) : (
-                                        <div className="flex flex-col items-center justify-center h-full text-white/60">
-                                            <MessageCircle className="w-16 h-16 mb-4 opacity-30" />
-                                            <p className="text-lg">No comments yet</p>
-                                            <p className="text-sm mt-1">Be the first to comment</p>
+                                        <div className="flex flex-col items-center justify-center h-full text-white/50">
+                                            <MessageCircle className="w-12 h-12 mb-3 opacity-30" />
+                                            <p className="text-base font-light">No comments yet</p>
+                                            <p className="text-sm mt-1 font-light">Be the first to comment</p>
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Comment input */}
-                                <div className="absolute bottom-0 left-0 right-0 bg-black/95 border-t border-gray-800 p-4">
+                                <div className="absolute bottom-0 left-0 right-0 bg-black/95 border-t border-gray-800/50 p-4">
                                     <div className="flex items-center gap-3">
                                         <button
                                             onClick={() => handleProfileClick(userId, 'profile')}
                                             className="flex-shrink-0"
                                         >
-                                            <img
-                                                src={item.userProfile}
-                                                alt="Your profile"
-                                                className="w-9 h-9 rounded-full object-cover"
-                                            />
+                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                                                <User className="w-3.5 h-3.5 text-white" />
+                                            </div>
                                         </button>
-                                        <div className="flex-1 flex items-center bg-gray-800/80 backdrop-blur-sm rounded-full px-4 py-3">
+                                        <div className="flex-1 flex items-center bg-gray-800/40 backdrop-blur-sm rounded-full px-4 py-2.5 border border-gray-700/50">
                                             <input
                                                 ref={commentInputRef}
                                                 type="text"
                                                 value={commentText}
                                                 onChange={(e) => setCommentText(e.target.value)}
                                                 placeholder="Add a comment..."
-                                                className="flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none text-sm"
+                                                className="flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none text-sm font-light"
                                                 onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
                                             />
                                             {commentText.trim() && (
                                                 <button
                                                     onClick={handleAddComment}
-                                                    className="text-blue-500 font-semibold text-sm hover:text-blue-400 px-2"
+                                                    className="text-blue-400 font-medium text-sm hover:text-blue-300 px-2 transition-colors"
                                                 >
                                                     Post
                                                 </button>
@@ -1449,22 +1477,19 @@ const Reels = ({ onClose }) => {
                     </div>
                 ))}
 
-                {/* Current position indicator */}
-                {!showComments && (
-                    <div className="absolute top-20 left-1/2 transform -translate-x-1/2 text-white/70 text-sm bg-black/50 backdrop-blur-sm px-3 py-1 rounded-full">
-                        {currentIndex + 1} / {currentContent.length}
-                    </div>
-                )}
-
-                {/* Navigation hints */}
+                {/* Navigation arrows - Clean Design */}
                 {!showComments && currentIndex > 0 && (
-                    <div className="absolute top-1/2 left-4 transform -translate-y-1/2 animate-bounce pointer-events-none">
-                        <ChevronLeft className="w-8 h-8 text-white rotate-90 opacity-70" />
+                    <div className="absolute top-1/2 left-3 transform -translate-y-1/2 pointer-events-none">
+                        <div className="p-1.5 rounded-full bg-black/40 backdrop-blur-sm">
+                            <ChevronLeft className="w-4 h-4 text-white/80 rotate-90" />
+                        </div>
                     </div>
                 )}
                 {!showComments && currentIndex < currentContent.length - 1 && (
-                    <div className="absolute top-1/2 right-4 transform -translate-y-1/2 animate-bounce pointer-events-none">
-                        <ChevronLeft className="w-8 h-8 text-white -rotate-90 opacity-70" />
+                    <div className="absolute top-1/2 right-3 transform -translate-y-1/2 pointer-events-none">
+                        <div className="p-1.5 rounded-full bg-black/40 backdrop-blur-sm">
+                            <ChevronLeft className="w-4 h-4 text-white/80 -rotate-90" />
+                        </div>
                     </div>
                 )}
             </div>
