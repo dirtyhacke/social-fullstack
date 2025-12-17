@@ -14,6 +14,13 @@ export const onlineUsers = new Set();
 // Track typing status
 const typingUsers = new Map();
 
+// 🆕 Track active calls
+const activeCalls = new Map();
+
+// 🆕 Track WebRTC offers/answers
+const webrtcOffers = new Map();
+const webrtcAnswers = new Map();
+
 // Update user's last seen timestamp
 export const updateLastSeen = async (userId) => {
     try {
@@ -87,6 +94,23 @@ export const setupSSE = (req, res) => {
     req.on('close', () => {
         console.log('🔌 SSE disconnected for user:', userId);
         console.log('📊 Online users before disconnect:', Array.from(onlineUsers));
+        
+        // End any active calls for this user
+        const userCall = activeCalls.get(userId);
+        if (userCall) {
+            const otherUserId = userCall.fromUserId === userId ? userCall.toUserId : userCall.fromUserId;
+            activeCalls.delete(userId);
+            activeCalls.delete(otherUserId);
+            
+            // Notify other user that call ended due to disconnect
+            sendSSEMessage(otherUserId, {
+                type: 'call_ended',
+                callId: userCall.callId,
+                endedBy: userId,
+                reason: 'User disconnected',
+                timestamp: new Date().toISOString()
+            });
+        }
         
         connections.delete(userId);
         onlineUsers.delete(userId);
@@ -182,16 +206,15 @@ export const getUsersLastSeen = async (req, res) => {
     }
 };
 
-// Send message to specific user via SSE with better logging
+// 🆕 IMPROVED: Send message to specific user via SSE with better logging
 export const sendSSEMessage = (userId, data) => {
     console.log(`🔍 Looking for SSE connection for user: ${userId}`);
-    console.log(`📊 Available connections:`, Array.from(connections.keys()));
     
     const connection = connections.get(userId);
     if (connection) {
         try {
             const messageString = `data: ${JSON.stringify(data)}\n\n`;
-            console.log(`📤 Sending SSE message to user: ${userId}`, data);
+            console.log(`📤 Sending SSE message to user: ${userId}`, data.type);
             connection.write(messageString);
             return true;
         } catch (error) {
@@ -204,18 +227,16 @@ export const sendSSEMessage = (userId, data) => {
         }
     }
     console.log(`❌ No SSE connection found for user: ${userId}`);
-    console.log(`📋 Current online users:`, Array.from(onlineUsers));
     return false;
 };
 
 // Controller function for the SSE endpoint
 export const sseController = (req, res) => {
     console.log('🚀 SSE Controller called for user:', req.params.userId);
-    console.log('🔑 User ID from params:', req.params.userId);
     setupSSE(req, res);
 };
 
-// Get user name helper function
+// 🆕 Get user name helper function
 const getUserName = async (userId) => {
     try {
         const user = await User.findById(userId).select('full_name profile_picture');
@@ -228,6 +249,462 @@ const getUserName = async (userId) => {
             name: 'User',
             avatar: '/default-avatar.png'
         };
+    }
+};
+
+// 🆕 IMPROVED: Call Functions with WebRTC signaling
+export const initiateCall = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { to_user_id, call_type } = req.body; // 'video' or 'voice'
+
+        console.log(`📞 Call initiated from ${userId} to ${to_user_id} (${call_type})`);
+
+        // Check if recipient is online
+        const isRecipientOnline = onlineUsers.has(to_user_id);
+        console.log(`✅ Recipient ${to_user_id} is ${isRecipientOnline ? 'online' : 'offline'}`);
+
+        if (!isRecipientOnline) {
+            return res.json({ 
+                success: false, 
+                message: 'User is offline. Cannot start call.' 
+            });
+        }
+
+        // Check if recipient is already in a call
+        if (activeCalls.has(to_user_id)) {
+            return res.json({ 
+                success: false, 
+                message: 'User is currently in another call.' 
+            });
+        }
+
+        // Check if caller is already in a call
+        if (activeCalls.has(userId)) {
+            return res.json({ 
+                success: false, 
+                message: 'You are already in a call.' 
+            });
+        }
+
+        // Get user info for notification
+        const callerInfo = await getUserName(userId);
+
+        // Create call session
+        const callData = {
+            callId: `call_${Date.now()}_${userId}`,
+            fromUserId: userId,
+            toUserId: to_user_id,
+            callType: call_type,
+            status: 'ringing',
+            startTime: new Date(),
+            participants: [userId]
+        };
+
+        // Store call data
+        activeCalls.set(userId, callData);
+        activeCalls.set(to_user_id, callData);
+
+        console.log(`📞 Sending call notification to recipient: ${to_user_id}`);
+
+        // Send call notification to recipient via SSE
+        const callSent = sendSSEMessage(to_user_id, {
+            type: 'call_incoming',
+            callId: callData.callId,
+            callType: call_type,
+            fromUserId: userId,
+            fromUserName: callerInfo.name,
+            fromUserAvatar: callerInfo.avatar,
+            timestamp: new Date().toISOString()
+        });
+
+        if (!callSent) {
+            activeCalls.delete(userId);
+            activeCalls.delete(to_user_id);
+            return res.json({ 
+                success: false, 
+                message: 'Failed to send call notification. User might be offline.' 
+            });
+        }
+
+        // Send confirmation to caller
+        sendSSEMessage(userId, {
+            type: 'call_initiated',
+            callId: callData.callId,
+            toUserId: to_user_id,
+            callType: call_type,
+            timestamp: new Date().toISOString()
+        });
+
+        // Set timeout to automatically reject if not answered
+        const timeoutId = setTimeout(async () => {
+            if (activeCalls.has(userId) && activeCalls.get(userId).status === 'ringing') {
+                console.log(`⏰ Call timeout - auto rejecting call ${callData.callId}`);
+                
+                // Remove call from active calls
+                activeCalls.delete(userId);
+                activeCalls.delete(to_user_id);
+                
+                // Notify both users
+                sendSSEMessage(userId, {
+                    type: 'call_rejected',
+                    callId: callData.callId,
+                    reason: 'No answer',
+                    timestamp: new Date().toISOString()
+                });
+
+                sendSSEMessage(to_user_id, {
+                    type: 'call_ended',
+                    callId: callData.callId,
+                    reason: 'No answer',
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }, 30000); // 30 seconds timeout
+
+        // Store timeout ID in call data
+        callData.timeoutId = timeoutId;
+
+        res.json({ 
+            success: true, 
+            callId: callData.callId,
+            message: 'Call initiated successfully'
+        });
+
+    } catch (error) {
+        console.log('❌ Error initiating call:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// 🆕 WebRTC signaling endpoints
+export const sendWebRTCOffer = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { to_user_id, offer, call_type } = req.body;
+
+        console.log(`📡 WebRTC Offer from ${userId} to ${to_user_id}`);
+
+        // Check if recipient is online
+        if (!onlineUsers.has(to_user_id)) {
+            return res.json({ 
+                success: false, 
+                message: 'User is offline.' 
+            });
+        }
+
+        // Store offer temporarily
+        webrtcOffers.set(`${userId}_${to_user_id}`, {
+            offer,
+            call_type,
+            timestamp: new Date().toISOString()
+        });
+
+        // Send offer to recipient via SSE
+        const offerSent = sendSSEMessage(to_user_id, {
+            type: 'webrtc_offer',
+            offer: offer,
+            fromUserId: userId,
+            callType: call_type,
+            timestamp: new Date().toISOString()
+        });
+
+        if (!offerSent) {
+            webrtcOffers.delete(`${userId}_${to_user_id}`);
+            return res.json({ 
+                success: false, 
+                message: 'Failed to send offer. User might be offline.' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'WebRTC offer sent successfully' 
+        });
+
+    } catch (error) {
+        console.log('❌ Error sending WebRTC offer:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+export const sendWebRTCAnswer = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { to_user_id, answer } = req.body;
+
+        console.log(`📡 WebRTC Answer from ${userId} to ${to_user_id}`);
+
+        // Store answer temporarily
+        webrtcAnswers.set(`${to_user_id}_${userId}`, {
+            answer,
+            timestamp: new Date().toISOString()
+        });
+
+        // Send answer to caller via SSE
+        const answerSent = sendSSEMessage(to_user_id, {
+            type: 'webrtc_answer',
+            answer: answer,
+            fromUserId: userId,
+            timestamp: new Date().toISOString()
+        });
+
+        if (!answerSent) {
+            webrtcAnswers.delete(`${to_user_id}_${userId}`);
+            return res.json({ 
+                success: false, 
+                message: 'Failed to send answer. User might be offline.' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'WebRTC answer sent successfully' 
+        });
+
+    } catch (error) {
+        console.log('❌ Error sending WebRTC answer:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+export const sendWebRTCCandidate = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { to_user_id, candidate } = req.body;
+
+        console.log(`📡 WebRTC ICE Candidate from ${userId} to ${to_user_id}`);
+
+        // Send ICE candidate to peer via SSE
+        const candidateSent = sendSSEMessage(to_user_id, {
+            type: 'webrtc_candidate',
+            candidate: candidate,
+            fromUserId: userId,
+            timestamp: new Date().toISOString()
+        });
+
+        if (!candidateSent) {
+            return res.json({ 
+                success: false, 
+                message: 'Failed to send ICE candidate. User might be offline.' 
+            });
+        }
+
+        res.json({ 
+            success: true, 
+            message: 'WebRTC ICE candidate sent successfully' 
+        });
+
+    } catch (error) {
+        console.log('❌ Error sending WebRTC ICE candidate:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// 🆕 Get pending WebRTC data
+export const getWebRTCData = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { from_user_id } = req.params;
+
+        const offerKey = `${from_user_id}_${userId}`;
+        const answerKey = `${userId}_${from_user_id}`;
+
+        const pendingOffer = webrtcOffers.get(offerKey);
+        const pendingAnswer = webrtcAnswers.get(answerKey);
+
+        res.json({
+            success: true,
+            pendingOffer,
+            pendingAnswer
+        });
+
+    } catch (error) {
+        console.log('❌ Error getting WebRTC data:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// 🆕 Accept Call
+export const acceptCall = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { call_id } = req.body;
+
+        console.log(`✅ Call accepted by ${userId} for call ${call_id}`);
+
+        const callData = activeCalls.get(userId);
+        if (!callData || callData.callId !== call_id) {
+            return res.json({ 
+                success: false, 
+                message: 'Call not found or expired' 
+            });
+        }
+
+        // Clear the auto-reject timeout
+        if (callData.timeoutId) {
+            clearTimeout(callData.timeoutId);
+        }
+
+        // Update call status
+        callData.status = 'connected';
+        callData.answerTime = new Date();
+        callData.participants.push(userId);
+
+        // Update both entries in activeCalls
+        activeCalls.set(userId, callData);
+        activeCalls.set(callData.fromUserId, callData);
+
+        // Get user info for notification
+        const accepterInfo = await getUserName(userId);
+
+        console.log(`📞 Notifying caller ${callData.fromUserId} that call was accepted`);
+
+        // Notify caller that call was accepted
+        sendSSEMessage(callData.fromUserId, {
+            type: 'call_accepted',
+            callId: call_id,
+            acceptedBy: userId,
+            acceptedByName: accepterInfo.name,
+            timestamp: new Date().toISOString()
+        });
+
+        // Notify both users that call is connected
+        sendSSEMessage(userId, {
+            type: 'call_connected',
+            callId: call_id,
+            withUserId: callData.fromUserId,
+            withUserName: await getUserName(callData.fromUserId).then(info => info.name),
+            callType: callData.callType,
+            timestamp: new Date().toISOString()
+        });
+
+        sendSSEMessage(callData.fromUserId, {
+            type: 'call_connected',
+            callId: call_id,
+            withUserId: userId,
+            withUserName: accepterInfo.name,
+            callType: callData.callType,
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ 
+            success: true, 
+            callId: call_id,
+            message: 'Call accepted successfully'
+        });
+
+    } catch (error) {
+        console.log('❌ Error accepting call:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// 🆕 Reject Call
+export const rejectCall = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { call_id } = req.body;
+
+        console.log(`❌ Call rejected by ${userId} for call ${call_id}`);
+
+        const callData = activeCalls.get(userId);
+        if (!callData || callData.callId !== call_id) {
+            return res.json({ 
+                success: false, 
+                message: 'Call not found or expired' 
+            });
+        }
+
+        // Clear the auto-reject timeout
+        if (callData.timeoutId) {
+            clearTimeout(callData.timeoutId);
+        }
+
+        const callerId = callData.fromUserId;
+
+        // Remove call from active calls
+        activeCalls.delete(userId);
+        activeCalls.delete(callerId);
+
+        // Get user info for notification
+        const rejecterInfo = await getUserName(userId);
+
+        // Notify caller that call was rejected
+        sendSSEMessage(callerId, {
+            type: 'call_rejected',
+            callId: call_id,
+            rejectedBy: userId,
+            rejectedByName: rejecterInfo.name,
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ 
+            success: true, 
+            message: 'Call rejected successfully'
+        });
+
+    } catch (error) {
+        console.log('❌ Error rejecting call:', error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// 🆕 End Call
+export const endCall = async (req, res) => {
+    try {
+        const { userId } = req.auth();
+        const { call_id, duration } = req.body;
+
+        console.log(`📞 Call ended by ${userId} for call ${call_id}`);
+
+        const callData = activeCalls.get(userId);
+        if (!callData || callData.callId !== call_id) {
+            return res.json({ 
+                success: false, 
+                message: 'Call not found or already ended' 
+            });
+        }
+
+        // Clear the auto-reject timeout if call was still ringing
+        if (callData.timeoutId) {
+            clearTimeout(callData.timeoutId);
+        }
+
+        const otherUserId = callData.fromUserId === userId ? callData.toUserId : callData.fromUserId;
+
+        // Remove call from active calls
+        activeCalls.delete(userId);
+        activeCalls.delete(otherUserId);
+
+        // Clean up WebRTC data
+        webrtcOffers.delete(`${userId}_${otherUserId}`);
+        webrtcOffers.delete(`${otherUserId}_${userId}`);
+        webrtcAnswers.delete(`${userId}_${otherUserId}`);
+        webrtcAnswers.delete(`${otherUserId}_${userId}`);
+
+        // Get user info for notification
+        const enderInfo = await getUserName(userId);
+
+        // Notify other participant that call ended
+        sendSSEMessage(otherUserId, {
+            type: 'call_ended',
+            callId: call_id,
+            endedBy: userId,
+            endedByName: enderInfo.name,
+            duration: duration || 0,
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({ 
+            success: true, 
+            duration: duration || 0,
+            message: 'Call ended successfully'
+        });
+
+    } catch (error) {
+        console.log('❌ Error ending call:', error);
+        res.json({ success: false, message: error.message });
     }
 };
 
@@ -343,7 +820,6 @@ export const sendVoiceMessage = async (req, res) => {
 };
 
 // Send Message (Keep your existing ImageKit logic)
-// FIXED: Send Message with proper memory storage handling
 export const sendMessage = async (req, res) => {
     try {
         const { userId } = req.auth();
@@ -378,20 +854,13 @@ export const sendMessage = async (req, res) => {
         if (image) {
             try {
                 console.log('🖼️ Processing image upload...');
-                console.log('📁 Image details:', {
-                    originalname: image.originalname,
-                    mimetype: image.mimetype,
-                    size: image.size,
-                    buffer: image.buffer ? `Present (${image.buffer.length} bytes)` : 'Missing'
-                });
 
-                // Use image.buffer directly (memory storage)
                 if (!image.buffer) {
                     throw new Error('Image buffer is missing');
                 }
 
                 const response = await imagekit.upload({
-                    file: image.buffer, // Use buffer directly
+                    file: image.buffer,
                     fileName: image.originalname || `image-${Date.now()}.jpg`,
                     folder: '/chat-images',
                     useUniqueFileName: true
