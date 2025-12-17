@@ -4,12 +4,15 @@ import {
     MessageSquare, UserPlus, Search, MoreVertical, PhoneCall,
     Users, User, VideoOff, Camera, CameraOff, Wifi, WifiOff, Signal,
     ArrowLeft, Clock, AlertCircle, CheckCircle, XCircle, Headphones,
-    RefreshCw, Zap, Battery, BatteryCharging
+    RefreshCw, Zap, Battery, BatteryCharging, Activity
 } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { useUser, useAuth } from '@clerk/clerk-react';
 import { Howl } from 'howler';
 import toast from 'react-hot-toast';
+
+// Backend API URL
+const API_BASE_URL = 'https://pixo-toj7.onrender.com';
 
 // Sound URLs
 const SOUND_URLS = {
@@ -35,37 +38,27 @@ const Calling = ({ onClose }) => {
     const [localStream, setLocalStream] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
     const [callQuality, setCallQuality] = useState('excellent');
-    const [showCallLog, setShowCallLog] = useState(false);
     const [callHistory, setCallHistory] = useState([]);
     const [isConnecting, setIsConnecting] = useState(false);
-    const [isReconnecting, setIsReconnecting] = useState(false);
-    const [isSocketConnected, setIsSocketConnected] = useState(false);
-    const [connectionAttempts, setConnectionAttempts] = useState(0);
-    const [networkStatus, setNetworkStatus] = useState('online');
+    const [isPolling, setIsPolling] = useState(false);
+    const [pollingInterval, setPollingInterval] = useState(null);
+    const [signalingStatus, setSignalingStatus] = useState('disconnected');
+    const [lastPollTime, setLastPollTime] = useState(null);
 
     // Refs
     const localVideoRef = useRef(null);
     const remoteVideoRef = useRef(null);
     const peerConnectionRef = useRef(null);
-    const signalingSocketRef = useRef(null);
     const callDurationIntervalRef = useRef(null);
     const soundRefs = useRef({});
-    const reconnectTimeoutRef = useRef(null);
     const callIdRef = useRef(null);
-    const connectionQueueRef = useRef([]);
     const mediaStreamRef = useRef(null);
+    const signalPollIntervalRef = useRef(null);
 
     // Data from Redux
     const { connections } = useSelector((state) => state.connections);
     const { user: currentUser } = useUser();
     const { getToken } = useAuth();
-
-    // Get signaling URL
-    const getSignalingUrl = () => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        return `${protocol}//${host}/api/webrtc-signaling`;
-    };
 
     // Initialize sounds
     useEffect(() => {
@@ -107,22 +100,8 @@ const Calling = ({ onClose }) => {
             setCallHistory(JSON.parse(savedHistory));
         }
 
-        // Network status listener
-        const handleOnline = () => {
-            setNetworkStatus('online');
-            toast.success('Back online');
-            if (!isSocketConnected) {
-                connectSignaling();
-            }
-        };
-
-        const handleOffline = () => {
-            setNetworkStatus('offline');
-            toast.error('Network connection lost');
-        };
-
-        window.addEventListener('online', handleOnline);
-        window.addEventListener('offline', handleOffline);
+        // Start signal polling
+        startSignalPolling();
 
         return () => {
             Object.values(soundRefs.current).forEach(sound => {
@@ -130,208 +109,119 @@ const Calling = ({ onClose }) => {
                 sound.unload();
             });
             
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current);
+            stopSignalPolling();
+            cleanupMediaStream();
+            
+            if (peerConnectionRef.current) {
+                peerConnectionRef.current.close();
             }
             
-            cleanupMediaStream();
-            cleanupWebSocket();
-            
-            window.removeEventListener('online', handleOnline);
-            window.removeEventListener('offline', handleOffline);
+            if (callDurationIntervalRef.current) {
+                clearInterval(callDurationIntervalRef.current);
+            }
         };
     }, []);
 
-    // Cleanup functions
-    const cleanupMediaStream = () => {
-        if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach(track => {
-                track.stop();
-                track.enabled = false;
-            });
-            mediaStreamRef.current = null;
-        }
-        setLocalStream(null);
-    };
-
-    const cleanupWebSocket = () => {
-        if (signalingSocketRef.current) {
-            signalingSocketRef.current.close();
-            signalingSocketRef.current = null;
-        }
-        setIsSocketConnected(false);
-    };
-
-    // Safe WebSocket send with retry
-    const safeWebSocketSend = (message, retryCount = 0) => {
-        if (!signalingSocketRef.current) {
-            console.error('No WebSocket connection');
-            return false;
-        }
-
-        const socket = signalingSocketRef.current;
-        
-        if (socket.readyState === WebSocket.OPEN) {
-            try {
-                socket.send(JSON.stringify(message));
-                return true;
-            } catch (error) {
-                console.error('WebSocket send error:', error);
-                return false;
-            }
-        } 
-        else if (socket.readyState === WebSocket.CONNECTING) {
-            // Queue the message for when connection opens
-            connectionQueueRef.current.push(message);
-            
-            if (retryCount < 3) {
-                setTimeout(() => {
-                    safeWebSocketSend(message, retryCount + 1);
-                }, 500);
-            }
-            return false;
-        }
-        else {
-            console.error('WebSocket not in OPEN state:', socket.readyState);
-            
-            if (retryCount < 2 && callStatus !== 'idle') {
-                setTimeout(() => {
-                    connectSignaling().then(() => {
-                        safeWebSocketSend(message, retryCount + 1);
-                    });
-                }, 1000);
-            }
-            return false;
-        }
-    };
-
-    // WebSocket Signaling Connection
-    const connectSignaling = useCallback(async () => {
+    // ========== HTTP SIGNALING FUNCTIONS ==========
+    
+    // Send signal via HTTP POST
+    const sendSignal = async (message) => {
         try {
-            // Don't reconnect if already connecting/connected
-            if (signalingSocketRef.current?.readyState === WebSocket.CONNECTING) {
-                console.log('WebSocket already connecting');
-                return signalingSocketRef.current;
-            }
-
-            if (signalingSocketRef.current?.readyState === WebSocket.OPEN) {
-                console.log('WebSocket already connected');
-                return signalingSocketRef.current;
-            }
-
-            setIsReconnecting(true);
-            setConnectionAttempts(prev => prev + 1);
-
             const token = await getToken();
             if (!token) {
-                toast.error('Authentication required');
-                setIsReconnecting(false);
-                return null;
+                throw new Error('No authentication token');
             }
 
-            const socketUrl = `${getSignalingUrl()}?token=${token}`;
-            console.log(`🔗 Connecting to signaling (attempt ${connectionAttempts + 1}):`, socketUrl);
-            
-            return new Promise((resolve, reject) => {
-                const socket = new WebSocket(socketUrl);
-                signalingSocketRef.current = socket;
-
-                // Set timeout for connection
-                const connectionTimeout = setTimeout(() => {
-                    if (socket.readyState !== WebSocket.OPEN) {
-                        socket.close();
-                        reject(new Error('Connection timeout after 10s'));
-                        toast.error('Connection timeout');
-                    }
-                }, 10000);
-
-                socket.onopen = () => {
-                    clearTimeout(connectionTimeout);
-                    console.log('✅ WebRTC signaling connected');
-                    setIsSocketConnected(true);
-                    setIsReconnecting(false);
-                    setConnectionAttempts(0);
-                    
-                    // Send connection confirmation
-                    socket.send(JSON.stringify({
-                        type: 'hello',
-                        userId: currentUser?.id,
-                        timestamp: Date.now(),
-                        userAgent: navigator.userAgent
-                    }));
-                    
-                    // Process queued messages
-                    if (connectionQueueRef.current.length > 0) {
-                        console.log(`Processing ${connectionQueueRef.current.length} queued messages`);
-                        connectionQueueRef.current.forEach(msg => {
-                            safeWebSocketSend(msg);
-                        });
-                        connectionQueueRef.current = [];
-                    }
-                    
-                    toast.dismiss();
-                    resolve(socket);
-                };
-
-                socket.onmessage = async (event) => {
-                    try {
-                        const message = JSON.parse(event.data);
-                        console.log('📨 Signaling message:', message.type);
-                        await handleSignalingMessage(message);
-                    } catch (error) {
-                        console.error('❌ Error parsing message:', error);
-                    }
-                };
-
-                socket.onerror = (error) => {
-                    clearTimeout(connectionTimeout);
-                    console.error('❌ WebSocket error:', error);
-                    setIsSocketConnected(false);
-                    reject(error);
-                };
-
-                socket.onclose = (event) => {
-                    clearTimeout(connectionTimeout);
-                    console.log('🔌 WebSocket closed:', event.code, event.reason);
-                    setIsSocketConnected(false);
-                    
-                    if (callStatus !== 'idle' && callStatus !== 'ended') {
-                        const retryDelay = Math.min(5000, 1000 * Math.pow(2, connectionAttempts));
-                        console.log(`Will retry in ${retryDelay}ms`);
-                        
-                        setTimeout(() => {
-                            if (callStatus !== 'idle') {
-                                connectSignaling();
-                            }
-                        }, retryDelay);
-                    }
-                };
+            const response = await fetch(`${API_BASE_URL}/api/webrtc/signal`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    ...message,
+                    userId: currentUser?.id,
+                    timestamp: Date.now()
+                })
             });
 
-        } catch (error) {
-            console.error('❌ Failed to connect signaling:', error);
-            setIsReconnecting(false);
-            
-            if (connectionAttempts < 3) {
-                setTimeout(() => {
-                    connectSignaling();
-                }, 2000);
-            } else {
-                toast.error('Failed to connect to call service');
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
-            
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('❌ Send signal error:', error);
             throw error;
         }
-    }, [getToken, currentUser?.id, callStatus, connectionAttempts]);
+    };
 
-    // Handle signaling messages
-    const handleSignalingMessage = async (message) => {
-        switch (message.type) {
-            case 'connected':
-                console.log('✅ Connected to signaling server');
-                toast.success('Connected to call service');
-                break;
+    // Poll for incoming signals
+    const startSignalPolling = useCallback(() => {
+        if (signalPollIntervalRef.current) {
+            clearInterval(signalPollIntervalRef.current);
+        }
+
+        const poll = async () => {
+            if (!currentUser?.id) return;
+            
+            try {
+                const token = await getToken();
+                if (!token) return;
                 
+                const response = await fetch(`${API_BASE_URL}/api/webrtc/signals/${currentUser.id}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+                
+                setLastPollTime(Date.now());
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.signals && data.signals.length > 0) {
+                        data.signals.forEach(signal => {
+                            handleSignalingMessage(signal);
+                        });
+                    }
+                    setSignalingStatus('connected');
+                } else {
+                    setSignalingStatus('error');
+                }
+            } catch (error) {
+                console.error('❌ Polling error:', error);
+                setSignalingStatus('disconnected');
+            }
+        };
+
+        // Start polling every 1 second
+        signalPollIntervalRef.current = setInterval(poll, 1000);
+        setIsPolling(true);
+        
+        // Initial poll
+        poll();
+        
+        console.log('✅ Started HTTP signal polling');
+    }, [currentUser?.id, getToken]);
+
+    // Stop signal polling
+    const stopSignalPolling = () => {
+        if (signalPollIntervalRef.current) {
+            clearInterval(signalPollIntervalRef.current);
+            signalPollIntervalRef.current = null;
+        }
+        setIsPolling(false);
+        setSignalingStatus('disconnected');
+    };
+
+    // Handle signaling messages from polling
+    const handleSignalingMessage = async (message) => {
+        console.log('📨 Received signal:', message.type);
+        
+        switch (message.type) {
             case 'incoming-call':
                 await handleIncomingCall(message);
                 break;
@@ -353,26 +243,233 @@ const Calling = ({ onClose }) => {
                 break;
                 
             case 'user-offline':
-                toast.error(`${message.targetUserId ? 'User' : 'User'} is currently offline`);
+                toast.error('User is currently offline');
                 if (callStatus === 'calling') {
                     endCall('User offline');
                 }
                 break;
                 
-            case 'offer-sent':
-                console.log('📞 Call offer sent successfully');
-                break;
-                
-            case 'pong':
-                // Keep-alive response
-                break;
-                
             default:
-                console.log('📨 Unknown message:', message.type);
+                console.log('📨 Unknown signal type:', message.type);
         }
     };
 
-    // Handle incoming call
+    // ========== MEDIA & WEBRTC FUNCTIONS ==========
+    
+    // Cleanup media stream
+    const cleanupMediaStream = () => {
+        if (mediaStreamRef.current) {
+            mediaStreamRef.current.getTracks().forEach(track => {
+                track.stop();
+                track.enabled = false;
+            });
+            mediaStreamRef.current = null;
+        }
+        setLocalStream(null);
+    };
+
+    // WebRTC Configuration
+    const configuration = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' }
+        ],
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
+    };
+
+    // Start a new call (HTTP signaling version)
+    const startCall = async (user, type) => {
+        if (!user || !user._id) {
+            toast.error('Invalid user selected');
+            return;
+        }
+
+        if (callStatus !== 'idle') {
+            toast.error('Please end current call first');
+            return;
+        }
+
+        setIsConnecting(true);
+        setSelectedUser(user);
+        setCallType(type);
+        
+        try {
+            // Step 1: Get media permissions
+            toast.loading('Requesting camera/microphone access...');
+            
+            const constraints = {
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    channelCount: 1
+                },
+                video: type === 'video' ? {
+                    width: { ideal: 640, max: 1280 },
+                    height: { ideal: 480, max: 720 },
+                    frameRate: { ideal: 24, max: 30 },
+                    facingMode: 'user'
+                } : false
+            };
+
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                mediaStreamRef.current = stream;
+            } catch (mediaError) {
+                console.error('Media error:', mediaError);
+                
+                if (mediaError.name === 'NotAllowedError') {
+                    toast.error('Please allow camera/microphone access in browser settings');
+                    throw mediaError;
+                } else if (mediaError.name === 'NotFoundError') {
+                    toast.error('No camera/microphone found');
+                    // Try audio only
+                    constraints.video = false;
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaStreamRef.current = stream;
+                    setCallType('voice');
+                } else {
+                    throw mediaError;
+                }
+            }
+            
+            setLocalStream(stream);
+            
+            if (localVideoRef.current && type === 'video') {
+                localVideoRef.current.srcObject = stream;
+            }
+
+            toast.dismiss();
+            toast.loading('Setting up call...');
+
+            // Step 2: Create peer connection
+            const pc = new RTCPeerConnection(configuration);
+            peerConnectionRef.current = pc;
+
+            // Add local tracks
+            stream.getTracks().forEach(track => {
+                pc.addTrack(track, stream);
+            });
+
+            // ICE candidate handler - send via HTTP
+            pc.onicecandidate = (event) => {
+                if (event.candidate && callIdRef.current) {
+                    // Send ICE candidate via HTTP
+                    setTimeout(() => {
+                        sendSignal({
+                            type: 'ice-candidate',
+                            targetUserId: user._id,
+                            candidate: event.candidate,
+                            callId: callIdRef.current
+                        }).catch(err => {
+                            console.warn('Failed to send ICE candidate:', err);
+                        });
+                    }, 100);
+                }
+            };
+
+            // Track connection state
+            pc.onconnectionstatechange = () => {
+                console.log('📶 Peer connection state:', pc.connectionState);
+                
+                switch (pc.connectionState) {
+                    case 'connected':
+                        setCallQuality('excellent');
+                        toast.success('Call connected!');
+                        break;
+                    case 'disconnected':
+                        setCallQuality('poor');
+                        toast.warning('Connection unstable');
+                        break;
+                    case 'failed':
+                        toast.error('Call failed. Please try again.');
+                        endCall('Connection failed');
+                        break;
+                }
+            };
+
+            // Handle remote stream
+            pc.ontrack = (event) => {
+                console.log('📹 Received remote stream');
+                const [remoteStream] = event.streams;
+                setRemoteStream(remoteStream);
+                if (remoteVideoRef.current) {
+                    remoteVideoRef.current.srcObject = remoteStream;
+                }
+            };
+
+            // Create call ID
+            const callId = `call_${currentUser?.id}_${user._id}_${Date.now()}`;
+            callIdRef.current = callId;
+
+            // Step 3: Create and send offer via HTTP
+            const offerOptions = {
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: type === 'video'
+            };
+
+            const offer = await pc.createOffer(offerOptions);
+            await pc.setLocalDescription(offer);
+
+            // Send offer via HTTP
+            await sendSignal({
+                type: 'call-offer',
+                targetUserId: user._id,
+                callType: type,
+                offer: offer,
+                callId: callId
+            });
+
+            setCallStatus('calling');
+            soundRefs.current.dialing.play();
+            setIsConnecting(false);
+
+            // Add to call history
+            addToCallHistory({
+                userId: user._id,
+                userName: user.full_name,
+                type: type,
+                direction: 'outgoing',
+                timestamp: new Date().toISOString(),
+                status: 'calling'
+            });
+
+            toast.dismiss();
+
+        } catch (error) {
+            console.error('❌ Error starting call:', error);
+            
+            let errorMessage = 'Failed to start call';
+            if (error.message.includes('HTTP') || error.message.includes('network')) {
+                errorMessage = 'Connection failed. Please try again.';
+            } else if (error.name === 'NotAllowedError') {
+                errorMessage = 'Please allow camera/microphone access';
+            } else if (error.name === 'NotFoundError') {
+                errorMessage = 'No camera/microphone found';
+            }
+            
+            toast.error(errorMessage);
+            
+            // Clean up
+            cleanupMediaStream();
+            if (peerConnectionRef.current) {
+                peerConnectionRef.current.close();
+                peerConnectionRef.current = null;
+            }
+            
+            setCallStatus('idle');
+            setSelectedUser(null);
+            setCallType(null);
+            setIsConnecting(false);
+        }
+    };
+
+    // Handle incoming call from HTTP polling
     const handleIncomingCall = async (message) => {
         const caller = connections.find(c => c._id === message.callerId);
         if (!caller) {
@@ -410,286 +507,7 @@ const Calling = ({ onClose }) => {
                 notification.close();
             };
             
-            // Auto close after 30 seconds
             setTimeout(() => notification.close(), 30000);
-        }
-    };
-
-    // WebRTC Configuration
-    const configuration = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' }
-        ],
-        iceCandidatePoolSize: 10,
-        bundlePolicy: 'max-bundle',
-        rtcpMuxPolicy: 'require',
-        iceTransportPolicy: 'all'
-    };
-
-    // Start a new call - FIXED VERSION
-    const startCall = async (user, type) => {
-        if (!user || !user._id) {
-            toast.error('Invalid user selected');
-            return;
-        }
-
-        if (callStatus !== 'idle') {
-            toast.error('Please end current call first');
-            return;
-        }
-
-        setIsConnecting(true);
-        setSelectedUser(user);
-        setCallType(type);
-        
-        try {
-            // Step 1: Ensure WebSocket connection is ready
-            let socket = signalingSocketRef.current;
-            if (!socket || socket.readyState !== WebSocket.OPEN) {
-                console.log('WebSocket not ready, connecting...');
-                toast.loading('Connecting to call service...');
-                
-                socket = await connectSignaling();
-                
-                // Wait a bit for connection to stabilize
-                await new Promise(resolve => setTimeout(resolve, 300));
-                
-                if (!socket || socket.readyState !== WebSocket.OPEN) {
-                    throw new Error('WebSocket connection failed');
-                }
-                
-                toast.dismiss();
-                toast.success('Connected!');
-            }
-
-            // Step 2: Get media permissions
-            toast.loading('Requesting camera/microphone access...');
-            
-            const constraints = {
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    channelCount: 1
-                },
-                video: type === 'video' ? {
-                    width: { ideal: 640, max: 1280 },
-                    height: { ideal: 480, max: 720 },
-                    frameRate: { ideal: 24, max: 30 },
-                    facingMode: 'user'
-                } : false
-            };
-
-            let stream;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia(constraints);
-                mediaStreamRef.current = stream;
-            } catch (mediaError) {
-                console.error('Media error:', mediaError);
-                
-                if (mediaError.name === 'NotAllowedError') {
-                    toast.error('Please allow camera/microphone access in browser settings');
-                } else if (mediaError.name === 'NotFoundError') {
-                    toast.error('No camera/microphone found');
-                    
-                    // Try audio only
-                    constraints.video = false;
-                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaStreamRef.current = stream;
-                    setCallType('voice'); // Force voice call
-                } else {
-                    throw mediaError;
-                }
-            }
-            
-            setLocalStream(stream);
-            
-            if (localVideoRef.current && type === 'video') {
-                localVideoRef.current.srcObject = stream;
-            }
-
-            toast.dismiss();
-            toast.loading('Setting up call...');
-
-            // Step 3: Create peer connection
-            const pc = new RTCPeerConnection(configuration);
-            peerConnectionRef.current = pc;
-
-            // Add local tracks
-            stream.getTracks().forEach(track => {
-                pc.addTrack(track, stream);
-            });
-
-            // ICE candidate handler
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    // Wait for WebSocket to be ready
-                    setTimeout(() => {
-                        const success = safeWebSocketSend({
-                            type: 'ice-candidate',
-                            targetUserId: user._id,
-                            candidate: event.candidate,
-                            callId: callIdRef.current
-                        });
-                        
-                        if (!success) {
-                            console.warn('Failed to send ICE candidate');
-                        }
-                    }, 100);
-                }
-            };
-
-            // Track connection state
-            pc.onconnectionstatechange = () => {
-                console.log('📶 Peer connection state:', pc.connectionState);
-                
-                switch (pc.connectionState) {
-                    case 'connected':
-                        setCallQuality('excellent');
-                        toast.success('Call connected!');
-                        break;
-                    case 'disconnected':
-                        setCallQuality('poor');
-                        toast.warning('Connection unstable');
-                        break;
-                    case 'failed':
-                        toast.error('Call failed. Reconnecting...');
-                        attemptReconnectCall();
-                        break;
-                    case 'closed':
-                        console.log('Peer connection closed');
-                        break;
-                }
-            };
-
-            // Handle remote stream
-            pc.ontrack = (event) => {
-                console.log('📹 Received remote stream');
-                const [remoteStream] = event.streams;
-                setRemoteStream(remoteStream);
-                if (remoteVideoRef.current) {
-                    remoteVideoRef.current.srcObject = remoteStream;
-                }
-            };
-
-            // Create call ID
-            const callId = `call_${currentUser?.id}_${user._id}_${Date.now()}`;
-            callIdRef.current = callId;
-
-            // Step 4: Create and send offer
-            toast.loading('Creating call...');
-            
-            const offerOptions = {
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: type === 'video'
-            };
-
-            const offer = await pc.createOffer(offerOptions);
-            await pc.setLocalDescription(offer);
-
-            // Wait to ensure WebSocket is ready
-            await new Promise(resolve => setTimeout(resolve, 200));
-
-            // Send offer via WebSocket
-            const offerMessage = {
-                type: 'call-offer',
-                targetUserId: user._id,
-                callType: type,
-                offer: offer,
-                callId: callId
-            };
-
-            const sent = safeWebSocketSend(offerMessage);
-            
-            if (!sent) {
-                // Queue and retry
-                connectionQueueRef.current.push(offerMessage);
-                
-                setTimeout(() => {
-                    if (connectionQueueRef.current.length > 0) {
-                        console.log('Retrying queued offer...');
-                        safeWebSocketSend(offerMessage);
-                    }
-                }, 1000);
-            }
-
-            setCallStatus('calling');
-            soundRefs.current.dialing.play();
-            setIsConnecting(false);
-
-            // Add to call history
-            addToCallHistory({
-                userId: user._id,
-                userName: user.full_name,
-                type: type,
-                direction: 'outgoing',
-                timestamp: new Date().toISOString(),
-                status: 'calling'
-            });
-
-            toast.dismiss();
-
-        } catch (error) {
-            console.error('❌ Error starting call:', error);
-            
-            let errorMessage = 'Failed to start call';
-            if (error.message.includes('WebSocket')) {
-                errorMessage = 'Connection failed. Please try again.';
-            } else if (error.name === 'NotAllowedError') {
-                errorMessage = 'Please allow camera/microphone access';
-            } else if (error.name === 'NotFoundError') {
-                errorMessage = 'No camera/microphone found';
-            }
-            
-            toast.error(errorMessage);
-            
-            // Clean up
-            cleanupMediaStream();
-            if (peerConnectionRef.current) {
-                peerConnectionRef.current.close();
-                peerConnectionRef.current = null;
-            }
-            
-            setCallStatus('idle');
-            setSelectedUser(null);
-            setCallType(null);
-            setIsConnecting(false);
-        }
-    };
-
-    // Attempt to reconnect call
-    const attemptReconnectCall = () => {
-        if (selectedUser && callIdRef.current) {
-            console.log('Attempting to reconnect call...');
-            
-            setTimeout(async () => {
-                if (callStatus === 'calling' || callStatus === 'connected') {
-                    try {
-                        // Re-establish WebSocket connection
-                        await connectSignaling();
-                        
-                        // Re-send offer
-                        if (peerConnectionRef.current) {
-                            const offer = await peerConnectionRef.current.createOffer();
-                            await peerConnectionRef.current.setLocalDescription(offer);
-                            
-                            safeWebSocketSend({
-                                type: 'call-offer',
-                                targetUserId: selectedUser._id,
-                                callType: callType,
-                                offer: offer,
-                                callId: callIdRef.current
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Reconnect failed:', error);
-                    }
-                }
-            }, 2000);
         }
     };
 
@@ -704,11 +522,6 @@ const Calling = ({ onClose }) => {
         callIdRef.current = incomingCall.callId;
 
         try {
-            // Ensure WebSocket is connected
-            if (!signalingSocketRef.current || signalingSocketRef.current.readyState !== WebSocket.OPEN) {
-                await connectSignaling();
-            }
-
             // Get local media
             const constraints = {
                 audio: {
@@ -741,12 +554,14 @@ const Calling = ({ onClose }) => {
 
             // ICE candidate handler
             pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    safeWebSocketSend({
+                if (event.candidate && callIdRef.current) {
+                    sendSignal({
                         type: 'ice-candidate',
                         targetUserId: incomingCall.user._id,
                         candidate: event.candidate,
-                        callId: incomingCall.callId
+                        callId: callIdRef.current
+                    }).catch(err => {
+                        console.warn('Failed to send ICE candidate:', err);
                     });
                 }
             };
@@ -763,12 +578,11 @@ const Calling = ({ onClose }) => {
             // Set remote description from offer
             await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
 
-            // Create and send answer
+            // Create and send answer via HTTP
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
-            // Send answer via signaling
-            safeWebSocketSend({
+            await sendSignal({
                 type: 'call-answer',
                 callerId: incomingCall.user._id,
                 answer: answer,
@@ -799,7 +613,7 @@ const Calling = ({ onClose }) => {
         }
     };
 
-    // Handle call answer
+    // Handle call answer from polling
     const handleCallAnswer = async (message) => {
         if (!peerConnectionRef.current) return;
 
@@ -814,7 +628,6 @@ const Calling = ({ onClose }) => {
                 soundRefs.current.callConnected.play();
                 startCallTimer();
                 
-                // Update call history
                 updateCallHistory('connected');
             }
         } catch (error) {
@@ -822,7 +635,7 @@ const Calling = ({ onClose }) => {
         }
     };
 
-    // Handle ICE candidates
+    // Handle ICE candidates from polling
     const handleNewICECandidate = async (message) => {
         if (!peerConnectionRef.current || !message.candidate) return;
         
@@ -852,14 +665,15 @@ const Calling = ({ onClose }) => {
         soundRefs.current.ringing.stop();
         
         if (incomingCall) {
-            safeWebSocketSend({
+            sendSignal({
                 type: 'call-reject',
                 callerId: incomingCall.user._id,
                 callId: incomingCall.callId,
                 reason: 'User rejected'
+            }).catch(err => {
+                console.error('Failed to send reject:', err);
             });
             
-            // Add to call history
             addToCallHistory({
                 userId: incomingCall.user._id,
                 userName: incomingCall.user.full_name,
@@ -897,11 +711,13 @@ const Calling = ({ onClose }) => {
 
         // Send end call message if connected
         if (selectedUser && callIdRef.current) {
-            safeWebSocketSend({
+            sendSignal({
                 type: 'end-call',
                 targetUserId: selectedUser._id,
                 callId: callIdRef.current,
                 reason: reason
+            }).catch(err => {
+                console.error('Failed to send end call:', err);
             });
         }
 
@@ -917,7 +733,6 @@ const Calling = ({ onClose }) => {
         cleanupMediaStream();
         setRemoteStream(null);
         callIdRef.current = null;
-        connectionQueueRef.current = [];
 
         // Reset state
         setCallStatus('ended');
@@ -938,17 +753,7 @@ const Calling = ({ onClose }) => {
         }
         
         callDurationIntervalRef.current = setInterval(() => {
-            setCallDuration(prev => {
-                const newDuration = prev + 1;
-                
-                // Update quality randomly (for demo)
-                if (newDuration % 30 === 0) {
-                    const qualities = ['excellent', 'good', 'fair', 'poor'];
-                    setCallQuality(qualities[Math.floor(Math.random() * qualities.length)]);
-                }
-                
-                return newDuration;
-            });
+            setCallDuration(prev => prev + 1);
         }, 1000);
     };
 
@@ -1006,43 +811,53 @@ const Calling = ({ onClose }) => {
         return matchesSearch;
     });
 
-    // Connect to signaling on mount
-    useEffect(() => {
-        connectSignaling();
-        
-        // Request notification permission
-        if ("Notification" in window && Notification.permission === "default") {
-            Notification.requestPermission();
+    // Restart polling if disconnected
+    const restartPolling = () => {
+        stopSignalPolling();
+        startSignalPolling();
+        toast.success('Reconnected to signaling server');
+    };
+
+    // Get signaling status color
+    const getSignalingStatusColor = () => {
+        switch(signalingStatus) {
+            case 'connected': return 'bg-green-100 text-green-600';
+            case 'error': return 'bg-yellow-100 text-yellow-600';
+            case 'disconnected': return 'bg-red-100 text-red-600';
+            default: return 'bg-gray-100 text-gray-600';
         }
-        
-        // Handle beforeunload
-        const handleBeforeUnload = () => {
-            if (callStatus !== 'idle') {
-                endCall('Page closed');
-            }
-        };
-        
-        window.addEventListener('beforeunload', handleBeforeUnload);
-        
-        return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-            cleanupWebSocket();
-            cleanupMediaStream();
-        };
-    }, []);
+    };
+
+    // Get signaling status text
+    const getSignalingStatusText = () => {
+        switch(signalingStatus) {
+            case 'connected': return 'Connected';
+            case 'error': return 'Connection Error';
+            case 'disconnected': return 'Disconnected';
+            default: return 'Connecting...';
+        }
+    };
 
     // Render UI
     return (
         <div className="fixed inset-0 z-[70] bg-white">
-            {/* Connection Status Bar */}
-            <div className={`absolute top-0 left-0 right-0 z-50 py-1 px-4 text-xs font-medium text-center ${
-                isReconnecting ? 'bg-yellow-500 text-white' : 
-                isSocketConnected ? 'bg-green-500 text-white' : 
-                'bg-red-500 text-white'
-            }`}>
-                {isReconnecting ? '🔄 Reconnecting...' : 
-                 isSocketConnected ? `✅ Connected ${connectionAttempts > 0 ? `(Attempt ${connectionAttempts})` : ''}` : 
-                 '🔴 Disconnected'}
+            {/* Signaling Status Bar */}
+            <div className="absolute top-0 left-0 right-0 z-50 py-1 px-4 flex items-center justify-between bg-gray-50 border-b border-gray-200">
+                <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${
+                        signalingStatus === 'connected' ? 'bg-green-500' :
+                        signalingStatus === 'error' ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}></div>
+                    <span className="text-xs font-medium">
+                        {getSignalingStatusText()}
+                    </span>
+                </div>
+                <button
+                    onClick={restartPolling}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                    Reconnect
+                </button>
             </div>
 
             {/* Incoming Call Modal */}
@@ -1101,14 +916,14 @@ const Calling = ({ onClose }) => {
                         <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 mx-auto"></div>
                         <p className="text-white text-lg font-medium">Setting up call...</p>
                         <p className="text-gray-300 text-sm mt-2">
-                            {!isSocketConnected ? 'Connecting to server...' : 'Getting camera/microphone access...'}
+                            {signalingStatus !== 'connected' ? 'Connecting to server...' : 'Getting camera/microphone access...'}
                         </p>
                     </div>
                 </div>
             )}
 
             {/* Main Interface */}
-            <div className="h-full flex flex-col pt-6">
+            <div className="h-full flex flex-col pt-8">
                 {/* Header */}
                 <div className="sticky top-0 z-20 bg-white border-b border-gray-200 p-4">
                     <div className="flex items-center justify-between">
@@ -1132,25 +947,12 @@ const Calling = ({ onClose }) => {
                         </div>
                         
                         <div className="flex items-center gap-2">
-                            <button 
-                                onClick={connectSignaling}
-                                className={`p-2 rounded-full transition ${
-                                    isReconnecting ? 'bg-yellow-100 text-yellow-600' : 
-                                    isSocketConnected ? 'bg-green-100 text-green-600' : 
-                                    'bg-red-100 text-red-600'
-                                }`}
-                                title={isReconnecting ? 'Reconnecting...' : isSocketConnected ? 'Connected' : 'Disconnected'}
-                            >
-                                <Wifi className="w-4 h-4" />
-                            </button>
-                            
-                            <button 
-                                onClick={() => setShowCallLog(!showCallLog)}
-                                className="p-2 hover:bg-gray-100 rounded-full transition"
-                                title="Call History"
-                            >
-                                <Clock className="w-5 h-5" />
-                            </button>
+                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${getSignalingStatusColor()}`}>
+                                <span className="flex items-center gap-1">
+                                    <Activity className="w-3 h-3" />
+                                    {isPolling ? 'Polling' : 'Offline'}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1228,7 +1030,7 @@ const Calling = ({ onClose }) => {
                                                     }}
                                                     className="p-2 bg-green-100 text-green-600 rounded-full hover:bg-green-200 transition disabled:opacity-50"
                                                     title="Voice call"
-                                                    disabled={!isSocketConnected || isConnecting}
+                                                    disabled={signalingStatus !== 'connected' || isConnecting}
                                                 >
                                                     <Phone className="w-4 h-4" />
                                                 </button>
@@ -1239,7 +1041,7 @@ const Calling = ({ onClose }) => {
                                                     }}
                                                     className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition disabled:opacity-50"
                                                     title="Video call"
-                                                    disabled={!isSocketConnected || isConnecting}
+                                                    disabled={signalingStatus !== 'connected' || isConnecting}
                                                 >
                                                     <Video className="w-4 h-4" />
                                                 </button>

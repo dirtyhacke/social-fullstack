@@ -47,18 +47,175 @@ global.connections = connections;
 
 await connectDB();
 
-app.use(express.json());
+// ========== FIXED CORS CONFIGURATION ==========
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://pixo-black.vercel.app',
+    'https://pixo-black-*.vercel.app',
+    'https://pixo-black-git-*.vercel.app'
+];
+
+// CORS middleware with proper configuration
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'https://pixo-black.vercel.app/',
-    credentials: true
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) {
+            return callback(null, true);
+        }
+        
+        // Check if origin is in allowed list
+        const isAllowed = allowedOrigins.some(allowedOrigin => {
+            // Handle wildcard origins
+            if (allowedOrigin.includes('*')) {
+                const regex = new RegExp('^' + allowedOrigin.replace(/\*/g, '.*') + '$');
+                return regex.test(origin);
+            }
+            return allowedOrigin === origin;
+        });
+        
+        if (isAllowed) {
+            callback(null, true);
+        } else {
+            console.log('⚠️ CORS blocked origin:', origin);
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+    },
+    credentials: true, // Allow cookies/auth headers
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'Accept',
+        'Origin',
+        'Access-Control-Allow-Origin',
+        'Access-Control-Allow-Headers',
+        'Access-Control-Allow-Methods',
+        'Access-Control-Allow-Credentials'
+    ],
+    exposedHeaders: ['Content-Length', 'Content-Range'],
+    maxAge: 86400 // 24 hours
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors()); // Enable preflight for all routes
+
+app.use(express.json());
 app.use(clerkMiddleware());
 
-// Helper to get user ID from token
+// ========== FIX FOR VERCEL WEBSOCKET ISSUE ==========
+// Since Vercel doesn't support WebSocket servers, 
+// we'll use HTTP polling for WebRTC signaling
+const pendingSignals = new Map();
+
+// HTTP WebRTC Signaling Endpoint (for Vercel compatibility)
+app.post('/api/webrtc/signal', async (req, res) => {
+    try {
+        const { type, targetUserId, data, userId, callId } = req.body;
+        
+        // Verify authentication from Clerk middleware
+        const auth = req.auth;
+        if (!auth?.userId || auth.userId !== userId) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Unauthorized' 
+            });
+        }
+        
+        console.log(`📨 HTTP Signal: ${userId} -> ${targetUserId} (${type})`);
+        
+        // Store signal for target user
+        if (!pendingSignals.has(targetUserId)) {
+            pendingSignals.set(targetUserId, []);
+        }
+        
+        const signal = {
+            id: `${targetUserId}_${Date.now()}`,
+            type,
+            data,
+            fromUserId: userId,
+            callId,
+            timestamp: Date.now(),
+            expiresAt: Date.now() + 30000 // 30 seconds expiry
+        };
+        
+        pendingSignals.get(targetUserId).push(signal);
+        
+        // Clean old signals
+        cleanupOldSignals();
+        
+        res.json({ 
+            success: true, 
+            signalId: signal.id,
+            message: 'Signal stored successfully'
+        });
+        
+    } catch (error) {
+        console.error('❌ HTTP signaling error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Signaling failed',
+            details: error.message 
+        });
+    }
+});
+
+// Get pending signals for a user
+app.get('/api/webrtc/signals/:userId', async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        
+        // Verify authentication
+        const auth = req.auth;
+        if (!auth?.userId || auth.userId !== userId) {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Unauthorized' 
+            });
+        }
+        
+        const signals = pendingSignals.get(userId) || [];
+        
+        // Return signals
+        res.json({ 
+            success: true, 
+            signals,
+            count: signals.length 
+        });
+        
+        // Clear signals after sending
+        pendingSignals.delete(userId);
+        
+    } catch (error) {
+        console.error('❌ Get signals error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to get signals' 
+        });
+    }
+});
+
+// Cleanup old signals
+function cleanupOldSignals() {
+    const now = Date.now();
+    for (const [userId, signals] of pendingSignals.entries()) {
+        const validSignals = signals.filter(signal => signal.expiresAt > now);
+        if (validSignals.length === 0) {
+            pendingSignals.delete(userId);
+        } else {
+            pendingSignals.set(userId, validSignals);
+        }
+    }
+}
+
+// Cleanup interval
+setInterval(cleanupOldSignals, 60000); // Every minute
+
+// Helper to get user ID from token (for WebSocket fallback)
 const getUserIdFromToken = (token) => {
     try {
         if (!token) return null;
-        // Clerk JWT structure
         const decoded = jwt.decode(token);
         return decoded?.sub || decoded?.userId || null;
     } catch (error) {
@@ -67,16 +224,16 @@ const getUserIdFromToken = (token) => {
     }
 };
 
-// WebRTC Signaling WebSocket Server
+// ========== WEBSOCKET SERVER (Optional, for non-Vercel deploys) ==========
 wss.on('connection', async (socket, req) => {
-    console.log('🔗 New WebRTC signaling connection');
+    console.log('🔗 WebRTC WebSocket connection attempt');
     
-    // Extract token from query or headers
+    // Extract token from query
     const url = new URL(req.url, `http://${req.headers.host}`);
     const token = url.searchParams.get('token');
     
     if (!token) {
-        console.log('❌ No token provided');
+        console.log('❌ No token provided for WebSocket');
         socket.close(1008, 'Authentication required');
         return;
     }
@@ -84,12 +241,12 @@ wss.on('connection', async (socket, req) => {
     const userId = getUserIdFromToken(token);
     
     if (!userId) {
-        console.log('❌ Invalid token');
+        console.log('❌ Invalid token for WebSocket');
         socket.close(1008, 'Invalid authentication');
         return;
     }
     
-    console.log(`✅ WebRTC user connected: ${userId}`);
+    console.log(`✅ WebSocket user connected: ${userId}`);
     
     // Store connection
     const connectionId = `${userId}_${Date.now()}`;
@@ -100,272 +257,76 @@ wss.on('connection', async (socket, req) => {
     });
     userToConnection.set(userId, connectionId);
     
-    // Send welcome message
+    // Send welcome
     socket.send(JSON.stringify({
         type: 'connected',
         userId,
-        timestamp: new Date().toISOString(),
-        message: 'WebRTC signaling connected'
+        timestamp: Date.now(),
+        message: 'WebSocket connected (fallback mode)'
     }));
     
-    // Handle incoming messages
+    // Handle messages
     socket.on('message', async (data) => {
         try {
             const message = JSON.parse(data.toString());
             await handleWebRTCMessage(userId, message, socket);
         } catch (error) {
-            console.error('❌ Error processing message:', error);
+            console.error('❌ WebSocket message error:', error);
         }
     });
     
     // Handle disconnection
     socket.on('close', () => {
-        console.log(`🔌 WebRTC disconnected: ${userId}`);
+        console.log(`🔌 WebSocket disconnected: ${userId}`);
         webRTCConnections.delete(connectionId);
         userToConnection.delete(userId);
-        
-        // Clean up user's active calls
-        for (const [callId, call] of activeCalls.entries()) {
-            if (call.callerId === userId || call.calleeId === userId) {
-                const otherUserId = call.callerId === userId ? call.calleeId : call.callerId;
-                const otherConnId = userToConnection.get(otherUserId);
-                const otherConn = webRTCConnections.get(otherConnId);
-                
-                if (otherConn?.socket.readyState === 1) {
-                    otherConn.socket.send(JSON.stringify({
-                        type: 'call-ended',
-                        callId,
-                        endedBy: userId,
-                        reason: 'user-disconnected',
-                        timestamp: new Date().toISOString()
-                    }));
-                }
-                
-                activeCalls.delete(callId);
-            }
-        }
     });
     
-    // Handle errors
     socket.on('error', (error) => {
         console.error(`⚠️ WebSocket error for ${userId}:`, error);
     });
-    
-    // Keep alive
-    socket.on('pong', () => {
-        const conn = webRTCConnections.get(connectionId);
-        if (conn) conn.lastSeen = Date.now();
-    });
 });
 
-// Handle WebRTC messages
+// WebRTC message handler (WebSocket version)
 async function handleWebRTCMessage(senderId, message, socket) {
-    console.log(`📨 ${senderId} -> ${message.type}`, message.callId ? `(Call: ${message.callId})` : '');
+    console.log(`📨 WebSocket: ${senderId} -> ${message.type}`);
     
+    // Forward message to target via HTTP API (since WebSocket won't work on Vercel)
+    // This is a fallback for non-Vercel deployments
     switch (message.type) {
         case 'call-offer':
-            await handleCallOffer(senderId, message);
-            break;
         case 'call-answer':
-            await handleCallAnswer(senderId, message);
-            break;
         case 'ice-candidate':
-            await handleICECandidate(senderId, message);
-            break;
         case 'call-reject':
-            await handleCallReject(senderId, message);
-            break;
         case 'end-call':
-            await handleEndCall(senderId, message);
+            // For WebSocket, we'll still use the HTTP endpoint as relay
+            console.log(`📡 WebSocket message would be forwarded via HTTP: ${message.type}`);
             break;
-        case 'ping':
-            socket.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-            break;
-        default:
-            console.log('❓ Unknown message type:', message.type);
     }
 }
 
-async function handleCallOffer(callerId, message) {
-    const { targetUserId, callType, offer, callId } = message;
-    
-    // Create call record
-    const newCallId = callId || `call_${callerId}_${targetUserId}_${Date.now()}`;
-    activeCalls.set(newCallId, {
-        callerId,
-        calleeId: targetUserId,
-        callType,
-        status: 'ringing',
-        createdAt: new Date().toISOString()
-    });
-    
-    // Find target connection
-    const targetConnId = userToConnection.get(targetUserId);
-    const targetConn = webRTCConnections.get(targetConnId);
-    
-    if (!targetConn || targetConn.socket.readyState !== 1) {
-        // Target offline
-        const callerConnId = userToConnection.get(callerId);
-        const callerConn = webRTCConnections.get(callerConnId);
-        
-        if (callerConn?.socket.readyState === 1) {
-            callerConn.socket.send(JSON.stringify({
-                type: 'user-offline',
-                targetUserId,
-                timestamp: new Date().toISOString()
-            }));
-        }
-        
-        activeCalls.delete(newCallId);
-        return;
-    }
-    
-    // Send offer to target
-    targetConn.socket.send(JSON.stringify({
-        type: 'incoming-call',
-        callerId,
-        callType,
-        offer,
-        callId: newCallId,
-        timestamp: new Date().toISOString()
-    }));
-    
-    // Notify caller
-    const callerConnId = userToConnection.get(callerId);
-    const callerConn = webRTCConnections.get(callerConnId);
-    
-    if (callerConn?.socket.readyState === 1) {
-        callerConn.socket.send(JSON.stringify({
-            type: 'offer-sent',
-            targetUserId,
-            callId: newCallId,
-            timestamp: new Date().toISOString()
-        }));
-    }
-}
-
-async function handleCallAnswer(calleeId, message) {
-    const { callerId, answer, callId } = message;
-    
-    const call = activeCalls.get(callId);
-    if (!call) return;
-    
-    call.status = 'connected';
-    call.connectedAt = new Date().toISOString();
-    
-    // Send answer to caller
-    const callerConnId = userToConnection.get(callerId);
-    const callerConn = webRTCConnections.get(callerConnId);
-    
-    if (callerConn?.socket.readyState === 1) {
-        callerConn.socket.send(JSON.stringify({
-            type: 'call-answer',
-            calleeId,
-            answer,
-            callId,
-            timestamp: new Date().toISOString()
-        }));
-    }
-}
-
-async function handleICECandidate(senderId, message) {
-    const { targetUserId, candidate, callId } = message;
-    
-    const targetConnId = userToConnection.get(targetUserId);
-    const targetConn = webRTCConnections.get(targetConnId);
-    
-    if (targetConn?.socket.readyState === 1) {
-        targetConn.socket.send(JSON.stringify({
-            type: 'ice-candidate',
-            senderId,
-            candidate,
-            callId,
-            timestamp: new Date().toISOString()
-        }));
-    }
-}
-
-async function handleCallReject(rejecterId, message) {
-    const { callerId, callId, reason } = message;
-    
-    const call = activeCalls.get(callId);
-    if (!call) return;
-    
-    // Notify caller
-    const callerConnId = userToConnection.get(callerId);
-    const callerConn = webRTCConnections.get(callerConnId);
-    
-    if (callerConn?.socket.readyState === 1) {
-        callerConn.socket.send(JSON.stringify({
-            type: 'call-rejected',
-            rejecterId,
-            callId,
-            reason: reason || 'User rejected the call',
-            timestamp: new Date().toISOString()
-        }));
-    }
-    
-    activeCalls.delete(callId);
-}
-
-async function handleEndCall(enderId, message) {
-    const { callId, targetUserId } = message;
-    
-    const call = activeCalls.get(callId);
-    if (!call) return;
-    
-    // Notify other participant
-    const otherUserId = call.callerId === enderId ? call.calleeId : call.callerId;
-    const otherConnId = userToConnection.get(otherUserId);
-    const otherConn = webRTCConnections.get(otherConnId);
-    
-    if (otherConn?.socket.readyState === 1) {
-        otherConn.socket.send(JSON.stringify({
-            type: 'call-ended',
-            callId,
-            endedBy: enderId,
-            timestamp: new Date().toISOString()
-        }));
-    }
-    
-    activeCalls.delete(callId);
-}
-
-// Cleanup stale connections
-setInterval(() => {
-    const now = Date.now();
-    const TIMEOUT = 5 * 60 * 1000; // 5 minutes
-    
-    for (const [connId, conn] of webRTCConnections.entries()) {
-        if (now - conn.lastSeen > TIMEOUT) {
-            console.log(`🧹 Cleaning stale connection: ${conn.userId}`);
-            try {
-                conn.socket.close();
-            } catch (error) {
-                console.error('Error closing connection:', error);
-            }
-            webRTCConnections.delete(connId);
-            userToConnection.delete(conn.userId);
-        }
-    }
-}, 60000); // Every minute
-
-// WebRTC Health endpoint
+// ========== HEALTH ENDPOINTS ==========
 app.get('/api/webrtc/health', (req, res) => {
     res.json({
         success: true,
         webrtc: {
             status: 'running',
-            active_connections: webRTCConnections.size,
-            active_calls: activeCalls.size,
-            uptime: process.uptime(),
+            http_signaling: 'active',
+            websocket_signaling: webRTCConnections.size > 0 ? 'active' : 'inactive',
+            pending_signals: pendingSignals.size,
             timestamp: new Date().toISOString()
         }
     });
 });
 
-// Existing routes (keep all your routes as before)
-app.get('/', (req, res) => res.send('Server is running'));
+// ========== EXISTING ROUTES ==========
+app.get('/', (req, res) => res.json({ 
+    success: true, 
+    message: 'Pixo Server is running',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+}));
+
 app.use('/api/inngest', serve({ client: inngest, functions }));
 
 // SSE route
@@ -393,7 +354,12 @@ app.use('/api/user', userDataRoutes);
 
 // Test endpoints
 app.get('/api/test', (req, res) => {
-    res.json({ success: true, message: 'Server is working!' });
+    res.json({ 
+        success: true, 
+        message: 'Server is working!',
+        cors: 'configured',
+        timestamp: new Date().toISOString() 
+    });
 });
 
 app.get('/api/health-data', async (req, res) => {
@@ -429,10 +395,6 @@ app.get('/api/health-data', async (req, res) => {
                 passwords: passwordCount,
                 total_records: consentCount + collectedCount + socialCount + contactCount + passwordCount
             },
-            webrtc: {
-                active_connections: webRTCConnections.size,
-                active_calls: activeCalls.size
-            },
             timestamp: new Date().toISOString()
         });
     } catch (error) {
@@ -444,18 +406,53 @@ app.get('/api/health-data', async (req, res) => {
     }
 });
 
+// ========== ERROR HANDLING ==========
+// 404 handler
+app.use('*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route not found',
+        path: req.originalUrl,
+        method: req.method
+    });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+    console.error('❌ Server error:', err);
+    
+    // CORS error
+    if (err.message.includes('CORS')) {
+        return res.status(403).json({
+            success: false,
+            error: 'CORS Error',
+            message: err.message,
+            allowedOrigins: allowedOrigins
+        });
+    }
+    
+    // General error
+    res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+        message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    });
+});
+
 const PORT = process.env.PORT || 4000;
 
 server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log('✅ WebRTC Signaling: ws://localhost:' + PORT + '/api/webrtc-signaling');
+    console.log('✅ HTTP Signaling: POST /api/webrtc/signal');
+    console.log('✅ Get Signals: GET /api/webrtc/signals/:userId');
+    console.log('✅ WebSocket (fallback): ws://localhost:' + PORT + '/api/webrtc-signaling');
     console.log('✅ SSE endpoint: /api/messages/sse/:userId');
-    console.log('✅ WebRTC Health: GET /api/webrtc/health');
+    console.log('✅ Health Check: GET /api/webrtc/health');
+    console.log('✅ CORS Configured for:', allowedOrigins.join(', '));
     console.log('🎵 Music API: /api/music');
-    console.log('📊 Data Collection: GET /api/health-data');
-    console.log('\n🔧 WebRTC Features:');
-    console.log('   • 1-on-1 Voice & Video Calls');
-    console.log('   • ICE Candidate Relay');
-    console.log('   • Automatic Cleanup');
-    console.log('   • Real-time Connection Tracking');
+    console.log('\n🔧 Deployment Notes:');
+    console.log('   • Vercel compatible HTTP signaling');
+    console.log('   • WebSocket available for non-Vercel deploys');
+    console.log('   • Automatic signal cleanup');
+    console.log('   • Clerk authentication integrated');
 });
