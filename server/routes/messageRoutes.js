@@ -10,22 +10,15 @@ import {
     sendVoiceMessage,
     handleTyping,
     markMessageAsSeen,
-    clearChat, deleteMessage ,
-    initiateCall,
-    acceptCall,
-    rejectCall,
-    endCall,
-    sendWebRTCOffer,
-    sendWebRTCAnswer,
-    sendWebRTCCandidate,
-    getWebRTCData ,
+    clearChat, 
+    deleteMessage
 } from '../controllers/messageController.js';
 import { protect } from '../middlewares/auth.js';
 import { imageUpload, audioUpload } from '../configs/multer.js';
 
 const messageRouter = express.Router();
 
-console.log('✅ Message router loaded with new endpoints');
+console.log('✅ Message router loaded');
 
 // SSE endpoint with logging
 messageRouter.get('/sse/:userId', (req, res, next) => {
@@ -34,10 +27,10 @@ messageRouter.get('/sse/:userId', (req, res, next) => {
     sseController(req, res, next);
 });
 
-// Send text/image message (Keep your existing ImageKit flow)
+// Send text/image message
 messageRouter.post('/send', protect, imageUpload, sendMessage);
 
-// Send voice message (Uses ImageKit for audio storage)
+// Send voice message
 messageRouter.post('/send-voice', protect, audioUpload, sendVoiceMessage);
 
 // Get chat messages with specific user
@@ -56,20 +49,10 @@ messageRouter.post('/typing', protect, handleTyping);
 // Mark message as seen endpoint
 messageRouter.post('/mark-seen', protect, markMessageAsSeen);
 
+// Clear entire chat with a user
 messageRouter.delete('/clear-chat/:userId', protect, clearChat);
 
 // Delete single message
 messageRouter.delete('/delete/:messageId', protect, deleteMessage);
-
-// 🆕 Call endpoints
-messageRouter.post('/call/initiate', protect, initiateCall);
-messageRouter.post('/call/accept', protect, acceptCall);
-messageRouter.post('/call/reject', protect, rejectCall);
-messageRouter.post('/call/end', protect, endCall);
-
-messageRouter.post('/webrtc/offer', protect, sendWebRTCOffer);
-messageRouter.post('/webrtc/answer', protect, sendWebRTCAnswer);
-messageRouter.post('/webrtc/candidate', protect, sendWebRTCCandidate);
-messageRouter.get('/webrtc/data/:from_user_id', protect, getWebRTCData);
 
 export default messageRouter;

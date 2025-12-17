@@ -14,7 +14,8 @@ import {
   Crop as CropIcon,
   Check,
   RotateCcw,
-  Clock
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useSelector } from "react-redux";
@@ -178,7 +179,7 @@ const CreatePost = () => {
         }
       } catch (err) {
         console.error('Failed to load NSFW model', err);
-        toast.error('NSFW filter failed to load — uploads will not be scanned.');
+        toast.error('Content safety filter failed to load — uploads will not be scanned.');
       } finally {
         if (!cancelled) setNsfwLoading(false);
       }
@@ -268,7 +269,44 @@ const CreatePost = () => {
                 if (!nsfwLoading && nsfwModel) {
                   const nsfw = await isImageNSFW(file);
                   if (nsfw) {
-                    toast.error(`Upload blocked: "${file.name}" appears to contain nudity or explicit content.`);
+                    // Professional NSFW notification
+                    toast.custom((t) => (
+                      <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-lg rounded-lg pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5`}>
+                        <div className="p-4">
+                          <div className="flex items-start">
+                            <div className="flex-shrink-0 pt-0.5">
+                              <AlertCircle className="h-6 w-6 text-red-600" />
+                            </div>
+                            <div className="ml-3 w-0 flex-1">
+                              <p className="text-sm font-medium text-gray-900">Content Safety Alert</p>
+                              <p className="mt-1 text-sm text-gray-500">
+                                The image "<span className="font-medium">{file.name}</span>" appears to contain content that doesn't meet our community guidelines.
+                              </p>
+                              <p className="mt-2 text-xs text-gray-500">
+                                Please upload appropriate content that respects our community standards.
+                              </p>
+                            </div>
+                            <div className="ml-4 flex flex-shrink-0">
+                              <button
+                                onClick={() => toast.dismiss(t.id)}
+                                className="inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+                              >
+                                <span className="sr-only">Close</span>
+                                <X className="h-5 w-5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 px-4 py-3 rounded-b-lg">
+                          <div className="text-xs text-gray-500">
+                            Our AI detected potentially sensitive content to maintain a safe environment.
+                          </div>
+                        </div>
+                      </div>
+                    ), {
+                      duration: 6000,
+                      position: 'top-center',
+                    });
                     return null;
                   }
                 }
@@ -367,7 +405,39 @@ const CreatePost = () => {
       try {
         const nsfw = await isImageNSFW(file);
         if (nsfw) {
-          toast.error(`Upload blocked: "${file.name}" appears to contain nudity or explicit content.`);
+          // Professional NSFW notification
+          toast.custom((t) => (
+            <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-lg rounded-lg pointer-events-auto flex flex-col ring-1 ring-black ring-opacity-5`}>
+              <div className="p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 pt-0.5">
+                    <AlertCircle className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div className="ml-3 w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900">Content Safety Alert</p>
+                    <p className="mt-1 text-sm text-gray-500">
+                      The replacement image appears to contain content that doesn't meet our community guidelines.
+                    </p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      Please upload appropriate content that respects our community standards.
+                    </p>
+                  </div>
+                  <div className="ml-4 flex flex-shrink-0">
+                    <button
+                      onClick={() => toast.dismiss(t.id)}
+                      className="inline-flex text-gray-400 hover:text-gray-500 focus:outline-none"
+                    >
+                      <span className="sr-only">Close</span>
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ), {
+            duration: 5000,
+            position: 'top-center',
+          });
           if (replaceInputRef.current) replaceInputRef.current.value = '';
           setReplaceIndex(null);
           return;
@@ -649,7 +719,7 @@ const CreatePost = () => {
   const handleAutoDetectNSFW = async (index) => {
     const file = media[index];
     if (!file || !file.type.startsWith('image/')) {
-      toast.error('NSFW detection works on images only.');
+      toast.error('Content safety detection works on images only.');
       return;
     }
     setPreparingFiles(true);
@@ -663,13 +733,13 @@ const CreatePost = () => {
       // expects { nsfw: true/false }
       if (data?.nsfw) {
         setBlurMap(prev => ({ ...prev, [index]: true }));
-        toast('Image flagged as NSFW and blurred.');
+        toast('Image flagged for content safety and blurred.');
       } else {
-        toast.success('Image appears safe.');
+        toast.success('Image appears appropriate for our community.');
       }
     } catch (err) {
       console.error(err);
-      toast.error('NSFW detection failed. Implement /api/media/nsfw-check server endpoint.');
+      toast.error('Content safety detection failed.');
     } finally {
       setPreparingFiles(false);
     }
@@ -836,32 +906,36 @@ const CreatePost = () => {
   };
 
   const hasVideos = media.some(file => getMediaType(file) === 'video');
-  const mediaLayoutClass = media.length === 1 
-    ? 'grid-cols-1' 
-    : media.length === 2 || (media.length === 3 && hasVideos)
-      ? 'grid-cols-2'
-      : 'grid-cols-2 sm:grid-cols-3';
+  
+  // Mobile-friendly media layout
+  const getMediaLayoutClass = () => {
+    if (media.length === 1) return 'grid-cols-1';
+    if (media.length === 2) return 'grid-cols-2';
+    if (media.length === 3) return 'grid-cols-2';
+    if (media.length === 4) return 'grid-cols-2 sm:grid-cols-2';
+    return 'grid-cols-1';
+  };
 
   return (
-    <div className='min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8 font-sans'>
+    <div className='min-h-screen bg-gray-50 py-4 px-3 sm:px-4 md:px-6 lg:px-8 font-sans overflow-x-hidden'>
       {/* Main Container */}
       <div className='max-w-4xl mx-auto'>
-        {/* Header */}
-        <div className='flex items-center justify-between mb-6'>
+        {/* Header - Mobile Optimized */}
+        <div className='flex items-center justify-between mb-4 sm:mb-6'>
           <button 
             onClick={() => navigate(-1)} 
-            className="group flex items-center gap-2 px-4 py-2 text-gray-600 bg-white rounded-full hover:bg-gray-100 shadow-sm border border-gray-200 transition-all"
+            className="group flex items-center gap-1 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 text-gray-600 bg-white rounded-full hover:bg-gray-100 shadow-sm border border-gray-200 transition-all text-sm"
             disabled={loading}
           >
-            <X className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> 
-            <span className="font-medium text-sm">Cancel</span>
+            <X className="w-3 h-3 sm:w-4 sm:h-4 group-hover:-translate-x-0.5 transition-transform" /> 
+            <span className="font-medium text-xs sm:text-sm hidden sm:inline">Cancel</span>
           </button>
-          <h1 className="text-xl font-bold text-gray-800">Create New Post</h1>
-          <div className="w-24"></div>
+          <h1 className="text-lg sm:text-xl font-bold text-gray-800 text-center flex-1">Create New Post</h1>
+          <div className="w-10 sm:w-24"></div>
         </div>
 
         {/* Create Post Card */}
-        <div className='bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden relative'>
+        <div className='bg-white rounded-2xl sm:rounded-3xl shadow-lg sm:shadow-xl border border-gray-100 overflow-hidden relative'>
           
           {/* Progress Bar */}
           {(loading || preparingFiles) && (
@@ -873,23 +947,24 @@ const CreatePost = () => {
             </div>
           )}
 
-          <div className='p-6 sm:p-8 space-y-6'>
+          <div className='p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6'>
             {/* User Info & Textarea */}
-            <div className='flex gap-4'>
+            <div className='flex gap-3 sm:gap-4'>
               <img 
                 src={user.profile_picture || '/default-avatar.png'} 
                 alt={user.full_name} 
-                className='w-12 h-12 rounded-full ring-2 ring-indigo-50 object-cover' 
+                className='w-10 h-10 sm:w-12 sm:h-12 rounded-full ring-2 ring-indigo-50 object-cover flex-shrink-0' 
               />
-              <div className='flex-grow space-y-2'>
-                <h2 className='font-bold text-gray-900'>{user.full_name}</h2>
+              <div className='flex-grow space-y-2 min-w-0'>
+                <h2 className='font-bold text-gray-900 text-sm sm:text-base'>{user.full_name}</h2>
                 <textarea 
                   ref={textareaRef} 
-                  className='w-full min-h-[100px] text-lg text-gray-700 placeholder-gray-400 bg-transparent border-none focus:ring-0 p-0 resize-none' 
+                  className='w-full min-h-[80px] sm:min-h-[100px] text-base sm:text-lg text-gray-700 placeholder-gray-400 bg-transparent border-none focus:ring-0 p-0 resize-none overflow-hidden'
                   placeholder="What would you like to share today?" 
                   onChange={handleContentChange} 
                   value={content} 
                   disabled={loading || preparingFiles} 
+                  rows={3}
                 />
               </div>
             </div>
@@ -901,9 +976,9 @@ const CreatePost = () => {
               onDragLeave={handleDragLeave} 
               onDragOver={handleDragOver} 
               onDrop={handleDrop}
-              className={`relative group rounded-2xl border-2 border-dashed transition-all duration-300 ease-out ${
+              className={`relative group rounded-xl sm:rounded-2xl border-2 border-dashed transition-all duration-300 ease-out ${
                 isDragging ? 'border-indigo-500 bg-indigo-50 scale-[1.01]' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
-              } ${media.length > 0 ? 'p-4' : 'p-10'}`}
+              } ${media.length > 0 ? 'p-3 sm:p-4' : 'p-6 sm:p-8 md:p-10'}`}
             >
               
               <input 
@@ -929,17 +1004,17 @@ const CreatePost = () => {
 
               {media.length === 0 && (
                 <label htmlFor="media-upload" className="flex flex-col items-center justify-center cursor-pointer text-center">
-                  <div className={`p-4 rounded-full mb-4 transition-colors ${
+                  <div className={`p-3 sm:p-4 rounded-full mb-3 sm:mb-4 transition-colors ${
                     isDragging ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-400 group-hover:bg-indigo-50 group-hover:text-indigo-500'
                   }`}>
-                    <CloudUpload className="w-8 h-8" />
+                    <CloudUpload className="w-6 h-6 sm:w-8 sm:h-8" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-700 mb-1">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-1">
                     {isDragging ? 'Drop files here' : 'Drag & drop media'}
                   </h3>
-                  <p className="text-sm text-gray-400 mb-2">Photos or videos. Max 4 files.</p>
+                  <p className="text-xs sm:text-sm text-gray-400 mb-2">Photos or videos. Max 4 files.</p>
                   <p className="text-xs text-gray-400 mb-4">Videos: Max 60 seconds, 100MB</p>
-                  <span className="px-4 py-2 bg-white border border-gray-200 text-gray-600 text-sm font-medium rounded-lg shadow-sm group-hover:border-indigo-200 group-hover:text-indigo-600 transition-all">
+                  <span className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white border border-gray-200 text-gray-600 text-xs sm:text-sm font-medium rounded-lg shadow-sm group-hover:border-indigo-200 group-hover:text-indigo-600 transition-all">
                     Browse Files
                   </span>
                 </label>
@@ -947,8 +1022,8 @@ const CreatePost = () => {
 
               {/* Media Previews Grid */}
               {media.length > 0 && (
-                <div className="space-y-4">
-                  <div className={`grid gap-4 ${mediaLayoutClass}`}>
+                <div className="space-y-3 sm:space-y-4">
+                  <div className={`grid gap-3 sm:gap-4 ${getMediaLayoutClass()}`}>
                     {media.map((file, index) => {
                        const isVideo = getMediaType(file) === 'video';
                        const fileName = file.name;
@@ -963,7 +1038,7 @@ const CreatePost = () => {
                         onDragStart={(e) => onDragStartThumb(e, index)}
                         onDragOver={(e) => onDragOverThumb(e, index)}
                         onDrop={(e) => onDropThumb(e, index)}
-                        className={`relative group/item overflow-hidden rounded-xl border border-gray-100 bg-gray-900 shadow-sm ${
+                        className={`relative group/item overflow-hidden rounded-lg sm:rounded-xl border border-gray-100 bg-gray-900 shadow-sm ${
                           isVideo ? 'aspect-video' : 'aspect-square'
                         }`}
                       >
@@ -985,20 +1060,20 @@ const CreatePost = () => {
                               Your browser does not support the video tag.
                             </video>
 
-                            {/* Video trim UI overlay */}
-                            <div className="absolute left-2 bottom-2 right-2 bg-black/50 backdrop-blur-sm p-2 rounded-md text-xs text-white flex flex-col gap-1">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span>Trim</span>
+                            {/* Video trim UI overlay - Mobile optimized */}
+                            <div className="absolute left-1 right-1 bottom-1 bg-black/60 backdrop-blur-sm p-1.5 sm:p-2 rounded text-[10px] sm:text-xs text-white flex flex-col gap-0.5 sm:gap-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">Trim</span>
                                 <span>{videoStatus?.duration ? formatDuration(videoStatus.duration) : ''}</span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1 sm:gap-2">
                                 <input
                                   type="range"
                                   min={0}
                                   max={videoStatus?.duration || 60}
                                   value={trimMap[fileName]?.start ?? 0}
                                   onChange={(e) => updateTrimForFile(fileName, { start: Number(e.target.value), end: trimMap[fileName]?.end ?? (videoStatus?.duration || 0) })}
-                                  className="flex-1"
+                                  className="flex-1 h-1.5 sm:h-2"
                                 />
                                 <input
                                   type="range"
@@ -1006,10 +1081,10 @@ const CreatePost = () => {
                                   max={videoStatus?.duration || 60}
                                   value={trimMap[fileName]?.end ?? (videoStatus?.duration || 0)}
                                   onChange={(e) => updateTrimForFile(fileName, { start: trimMap[fileName]?.start ?? 0, end: Number(e.target.value) })}
-                                  className="flex-1"
+                                  className="flex-1 h-1.5 sm:h-2"
                                 />
                               </div>
-                              <div className="flex items-center justify-between text-[11px]">
+                              <div className="flex items-center justify-between text-[9px] sm:text-[11px]">
                                 <span>Start: {formatDuration(trimMap[fileName]?.start ?? 0)}</span>
                                 <span>End: {formatDuration(trimMap[fileName]?.end ?? videoStatus?.duration ?? 0)}</span>
                               </div>
@@ -1029,57 +1104,57 @@ const CreatePost = () => {
                           </div>
                         )}
                         
-                        {/* Top Right Controls (Delete & Crop & Replace) */}
-                        <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover/item:opacity-100 transition-opacity duration-200">
+                        {/* Top Right Controls (Delete & Crop & Replace) - Mobile optimized */}
+                        <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity duration-200">
                             {/* Crop Button (Images Only) */}
                             {!isVideo && !loading && !preparingFiles && (
                                 <button 
                                   onClick={(e) => { e.preventDefault(); handleStartCrop(file, index); }} 
-                                  className='p-1.5 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-indigo-500 transition-colors' 
+                                  className='p-1 sm:p-1.5 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-indigo-500 transition-colors' 
                                   title="Crop Image"
                                 >
-                                    <CropIcon className="w-4 h-4"/>
+                                    <CropIcon className="w-3 h-3 sm:w-4 sm:h-4"/>
                                 </button>
                             )}
                             {/* Replace Button */}
                             <button
                               onClick={(e) => { e.preventDefault(); triggerReplace(index); }}
-                              className='p-1.5 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-yellow-500 transition-colors'
+                              className='p-1 sm:p-1.5 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-yellow-500 transition-colors'
                               title="Replace"
                             >
-                              <RotateCcw className="w-4 h-4" />
+                              <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4" />
                             </button>
                             {/* Delete Button */}
                             <button 
                               onClick={(e) => { e.preventDefault(); handleMediaRemove(index); }} 
                               disabled={loading || preparingFiles} 
-                              className='p-1.5 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-red-500 transition-colors' 
+                              className='p-1 sm:p-1.5 bg-black/60 text-white rounded-full backdrop-blur-md hover:bg-red-500 transition-colors' 
                               title="Remove"
                             >
-                                <X className="w-4 h-4"/>
+                                <X className="w-3 h-3 sm:w-4 sm:h-4"/>
                             </button>
                         </div>
 
                         {/* Bottom Left Controls: File Info + Filters + Blur + Auto-Detect */}
-                        <div className="absolute bottom-2 left-2 flex items-center gap-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded-md text-[10px] font-medium text-white pointer-events-auto">
-                          {isVideo ? <FileVideo className="w-3 h-3" /> : <FileImage className="w-3 h-3" />}
+                        <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 sm:px-2 sm:py-1 bg-black/60 backdrop-blur-md rounded text-[9px] sm:text-[10px] font-medium text-white pointer-events-auto">
+                          {isVideo ? <FileVideo className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> : <FileImage className="w-2.5 h-2.5 sm:w-3 sm:h-3" />}
                           <span>{formatFileSize(file.size)}</span>
                           {isVideo && videoStatus?.duration && (
                             <>
-                              <span className="mx-1">•</span>
-                              <Clock className="w-3 h-3" />
+                              <span className="mx-0.5 sm:mx-1">•</span>
+                              <Clock className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                               <span>{formatDuration(videoStatus.duration)}</span>
                             </>
                           )}
                         </div>
 
                         {/* Bottom Right: Filter Controls expanded on hover */}
-                        <div className="absolute bottom-2 right-2 opacity-0 group-hover/item:opacity-100 transition-opacity duration-200">
+                        <div className="absolute bottom-1.5 right-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity duration-200">
                           {!isVideo && (
-                            <div className="flex gap-1 items-center bg-black/60 p-2 rounded-md">
-                              <div className="flex flex-col text-xs text-white gap-1 pr-2">
-                                <label className="flex items-center gap-1">
-                                  <span className="text-[10px]">B</span>
+                            <div className="flex gap-0.5 items-center bg-black/60 p-1.5 sm:p-2 rounded-md max-w-[180px] sm:max-w-none">
+                              <div className="flex flex-col text-[10px] sm:text-xs text-white gap-0.5 sm:gap-1 pr-1 sm:pr-2">
+                                <label className="flex items-center gap-0.5 sm:gap-1">
+                                  <span className="text-[8px] sm:text-[10px]">B</span>
                                   <input
                                     type="range"
                                     min={0.5}
@@ -1087,10 +1162,11 @@ const CreatePost = () => {
                                     step={0.05}
                                     value={(filtersMap[index]?.brightness ?? 1)}
                                     onChange={(e) => updateFilterForIndex(index, { brightness: Number(e.target.value) })}
+                                    className="w-12 sm:w-16"
                                   />
                                 </label>
-                                <label className="flex items-center gap-1">
-                                  <span className="text-[10px]">C</span>
+                                <label className="flex items-center gap-0.5 sm:gap-1">
+                                  <span className="text-[8px] sm:text-[10px]">C</span>
                                   <input
                                     type="range"
                                     min={0.5}
@@ -1098,10 +1174,11 @@ const CreatePost = () => {
                                     step={0.05}
                                     value={(filtersMap[index]?.contrast ?? 1)}
                                     onChange={(e) => updateFilterForIndex(index, { contrast: Number(e.target.value) })}
+                                    className="w-12 sm:w-16"
                                   />
                                 </label>
-                                <label className="flex items-center gap-1">
-                                  <span className="text-[10px]">S</span>
+                                <label className="flex items-center gap-0.5 sm:gap-1">
+                                  <span className="text-[8px] sm:text-[10px]">S</span>
                                   <input
                                     type="range"
                                     min={0.5}
@@ -1109,28 +1186,29 @@ const CreatePost = () => {
                                     step={0.05}
                                     value={(filtersMap[index]?.saturate ?? 1)}
                                     onChange={(e) => updateFilterForIndex(index, { saturate: Number(e.target.value) })}
+                                    className="w-12 sm:w-16"
                                   />
                                 </label>
                               </div>
 
-                              <div className="flex flex-col gap-1">
-                                <button onClick={() => toggleBlurForIndex(index)} className="px-2 py-1 rounded-md bg-white/10 text-white text-xs">Blur</button>
-                                <button onClick={() => handleAutoDetectNSFW(index)} className="px-2 py-1 rounded-md bg-white/10 text-white text-xs">Auto-detect</button>
+                              <div className="flex flex-col gap-0.5 sm:gap-1">
+                                <button onClick={() => toggleBlurForIndex(index)} className="px-1.5 py-0.5 sm:px-2 sm:py-1 rounded text-[10px] sm:text-xs bg-white/10 text-white">Blur</button>
+                                <button onClick={() => handleAutoDetectNSFW(index)} className="px-1.5 py-0.5 sm:px-2 sm:py-1 rounded text-[10px] sm:text-xs bg-white/10 text-white">Check</button>
                               </div>
                             </div>
                           )}
 
                           {isVideo && (
-                            <div className="flex gap-1 items-center bg-black/60 p-2 rounded-md">
-                              <button onClick={() => triggerReplace(index)} className="px-2 py-1 rounded-md bg-white/10 text-white text-xs">Replace</button>
+                            <div className="flex gap-1 items-center bg-black/60 p-1.5 sm:p-2 rounded-md">
+                              <button onClick={() => triggerReplace(index)} className="px-1.5 py-0.5 sm:px-2 sm:py-1 rounded text-[10px] sm:text-xs bg-white/10 text-white">Replace</button>
                             </div>
                           )}
                         </div>
 
                         {/* Cloudinary Badge for Videos */}
                         {isVideo && (
-                          <div className="absolute top-2 left-2 px-2 py-1 bg-blue-600/80 backdrop-blur-md rounded-md text-[10px] font-bold text-white flex items-center gap-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 sm:px-2 sm:py-1 bg-blue-600/80 backdrop-blur-md rounded text-[9px] sm:text-[10px] font-bold text-white flex items-center gap-0.5 sm:gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-2.5 h-2.5 sm:w-3 sm:h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4 4 0 003 15z" />
                             </svg>
                             <span>Cloudinary</span>
@@ -1143,11 +1221,11 @@ const CreatePost = () => {
                     {media.length < 4 && (
                       <label 
                         htmlFor="media-upload" 
-                        className={`flex flex-col items-center justify-center aspect-square rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 hover:bg-indigo-50 hover:border-indigo-300 cursor-pointer transition-all text-gray-400 hover:text-indigo-500 ${
+                        className={`flex flex-col items-center justify-center aspect-square rounded-lg sm:rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 hover:bg-indigo-50 hover:border-indigo-300 cursor-pointer transition-all text-gray-400 hover:text-indigo-500 ${
                           preparingFiles || loading ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
                       >
-                        <CloudUpload className="w-6 h-6 mb-2" /> 
+                        <CloudUpload className="w-5 h-5 sm:w-6 sm:h-6 mb-1 sm:mb-2" /> 
                         <span className="text-xs font-semibold">Add More</span>
                       </label>
                     )}
@@ -1155,11 +1233,11 @@ const CreatePost = () => {
                   
                   {/* Cloudinary Info Message */}
                   {hasVideos && (
-                    <div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div className="flex items-center gap-2 p-2 sm:p-3 bg-blue-50 text-blue-700 rounded-lg text-xs sm:text-sm">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4 4 0 003 15z" />
                       </svg>
-                      <span>Videos will be uploaded to Cloudinary (fast video hosting)</span>
+                      <span className="flex-1">Videos will be uploaded to Cloudinary (fast video hosting)</span>
                     </div>
                   )}
                 </div>
@@ -1168,15 +1246,15 @@ const CreatePost = () => {
 
             {/* Preparing Files Status */}
             {preparingFiles && (
-              <div className="flex items-center gap-3 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
-                <Loader className="w-4 h-4 animate-spin" /> 
+              <div className="flex items-center gap-2 p-2 sm:p-3 bg-blue-50 text-blue-700 rounded-lg text-xs sm:text-sm">
+                <Loader className="w-3 h-3 sm:w-4 sm:h-4 animate-spin flex-shrink-0" /> 
                 <span>Preparing files for upload...</span>
               </div>
             )}
 
-            {/* Action Bar */}
-            <div className='flex items-center justify-between pt-6 border-t border-gray-100'>
-              <div className="flex items-center gap-4 text-sm text-gray-500">
+            {/* Action Bar - Mobile Optimized */}
+            <div className='flex flex-col sm:flex-row sm:items-center justify-between pt-4 sm:pt-6 border-t border-gray-100 gap-3 sm:gap-0'>
+              <div className="flex items-center gap-3 text-xs sm:text-sm text-gray-500 order-2 sm:order-1">
                 <span className={content.length > 500 ? 'text-red-500' : ''}>
                   {content.length} chars
                 </span>
@@ -1184,8 +1262,8 @@ const CreatePost = () => {
                 <span>{media.length}/4 media</span>
                 {hasVideos && (
                   <>
-                    <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-                    <span className="text-blue-600 flex items-center gap-1">
+                    <span className="w-1 h-1 bg-gray-300 rounded-full hidden sm:block"></span>
+                    <span className="text-blue-600 flex items-center gap-1 hidden sm:flex">
                       <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4 4 0 003 15z" />
                       </svg>
@@ -1194,49 +1272,51 @@ const CreatePost = () => {
                   </>
                 )}
               </div>
-              <div className="flex items-center gap-3">
-                <label 
-                  htmlFor="media-upload" 
-                  className={`p-3 rounded-full text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-colors cursor-pointer sm:hidden ${
-                    (media.length >= 4 || preparingFiles || loading) ? 'hidden' : 'block'
-                  }`}
-                >
-                  <ImageIcon className="w-5 h-5" />
-                </label>
+              <div className="flex items-center justify-between sm:justify-end gap-2 order-1 sm:order-2">
+                <div className="flex items-center gap-2">
+                  <label 
+                    htmlFor="media-upload" 
+                    className={`p-2 sm:p-3 rounded-full text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-colors cursor-pointer ${
+                      (media.length >= 4 || preparingFiles || loading) ? 'hidden' : 'block'
+                    }`}
+                  >
+                    <ImageIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </label>
 
-                <button
-                  onClick={handleGenerateCaption}
-                  className="px-3 py-2 rounded-full text-sm bg-gray-100 hover:bg-gray-200"
-                  disabled={preparingFiles || loading}
-                >
-                  Generate Caption
-                </button>
+                  <button
+                    onClick={handleGenerateCaption}
+                    className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm bg-gray-100 hover:bg-gray-200 whitespace-nowrap"
+                    disabled={preparingFiles || loading}
+                  >
+                    Generate Caption
+                  </button>
+                </div>
 
                 {lastFailedPayload && (
                   <button
                     onClick={handleRetryUpload}
-                    className="px-3 py-2 rounded-full text-sm bg-yellow-100 hover:bg-yellow-200"
+                    className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm bg-yellow-100 hover:bg-yellow-200"
                     disabled={loading || preparingFiles}
                   >
-                    Retry Upload
+                    Retry
                   </button>
                 )}
 
                 <button 
                   disabled={loading || preparingFiles || (!media.length && !content.trim())} 
                   onClick={handleSubmit} 
-                  className='flex items-center gap-2 px-6 py-2.5 rounded-full font-semibold text-white shadow-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed'
+                  className='flex items-center gap-1 sm:gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full font-semibold text-white shadow-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed'
                 >
                   {loading || preparingFiles ? (
-                    <Loader className="w-4 h-4 animate-spin" />
+                    <Loader className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
                   ) : hasVideos ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 sm:w-4 sm:h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4 4 0 003 15z" />
                     </svg>
                   ) : (
-                    <Send className='w-4 h-4' />
+                    <Send className='w-3 h-3 sm:w-4 sm:h-4' />
                   )} 
-                  <span>
+                  <span className="text-sm sm:text-base">
                     {preparingFiles ? 'Preparing' : 
                      loading ? 'Posting' : 
                      hasVideos ? 'Post' : 'Post'}
@@ -1248,52 +1328,52 @@ const CreatePost = () => {
         </div>
       </div>
 
-      {/* --- CROP MODAL OVERLAY --- */}
+      {/* --- CROP MODAL OVERLAY - Mobile Optimized --- */}
       {cropModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-           <div className="bg-white rounded-2xl overflow-hidden shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm">
+           <div className="bg-white rounded-xl sm:rounded-2xl overflow-hidden shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                 <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                   <CropIcon className="w-5 h-5"/> Crop Image
+              <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-100">
+                 <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-1 sm:gap-2">
+                   <CropIcon className="w-4 h-4 sm:w-5 sm:h-5"/> Crop Image
                  </h3>
-                 <button onClick={handleCloseCropModal} className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
-                   <X className="w-5 h-5"/>
+                 <button onClick={handleCloseCropModal} className="p-1.5 sm:p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
+                   <X className="w-4 h-4 sm:w-5 sm:h-5"/>
                  </button>
               </div>
 
               {/* Cropper Area */}
-              <div className="flex-grow overflow-auto p-4 bg-gray-900 flex items-center justify-center relative">
+              <div className="flex-grow overflow-auto p-2 sm:p-4 bg-gray-900 flex items-center justify-center relative">
                  {imageToCropSrc && (
                    <ReactCrop 
                      crop={crop} 
                      onChange={(_, percentCrop) => setCrop(percentCrop)} 
                      onComplete={(c) => setCompletedCrop(c)}
                      aspect={undefined}
-                     className="max-h-[70vh]"
+                     className="max-h-[60vh] sm:max-h-[70vh]"
                    >
                      <img 
                        ref={imgRef} 
                        src={imageToCropSrc} 
                        alt="Crop target" 
                        onLoad={onImageLoad}
-                       style={{ maxHeight: '70vh', maxWidth: '100%', objectFit: 'contain' }} 
+                       style={{ maxHeight: '60vh', maxWidth: '100%', objectFit: 'contain' }} 
                      />
                    </ReactCrop>
                  )}
               </div>
 
                {/* Modal Footer Actions */}
-              <div className="p-4 border-t border-gray-100 flex justify-between items-center bg-gray-50">
-                 <button onClick={handleCloseCropModal} className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors font-medium">
-                    <RotateCcw className="w-4 h-4"/> Cancel
+              <div className="p-3 sm:p-4 border-t border-gray-100 flex justify-between items-center bg-gray-50">
+                 <button onClick={handleCloseCropModal} className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors font-medium text-sm sm:text-base">
+                    <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4"/> Cancel
                  </button>
                  <button 
                    onClick={handleApplyCrop} 
                    disabled={!completedCrop?.width || !completedCrop?.height}
-                   className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                   className="flex items-center gap-1 sm:gap-2 px-4 sm:px-6 py-1.5 sm:py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                  >
-                    <Check className="w-5 h-5"/> Apply Crop
+                    <Check className="w-4 h-4 sm:w-5 sm:h-5"/> Apply Crop
                  </button>
               </div>
            </div>

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { assets } from '../assets/assets';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun, X, Menu, Search, Clapperboard } from 'lucide-react';
+import { CirclePlus, LogOut, Home, Users, Compass, MessageCircle, Shuffle, User, Bot, GamepadIcon, Film, Sun, X, Menu, Search, Clapperboard, Phone } from 'lucide-react';
 import { UserButton, useClerk } from '@clerk/clerk-react';
 import { useSelector } from 'react-redux';
 import Reels from './Reels';
 import WelcomeAnimation from './WelcomeAnimation';
+import Calling from './Calling';
 
 const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const navigate = useNavigate();
@@ -16,6 +17,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     const [showWelcome, setShowWelcome] = useState(false);
     const [welcomeText, setWelcomeText] = useState('');
     const [showReels, setShowReels] = useState(false);
+    const [showCalling, setShowCalling] = useState(false);
 
     useEffect(() => {
         if (user?.full_name) {
@@ -89,11 +91,23 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         document.body.style.overflow = 'unset';
     }
 
+    const handleCallingClick = () => {
+        setShowCalling(true);
+        setSidebarOpen(false);
+        document.body.style.overflow = 'hidden';
+    }
+
+    const handleCloseCalling = () => {
+        setShowCalling(false);
+        document.body.style.overflow = 'unset';
+    }
+
     const menuItems = [
         { icon: <Home className='w-5 h-5'/>, name: "Home", path: "/" },
         { icon: <Users className='w-5 h-5'/>, name: "Connections", path: "/connections" },
         { icon: <Compass className='w-5 h-5'/>, name: "Discover", path: "/discover" },
         { icon: <Clapperboard className='w-5 h-5'/>, name: "Reels", onClick: handleReelsClick },
+        { icon: <Phone className='w-5 h-5'/>, name: "Calls", onClick: handleCallingClick },
         { isSeparator: true },
         { icon: <Shuffle className='w-5 h-5'/>, name: "Random Chat", path: "/random-chat", onClick: handleRandomChat, },
         { icon: <Bot className='w-5 h-5'/>, name: "AI Chat Bot", path: "/chat-bot", onClick: handleChatBot, },
@@ -104,12 +118,12 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     ];
 
     // Instagram-style bottom navigation items (icons only, no text)
-    // Replaced Profile with "More" menu to access all features
     const mobileNavItems = [
         { icon: <Home className='w-6 h-6'/>, name: "Home", path: "/" },
         { icon: <Search className='w-6 h-6'/>, name: "Discover", path: "/discover" },
         { icon: <CirclePlus className='w-6 h-6'/>, name: "Create", path: "/create-post" },
         { icon: <Clapperboard className='w-6 h-6'/>, name: "Reels", onClick: handleReelsClick },
+        { icon: <Phone className='w-6 h-6'/>, name: "Calls", onClick: handleCallingClick },
         { icon: <Menu className='w-6 h-6'/>, name: "More", onClick: () => setSidebarOpen(true) }
     ];
 
@@ -127,6 +141,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     // Show Reels modal
     if (showReels) {
         return <Reels onClose={handleCloseReels} />;
+    }
+
+    // Show Calling modal
+    if (showCalling) {
+        return <Calling onClose={handleCloseCalling} />;
     }
 
     return (
@@ -149,7 +168,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                         const isActive = location.pathname === item.path || 
                                        (item.name === "Profile" && location.pathname.startsWith('/profile'));
                         
-                        // Highlight "More" button when sidebar is open
                         const isMoreActive = item.name === "More" && sidebarOpen;
                         
                         return (
@@ -246,11 +264,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 {/* Footer Section: User, Theme, Sign Out */}
                 <div className='w-full border-t border-gray-100 p-4 flex flex-col gap-4 flex-shrink-0'> 
                     {/* User Profile Summary */}
-                    <div 
-                        className='flex gap-3 items-center cursor-pointer p-2 rounded-xl hover:bg-gray-100 transition duration-200'
-                        
-                    >
-                        {/* Clerk UserButton provides its own styling and logic */}
+                    <div className='flex gap-3 items-center cursor-pointer p-2 rounded-xl hover:bg-gray-100 transition duration-200'>
                         <UserButton afterSignOutUrl='/' appearance={{ elements: { userButtonAvatarBox: "w-9 h-9" } }} />
                         <div className="flex-1 min-w-0">
                             <h1 className='text-sm font-semibold text-gray-800 truncate'>{user?.full_name || 'Pixo User'}</h1>
@@ -264,7 +278,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                             <Sun className='w-5 h-5'/>
                         </button>
                         <button
-                            onClick={signOut} 
+                            onClick={() => signOut(() => navigate('/'))} 
                             className='flex items-center gap-2 text-red-600 hover:text-white transition font-medium text-sm px-3 py-1.5 rounded-full hover:bg-red-500 active:scale-[0.98]'
                             title='Sign Out'
                         >

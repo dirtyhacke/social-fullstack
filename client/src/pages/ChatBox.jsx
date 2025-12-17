@@ -4,7 +4,7 @@ import {
     Globe, Search, Languages as LanguagesIcon, MessageSquare as MessageSquareIcon, Loader,
     Circle, Clock, Mic, Square, Reply, CornerUpLeft, User, MoreVertical,
     Check, CheckCheck, Palette, Settings, Volume2, VolumeX, Trash2, AlertTriangle,
-    MousePointer, Phone, Video, PhoneOff, VideoOff, MicOff, Volume1
+    MousePointer
 } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -12,7 +12,6 @@ import { useAuth, useUser } from '@clerk/clerk-react';
 import api from '../api/axios';
 import { addMessage, fetchMessages, resetMessages } from '../features/messages/messagesSlice';
 import toast from 'react-hot-toast';
-import { CallContext } from '../App';
 
 // --- Constants and Configuration ---
 const GOOGLE_API_URL = 'https://translate.googleapis.com/translate_a/single';
@@ -328,472 +327,8 @@ const isTouchEvent = (event) => {
     return "touches" in event;
 };
 
-// FIXED WebRTC Hook with Proper Signaling
-// FIXED WebRTC Hook with Proper Signaling
-const useWebRTC = (userId, currentUser, callContext) => {
-    const [localStream, setLocalStream] = useState(null);
-    const [remoteStream, setRemoteStream] = useState(null);
-    const [isCameraOn, setIsCameraOn] = useState(false);
-    const [isMicOn, setIsMicOn] = useState(true);
-    const [isSpeakerOn, setIsSpeakerOn] = useState(true);
-    const [isConnecting, setIsConnecting] = useState(false);
-    
-    const localVideoRef = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const peerConnectionRef = useRef(null);
-    const streamRef = useRef(null);
-    const { getToken } = useAuth();
-    
-    // 🆕 Store pending ICE candidates until peer connection is ready
-    const pendingCandidates = useRef([]);
-    const pendingAnswerRef = useRef(null);
-
-    // WebRTC configuration
-    const configuration = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' }
-        ]
-    };
-
-    // WebRTC Signaling functions
-    const sendWebRTCOffer = async (offer, callType) => {
-        try {
-            const token = await getToken();
-            const response = await api.post('/api/messages/webrtc/offer', {
-                to_user_id: userId,
-                offer: offer,
-                call_type: callType
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            return response.data;
-        } catch (error) {
-            console.error('Error sending WebRTC offer:', error);
-            throw error;
-        }
-    };
-
-    const sendWebRTCAnswer = async (answer) => {
-        try {
-            const token = await getToken();
-            const response = await api.post('/api/messages/webrtc/answer', {
-                to_user_id: userId,
-                answer: answer
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            return response.data;
-        } catch (error) {
-            console.error('Error sending WebRTC answer:', error);
-            throw error;
-        }
-    };
-
-    const sendWebRTCCandidate = async (candidate) => {
-        try {
-            const token = await getToken();
-            const response = await api.post('/api/messages/webrtc/candidate', {
-                to_user_id: userId,
-                candidate: candidate
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            return response.data;
-        } catch (error) {
-            console.error('Error sending WebRTC candidate:', error);
-            throw error;
-        }
-    };
-
-    const getWebRTCData = async () => {
-        try {
-            const token = await getToken();
-            const response = await api.get(`/api/messages/webrtc/data/${userId}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            return response.data;
-        } catch (error) {
-            console.error('Error getting WebRTC data:', error);
-            return null;
-        }
-    };
-
-    // Initialize media stream
-    const initializeMedia = useCallback(async (isVideo = true) => {
-        try {
-            console.log('🎥 Initializing media stream...');
-            
-            // Check if we already have a stream
-            if (streamRef.current) {
-                console.log('✅ Using existing media stream');
-                return streamRef.current;
-            }
-
-            const constraints = {
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                },
-                video: isVideo ? {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    frameRate: { ideal: 24 }
-                } : false
-            };
-
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            console.log('✅ Media stream obtained');
-            
-            setLocalStream(stream);
-            streamRef.current = stream;
-            
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = stream;
-                console.log('📹 Local video stream attached');
-            }
-
-            setIsCameraOn(isVideo);
-            setIsMicOn(true);
-            
-            return stream;
-        } catch (error) {
-            console.error('❌ Error accessing media devices:', error);
-            toast.error(`Camera/microphone access denied: ${error.message}`);
-            throw error;
-        }
-    }, []);
-
-    // Create and configure peer connection
-    const createPeerConnection = useCallback(async () => {
-        try {
-            console.log('🔗 Creating peer connection...');
-            
-            if (peerConnectionRef.current) {
-                console.log('✅ Using existing peer connection');
-                return peerConnectionRef.current;
-            }
-
-            const pc = new RTCPeerConnection(configuration);
-            
-            // Add local stream to peer connection
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => {
-                    pc.addTrack(track, streamRef.current);
-                    console.log(`🎵 Added ${track.kind} track`);
-                });
-            }
-
-            // Handle remote stream
-            pc.ontrack = (event) => {
-                console.log('📡 Remote track received');
-                const remoteStream = event.streams[0];
-                setRemoteStream(remoteStream);
-                if (remoteVideoRef.current) {
-                    remoteVideoRef.current.srcObject = remoteStream;
-                    console.log('🎥 Remote video stream attached');
-                    
-                    // Auto-play the remote video
-                    remoteVideoRef.current.play().catch(e => {
-                        console.error('Failed to play remote video:', e);
-                    });
-                }
-            };
-
-            // Handle ICE candidates
-            pc.onicecandidate = async (event) => {
-                if (event.candidate) {
-                    console.log('🧊 ICE candidate generated');
-                    try {
-                        await sendWebRTCCandidate(event.candidate);
-                    } catch (error) {
-                        console.error('Failed to send ICE candidate:', error);
-                    }
-                }
-            };
-
-            // Handle connection state changes
-            pc.onconnectionstatechange = () => {
-                console.log('🔌 Connection state:', pc.connectionState);
-                setIsConnecting(pc.connectionState === 'connecting');
-                
-                if (pc.connectionState === 'connected') {
-                    console.log('✅ Peer connection established!');
-                    toast.success('Call connected!');
-                } else if (pc.connectionState === 'failed') {
-                    console.log('❌ Peer connection failed');
-                    toast.error('Call connection failed');
-                }
-            };
-
-            pc.oniceconnectionstatechange = () => {
-                console.log('🧊 ICE connection state:', pc.iceConnectionState);
-            };
-
-            peerConnectionRef.current = pc;
-            
-            // 🆕 Process any pending ICE candidates
-            if (pendingCandidates.current.length > 0) {
-                console.log(`🔄 Processing ${pendingCandidates.current.length} pending ICE candidates`);
-                for (const candidate of pendingCandidates.current) {
-                    try {
-                        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                        console.log('✅ Added pending ICE candidate');
-                    } catch (error) {
-                        console.error('❌ Error adding pending ICE candidate:', error);
-                    }
-                }
-                pendingCandidates.current = [];
-            }
-            
-            // 🆕 Apply pending answer if exists
-            if (pendingAnswerRef.current) {
-                console.log('🔄 Applying pending WebRTC answer');
-                try {
-                    await pc.setRemoteDescription(new RTCSessionDescription(pendingAnswerRef.current));
-                    console.log('✅ Applied pending remote description');
-                    pendingAnswerRef.current = null;
-                } catch (error) {
-                    console.error('❌ Error applying pending answer:', error);
-                }
-            }
-            
-            return pc;
-        } catch (error) {
-            console.error('❌ Error creating peer connection:', error);
-            throw error;
-        }
-    }, [userId, sendWebRTCCandidate]);
-
-    // Handle incoming WebRTC offer
-    const handleIncomingOffer = useCallback(async (offer, callType) => {
-        try {
-            console.log('📡 Handling incoming WebRTC offer');
-            
-            // Initialize media based on call type
-            await initializeMedia(callType === 'video');
-            
-            // Create peer connection
-            const pc = await createPeerConnection();
-            
-            // Set remote description
-            await pc.setRemoteDescription(new RTCSessionDescription(offer));
-            
-            // Create and set local description
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            
-            // Send answer back
-            await sendWebRTCAnswer(answer);
-            
-            console.log('✅ WebRTC answer sent');
-            
-        } catch (error) {
-            console.error('❌ Error handling incoming offer:', error);
-            throw error;
-        }
-    }, [initializeMedia, createPeerConnection, sendWebRTCAnswer]);
-
-    // Handle incoming WebRTC answer
-    const handleIncomingAnswer = useCallback(async (answer) => {
-        try {
-            console.log('📡 Handling incoming WebRTC answer');
-            
-            if (!peerConnectionRef.current) {
-                console.log('⚠️ No peer connection yet, storing answer for later');
-                // Store the answer for later
-                pendingAnswerRef.current = answer;
-                return;
-            }
-            
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-            console.log('✅ Remote description set');
-            
-        } catch (error) {
-            console.error('❌ Error handling incoming answer:', error);
-            throw error;
-        }
-    }, []);
-
-    // Handle incoming ICE candidate
-    const handleIncomingCandidate = useCallback(async (candidate) => {
-        try {
-            console.log('📡 Handling incoming ICE candidate');
-            
-            if (!peerConnectionRef.current) {
-                console.log('⚠️ No peer connection yet, storing candidate for later');
-                // Store candidate in pending queue
-                pendingCandidates.current.push(candidate);
-                return;
-            }
-            
-            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-            console.log('✅ ICE candidate added');
-            
-        } catch (error) {
-            console.error('❌ Error handling ICE candidate:', error);
-        }
-    }, []);
-
-    // Create offer for outgoing call
-    const createOffer = useCallback(async (callType) => {
-        try {
-            console.log('📞 Creating WebRTC offer...');
-            
-            // Initialize media
-            await initializeMedia(callType === 'video');
-            
-            // Create peer connection
-            const pc = await createPeerConnection();
-            
-            // Create offer
-            const offer = await pc.createOffer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: callType === 'video'
-            });
-            
-            await pc.setLocalDescription(offer);
-            console.log('✅ Offer created');
-            
-            // Send offer to server
-            await sendWebRTCOffer(offer, callType);
-            
-            return offer;
-        } catch (error) {
-            console.error('❌ Error creating offer:', error);
-            throw error;
-        }
-    }, [initializeMedia, createPeerConnection, sendWebRTCOffer]);
-
-    // Check for any pending WebRTC data on mount
-    useEffect(() => {
-        const checkPendingWebRTCData = async () => {
-            try {
-                const data = await getWebRTCData();
-                if (data?.success) {
-                    if (data.pendingOffer) {
-                        console.log('📡 Found pending WebRTC offer');
-                        handleIncomingOffer(data.pendingOffer.offer, data.pendingOffer.call_type);
-                    }
-                    if (data.pendingAnswer) {
-                        console.log('📡 Found pending WebRTC answer');
-                        handleIncomingAnswer(data.pendingAnswer.answer);
-                    }
-                }
-            } catch (error) {
-                console.error('Error checking pending WebRTC data:', error);
-            }
-        };
-        
-        checkPendingWebRTCData();
-    }, []);
-
-    // Toggle camera
-    const toggleCamera = useCallback(async () => {
-        if (!streamRef.current) return false;
-
-        try {
-            const videoTrack = streamRef.current.getVideoTracks()[0];
-            if (videoTrack) {
-                const newState = !videoTrack.enabled;
-                videoTrack.enabled = newState;
-                setIsCameraOn(newState);
-                console.log('📹 Camera toggled:', newState);
-                return newState;
-            }
-        } catch (error) {
-            console.error('❌ Error toggling camera:', error);
-        }
-        return false;
-    }, []);
-
-    // Toggle microphone
-    const toggleMicrophone = useCallback(async () => {
-        if (!streamRef.current) return false;
-
-        try {
-            const audioTrack = streamRef.current.getAudioTracks()[0];
-            if (audioTrack) {
-                const newState = !audioTrack.enabled;
-                audioTrack.enabled = newState;
-                setIsMicOn(newState);
-                console.log('🎤 Microphone toggled:', newState);
-                return newState;
-            }
-        } catch (error) {
-            console.error('❌ Error toggling microphone:', error);
-        }
-        return false;
-    }, []);
-
-    // Toggle speaker
-    const toggleSpeaker = useCallback(() => {
-        if (remoteVideoRef.current) {
-            remoteVideoRef.current.muted = !isSpeakerOn;
-        }
-        const newState = !isSpeakerOn;
-        setIsSpeakerOn(newState);
-        console.log('🔊 Speaker toggled:', newState);
-        return newState;
-    }, [isSpeakerOn]);
-
-    // Stop all media
-    const stopMedia = useCallback(() => {
-        console.log('🛑 Stopping all media...');
-        
-        // Clear pending data
-        pendingCandidates.current = [];
-        pendingAnswerRef.current = null;
-        
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => {
-                track.stop();
-            });
-            streamRef.current = null;
-        }
-        
-        if (peerConnectionRef.current) {
-            peerConnectionRef.current.close();
-            peerConnectionRef.current = null;
-        }
-        
-        setLocalStream(null);
-        setRemoteStream(null);
-        setIsCameraOn(false);
-        setIsMicOn(true);
-        setIsSpeakerOn(true);
-        setIsConnecting(false);
-        
-        console.log('✅ All media stopped');
-    }, []);
-
-    return {
-        localStream,
-        remoteStream,
-        isCameraOn,
-        isMicOn,
-        isSpeakerOn,
-        isConnecting,
-        localVideoRef,
-        remoteVideoRef,
-        peerConnection: peerConnectionRef.current,
-        initializeMedia,
-        createPeerConnection,
-        createOffer,
-        handleIncomingOffer,
-        handleIncomingAnswer,
-        handleIncomingCandidate,
-        toggleCamera,
-        toggleMicrophone,
-        toggleSpeaker,
-        stopMedia
-    };
-};
 // --- Main Component ---
 const ChatBox = () => {
-    const callContext = React.useContext(CallContext);
     const { messages } = useSelector((state) => state.messages);
     const { connections } = useSelector((state) => state.connections);
     const { userId } = useParams();
@@ -837,39 +372,6 @@ const ChatBox = () => {
     const [cursorPosition, setCursorPosition] = useState({ x: 0, y: 0 });
     const [longPressActive, setLongPressActive] = useState(false);
 
-    // FIXED: Enhanced Call States
-    const { 
-        incomingCall, 
-        activeCall, 
-        setIncomingCall, 
-        setActiveCall
-    } = callContext || {};
-
-    // Local call states for UI within this chat
-    const [isCalling, setIsCalling] = useState(false);
-    const [callDuration, setCallDuration] = useState(0);
-    const [callStartTime, setCallStartTime] = useState(null);
-
-    // FIXED WebRTC Integration with signaling
-    const {
-        localStream,
-        remoteStream,
-        isCameraOn,
-        isMicOn,
-        isSpeakerOn,
-        isConnecting,
-        localVideoRef,
-        remoteVideoRef,
-        createOffer,
-        handleIncomingOffer,
-        handleIncomingAnswer,
-        handleIncomingCandidate,
-        toggleCamera,
-        toggleMicrophone,
-        toggleSpeaker,
-        stopMedia
-    } = useWebRTC(userId, currentUser, callContext);
-
     // Refs
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null); 
@@ -883,70 +385,10 @@ const ChatBox = () => {
     const connectionsListRef = useRef(null);
     const messageActionsRef = useRef(null);
     const typingTimeoutRef = useRef(null);
-    const callDurationRef = useRef(null);
 
     // Custom Hooks
     const { playSound, soundsEnabled, toggleSounds } = useChatSounds();
     const currentTheme = CHAT_THEMES.find(theme => theme.id === selectedTheme) || CHAT_THEMES[0];
-
-    // FIXED: Enhanced Call Timer
-    useEffect(() => {
-        if (activeCall && activeCall.status === 'connected') {
-            setCallStartTime(new Date());
-            setCallDuration(0);
-            
-            callDurationRef.current = setInterval(() => {
-                setCallDuration(prev => prev + 1);
-            }, 1000);
-        } else {
-            if (callDurationRef.current) {
-                clearInterval(callDurationRef.current);
-                callDurationRef.current = null;
-            }
-            setCallDuration(0);
-            setCallStartTime(null);
-        }
-
-        return () => {
-            if (callDurationRef.current) {
-                clearInterval(callDurationRef.current);
-            }
-        };
-    }, [activeCall]);
-
-    // FIXED: Handle WebRTC signaling events
-    useEffect(() => {
-        if (eventSourceRef.current) {
-            const handleSSE = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    
-                    if (data.type === 'webrtc_offer' && data.fromUserId === userId) {
-                        console.log('📡 Received WebRTC offer via SSE');
-                        handleIncomingOffer(data.offer, data.callType);
-                    }
-                    
-                    if (data.type === 'webrtc_answer' && data.fromUserId === userId) {
-                        console.log('📡 Received WebRTC answer via SSE');
-                        handleIncomingAnswer(data.answer);
-                    }
-                    
-                    if (data.type === 'webrtc_candidate' && data.fromUserId === userId) {
-                        console.log('📡 Received ICE candidate via SSE');
-                        handleIncomingCandidate(data.candidate);
-                    }
-                } catch (error) {
-                    console.error('Error processing WebRTC SSE event:', error);
-                }
-            };
-            
-            eventSourceRef.current.addEventListener('message', handleSSE);
-            
-            return () => {
-                eventSourceRef.current?.removeEventListener('message', handleSSE);
-            };
-        }
-    }, [userId, handleIncomingOffer, handleIncomingAnswer, handleIncomingCandidate]);
 
     // Fixed Format Last Seen with Date
     const formatLastSeen = (lastSeenDate) => {
@@ -1277,158 +719,6 @@ const ChatBox = () => {
         setReplyingTo(null);
     };
 
-    // FIXED: Enhanced Call Functions with WebRTC
-    const initiateCall = async (type) => {
-        if (!isUserOnline) {
-            toast.error('User is offline. Cannot start call.');
-            return;
-        }
-
-        try {
-            setIsCalling(true);
-            
-            // Create WebRTC offer
-            await createOffer(type);
-            
-            // Set active call state
-            if (setActiveCall) {
-                setActiveCall({
-                    callId: `call_${Date.now()}_${currentUser?.id}`,
-                    callType: type,
-                    toUserId: userId,
-                    toUserName: user?.full_name,
-                    toUserAvatar: user?.profile_picture,
-                    status: 'calling',
-                    startedAt: new Date().toISOString(),
-                    isInitiator: true,
-                    fromUserId: currentUser?.id,
-                    fromUserName: currentUser?.fullName || currentUser?.username,
-                    fromUserAvatar: currentUser?.imageUrl
-                });
-            }
-            
-            toast.success(`${type === 'video' ? 'Video' : 'Voice'} call started...`);
-            
-        } catch (error) {
-            console.error('Error initiating call:', error);
-            toast.error(error.response?.data?.message || error.message || 'Failed to start call');
-            setIsCalling(false);
-            stopMedia();
-        }
-    };
-
-    const acceptIncomingCall = async () => {
-        if (incomingCall) {
-            try {
-                const token = await getToken();
-                const response = await api.post('/api/messages/call/accept', {
-                    call_id: incomingCall.callId
-                }, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-
-                if (response.data.success) {
-                    // Move call from incoming to active
-                    if (setActiveCall && setIncomingCall) {
-                        setActiveCall({
-                            ...incomingCall,
-                            status: 'connected',
-                            connectedAt: new Date().toISOString(),
-                            isInitiator: false,
-                            toUserId: currentUser?.id,
-                            toUserName: currentUser?.fullName || currentUser?.username,
-                            toUserAvatar: currentUser?.imageUrl
-                        });
-                        setIncomingCall(null);
-                    }
-                    
-                    playSound('call_connected');
-                    toast.success('Call connected!');
-                } else {
-                    throw new Error(response.data.message || 'Failed to accept call');
-                }
-            } catch (error) {
-                console.error('Error accepting call:', error);
-                toast.error('Failed to accept call');
-                stopMedia();
-            }
-        }
-    };
-
-    const rejectIncomingCall = async () => {
-        if (incomingCall) {
-            try {
-                const token = await getToken();
-                await api.post('/api/messages/call/reject', {
-                    call_id: incomingCall.callId
-                }, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                
-                if (setIncomingCall) {
-                    setIncomingCall(null);
-                }
-                stopMedia();
-                playSound('call_end');
-                toast.info('Call rejected');
-            } catch (error) {
-                console.error('Error rejecting call:', error);
-                toast.error('Failed to reject call');
-            }
-        }
-    };
-
-    const endCallHandler = async () => {
-        try {
-            const token = await getToken();
-            const callId = activeCall?.callId || incomingCall?.callId;
-            
-            if (callId) {
-                await api.post('/api/messages/call/end', {
-                    call_id: callId,
-                    duration: callDuration
-                }, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-            }
-            
-            // Clear call states
-            if (setActiveCall) setActiveCall(null);
-            if (setIncomingCall) setIncomingCall(null);
-            
-            setIsCalling(false);
-            stopMedia();
-            playSound('call_end');
-            toast.info(`Call ended (${callDuration}s)`);
-        } catch (error) {
-            console.error('Error ending call:', error);
-            // Still clear local states even if API fails
-            if (setActiveCall) setActiveCall(null);
-            if (setIncomingCall) setIncomingCall(null);
-            setIsCalling(false);
-            stopMedia();
-        }
-    };
-
-    // Enhanced Call Controls
-    const toggleMute = () => {
-        toggleMicrophone();
-        toast.info(isMicOn ? 'Microphone muted' : 'Microphone unmuted');
-    };
-
-    const toggleVideo = () => {
-        if (activeCall?.callType === 'video') {
-            toggleCamera();
-            toast.info(isCameraOn ? 'Video off' : 'Video on');
-        }
-    };
-
-    const switchCamera = () => {
-        if (activeCall?.callType === 'video') {
-            toast.info('Camera switched (placeholder)');
-        }
-    };
-
     // Data Fetching Functions
     const fetchUserLastSeen = async (targetUserId = userId) => {
         try {
@@ -1483,180 +773,91 @@ const ChatBox = () => {
     };
 
     // FIXED: Enhanced SSE Setup
- // In your ChatBox.jsx, update the SSE handler:
+    const setupSSE = useCallback(async () => {
+        if (!currentUser?.id) return;
 
-const setupSSE = useCallback(async () => {
-    if (!currentUser?.id) return;
-
-    try {
-        const token = await getToken();
-        
-        if (eventSourceRef.current) {
-            eventSourceRef.current.close();
-        }
-
-        const sseUrl = `https://pixo-toj7.onrender.com/api/messages/sse/${currentUser.id}?token=${token}`;
-        
-        eventSourceRef.current = new EventSource(sseUrl);
-
-        eventSourceRef.current.onopen = () => {
-            console.log('✅ SSE connection established for user:', currentUser.id);
-        };
-
-        eventSourceRef.current.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                console.log('📡 SSE Event received:', data);
-                
-                switch (data.type) {
-                    case 'user_online':
-                        if (data.userId === userId) {
-                            setIsUserOnline(true);
-                            setLastSeen(new Date());
-                        }
-                        updateConnectionsWithStatus();
-                        break;
-                        
-                    case 'user_offline':
-                        if (data.userId === userId) {
-                            setIsUserOnline(false);
-                            setLastSeen(new Date());
-                        }
-                        updateConnectionsWithStatus();
-                        break;
-                        
-                    case 'typing_start':
-                        if (data.fromUserId === userId) {
-                            setIsTyping(true);
-                        }
-                        break;
-                        
-                    case 'typing_stop':
-                        if (data.fromUserId === userId) {
-                            setIsTyping(false);
-                        }
-                        break;
-                        
-                    case 'new_message':
-                        if (data.message) {
-                            dispatch(addMessage(data.message));
-                            if (data.sound) {
-                                playSound(data.sound);
-                            }
-                        }
-                        break;
-                        
-                    case 'message_deleted':
-                        if (data.messageId) {
-                            fetchUserMessages();
-                        }
-                        break;
-
-                    case 'call_incoming':
-                        console.log('📞 Incoming call via SSE:', data);
-                        if (setIncomingCall) {
-                            setIncomingCall({
-                                callId: data.callId,
-                                callType: data.callType,
-                                fromUserId: data.fromUserId,
-                                fromUserName: data.fromUserName,
-                                fromUserAvatar: data.fromUserAvatar,
-                                timestamp: data.timestamp
-                            });
-                        }
-                        playSound('incoming_call');
-                        break;
-                        
-                    case 'call_accepted':
-                        console.log('✅ Call accepted via SSE:', data);
-                        if (isCalling) {
-                            setIsCalling(false);
-                            if (setActiveCall) {
-                                setActiveCall(prev => ({
-                                    ...prev,
-                                    status: 'connected',
-                                    connectedAt: new Date().toISOString()
-                                }));
-                            }
-                            toast.success('Call accepted!');
-                        }
-                        break;
-
-                    case 'call_rejected':
-                        console.log('❌ Call rejected via SSE:', data);
-                        if (isCalling) {
-                            setIsCalling(false);
-                            if (setActiveCall) setActiveCall(null);
-                            toast.error('Call rejected');
-                        }
-                        break;
-
-                    case 'call_ended':
-                        console.log('📞 Call ended via SSE:', data);
-                        if (activeCall || incomingCall) {
-                            setIsCalling(false);
-                            if (setActiveCall) setActiveCall(null);
-                            if (setIncomingCall) setIncomingCall(null);
-                            toast.info(`Call ended ${data.duration ? `(${data.duration}s)` : ''}`);
-                        }
-                        break;
-
-                    case 'call_connected':
-                        console.log('🔗 Call connected via SSE:', data);
-                        if (setActiveCall && data.callId === activeCall?.callId) {
-                            setActiveCall(prev => ({
-                                ...prev,
-                                status: 'connected',
-                                connectedAt: new Date().toISOString()
-                            }));
-                            toast.success('Call connected!');
-                        }
-                        break;
-                        
-                    // 🆕 WebRTC Signaling Events
-                    case 'webrtc_offer':
-                        console.log('📡 Received WebRTC offer from:', data.fromUserId);
-                        if (data.fromUserId === userId) {
-                            // Small delay to ensure UI is ready
-                            setTimeout(() => {
-                                handleIncomingOffer(data.offer, data.callType);
-                            }, 300);
-                        }
-                        break;
-                        
-                    case 'webrtc_answer':
-                        console.log('📡 Received WebRTC answer from:', data.fromUserId);
-                        if (data.fromUserId === userId) {
-                            handleIncomingAnswer(data.answer);
-                        }
-                        break;
-                        
-                    case 'webrtc_candidate':
-                        console.log('📡 Received WebRTC ICE candidate from:', data.fromUserId);
-                        if (data.fromUserId === userId) {
-                            handleIncomingCandidate(data.candidate);
-                        }
-                        break;
-                }
-            } catch (error) {
-                console.error('Error parsing SSE data:', error);
+        try {
+            const token = await getToken();
+            
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
             }
-        };
 
-        eventSourceRef.current.onerror = (error) => {
-            console.error('SSE connection error:', error);
-            setTimeout(() => {
-                if (currentUser?.id) {
-                    setupSSE();
+            const sseUrl = `https://pixo-toj7.onrender.com/api/messages/sse/${currentUser.id}?token=${token}`;
+            
+            eventSourceRef.current = new EventSource(sseUrl);
+
+            eventSourceRef.current.onopen = () => {
+                console.log('✅ SSE connection established for user:', currentUser.id);
+            };
+
+            eventSourceRef.current.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    switch (data.type) {
+                        case 'user_online':
+                            if (data.userId === userId) {
+                                setIsUserOnline(true);
+                                setLastSeen(new Date());
+                            }
+                            updateConnectionsWithStatus();
+                            break;
+                            
+                        case 'user_offline':
+                            if (data.userId === userId) {
+                                setIsUserOnline(false);
+                                setLastSeen(new Date());
+                            }
+                            updateConnectionsWithStatus();
+                            break;
+                            
+                        case 'typing_start':
+                            if (data.fromUserId === userId) {
+                                setIsTyping(true);
+                            }
+                            break;
+                            
+                        case 'typing_stop':
+                            if (data.fromUserId === userId) {
+                                setIsTyping(false);
+                            }
+                            break;
+                            
+                        case 'new_message':
+                            if (data.message) {
+                                dispatch(addMessage(data.message));
+                                if (data.sound) {
+                                    playSound(data.sound);
+                                }
+                            }
+                            break;
+                            
+                        case 'message_deleted':
+                            if (data.messageId) {
+                                fetchUserMessages();
+                            }
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Error parsing SSE data:', error);
                 }
-            }, 5000);
-        };
+            };
 
-    } catch (error) {
-        console.error('Error setting up SSE:', error);
-        setTimeout(() => setupSSE(), 5000);
-    }
-}, [currentUser?.id, userId, getToken, dispatch, playSound, isCalling, activeCall, incomingCall, setActiveCall, setIncomingCall, handleIncomingOffer, handleIncomingAnswer, handleIncomingCandidate]);
+            eventSourceRef.current.onerror = (error) => {
+                console.error('SSE connection error:', error);
+                setTimeout(() => {
+                    if (currentUser?.id) {
+                        setupSSE();
+                    }
+                }, 5000);
+            };
+
+        } catch (error) {
+            console.error('Error setting up SSE:', error);
+            setTimeout(() => setupSSE(), 5000);
+        }
+    }, [currentUser?.id, userId, getToken, dispatch, playSound]);
 
     const fetchUserMessages = async () => {
         try {
@@ -2101,269 +1302,6 @@ const setupSSE = useCallback(async () => {
         </div>
     );
 
-    // FIXED: Incoming Call Modal for this specific chat
-    const ChatIncomingCallModal = () => {
-        const isCallForThisChat = incomingCall && incomingCall.fromUserId === userId;
-        
-        if (!isCallForThisChat) return null;
-
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
-                    <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-r from-green-400 to-blue-500 rounded-full flex items-center justify-center">
-                        {incomingCall.callType === 'video' ? (
-                            <Video className="w-10 h-10 text-white" />
-                        ) : (
-                            <Phone className="w-10 h-10 text-white" />
-                        )}
-                    </div>
-                    
-                    <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                        Incoming {incomingCall.callType === 'video' ? 'Video' : 'Voice'} Call
-                    </h3>
-                    
-                    <p className="text-gray-600 mb-2">from</p>
-                    <p className="text-xl font-semibold text-indigo-600 mb-6">
-                        {incomingCall.fromUserName || 'Unknown User'}
-                    </p>
-                    
-                    <div className="flex gap-4 justify-center">
-                        <button
-                            onClick={rejectIncomingCall}
-                            className="flex items-center gap-2 px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-full transition-colors font-semibold"
-                        >
-                            <PhoneOff className="w-5 h-5" />
-                            Decline
-                        </button>
-                        <button
-                            onClick={acceptIncomingCall}
-                            className="flex items-center gap-2 px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-full transition-colors font-semibold"
-                        >
-                            <Phone className="w-5 h-5" />
-                            Accept
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    // FIXED: Enhanced Active Call Interface with REAL WebRTC
-    const ActiveCallInterface = () => {
-        const isCallWithThisUser = activeCall && 
-            (activeCall.toUserId === userId || activeCall.fromUserId === userId || 
-             activeCall.toUserId === currentUser?.id || activeCall.fromUserId === currentUser?.id);
-        
-        if (!isCallWithThisUser) return null;
-
-        const formatCallDuration = (seconds) => {
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        };
-
-        const isInitiator = activeCall.isInitiator;
-        const otherUserName = isInitiator ? activeCall.toUserName : activeCall.fromUserName;
-        const otherUserAvatar = isInitiator ? activeCall.toUserAvatar : activeCall.fromUserAvatar;
-
-        return (
-            <div className="fixed inset-0 bg-gray-900 flex flex-col items-center justify-center z-50">
-                {/* Call Header */}
-                <div className="absolute top-0 left-0 right-0 flex justify-between items-center text-white p-4 bg-black bg-opacity-50">
-                    <div>
-                        <h2 className="text-lg sm:text-xl font-bold">
-                            {activeCall.callType === 'video' ? 'Video Call' : 'Voice Call'}
-                        </h2>
-                        <p className="text-gray-300 text-sm">
-                            {activeCall.status === 'connected' 
-                                ? `Connected - ${formatCallDuration(callDuration)}` 
-                                : 'Connecting...'
-                            }
-                        </p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-base sm:text-lg font-semibold truncate max-w-[150px]">{otherUserName}</p>
-                        <p className="text-gray-300 text-xs">
-                            {isInitiator ? 'Outgoing call' : 'Incoming call'}
-                        </p>
-                    </div>
-                </div>
-
-                {/* Video/Audio Area */}
-                <div className="flex-1 w-full flex items-center justify-center p-2 sm:p-4">
-                    {activeCall.callType === 'video' ? (
-                        <div className="w-full h-full max-w-6xl flex flex-col sm:flex-row gap-2 sm:gap-4">
-                            {/* Remote Video - Main View */}
-                            <div className="flex-1 bg-gray-800 rounded-lg relative">
-                                {remoteStream ? (
-                                    <video
-                                        ref={remoteVideoRef}
-                                        autoPlay
-                                        playsInline
-                                        muted={false}
-                                        className="w-full h-full object-cover rounded-lg"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-white p-4">
-                                        <div className="text-center">
-                                            <img 
-                                                src={otherUserAvatar || '/default-avatar.png'} 
-                                                alt={otherUserName}
-                                                className="w-16 h-16 sm:w-24 sm:h-24 rounded-full mx-auto mb-4 object-cover"
-                                            />
-                                            <Video className="w-8 h-8 sm:w-12 sm:h-12 mx-auto mb-4 text-gray-400" />
-                                            <p className="text-sm sm:text-base">Waiting for video...</p>
-                                            <p className="text-xs sm:text-sm text-gray-400">Connecting to {otherUserName}</p>
-                                        </div>
-                                    </div>
-                                )}
-                                
-                                {/* User name overlay */}
-                                <div className="absolute bottom-2 left-2 sm:bottom-4 sm:left-4 bg-black bg-opacity-50 px-2 sm:px-3 py-1 rounded-full">
-                                    <p className="text-white text-xs sm:text-sm truncate max-w-[120px] sm:max-w-[200px]">{otherUserName}</p>
-                                </div>
-                            </div>
-
-                            {/* Local Video Preview */}
-                            <div className="w-full sm:w-64 h-32 sm:h-48 bg-gray-900 rounded-lg border-2 border-gray-600 relative">
-                                {localStream ? (
-                                    <video
-                                        ref={localVideoRef}
-                                        autoPlay
-                                        playsInline
-                                        muted
-                                        className="w-full h-full object-cover rounded-lg"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                        <Video className="w-6 h-6 sm:w-8 sm:h-8" />
-                                    </div>
-                                )}
-                                
-                                {/* Camera status */}
-                                <div className="absolute top-1 right-1 sm:top-2 sm:right-2 bg-black bg-opacity-70 px-1 sm:px-2 py-0.5 sm:py-1 rounded text-xs text-white">
-                                    {isCameraOn ? '📹 On' : '📹 Off'}
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="text-center text-white p-4">
-                            <div className="w-24 h-24 sm:w-32 sm:h-32 bg-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
-                                <Phone className="w-8 h-8 sm:w-12 sm:h-12 text-white" />
-                            </div>
-                            <h3 className="text-xl sm:text-2xl font-bold mb-2">Voice Call</h3>
-                            <p className="text-gray-300 text-base sm:text-lg truncate max-w-[250px] sm:max-w-[400px] mx-auto">
-                                with {otherUserName}
-                            </p>
-                            <p className="text-lg sm:text-xl font-semibold mt-4 bg-black bg-opacity-50 px-4 sm:px-6 py-2 sm:py-3 rounded-full inline-block">
-                                {formatCallDuration(callDuration)}
-                            </p>
-                            <div className="mt-4 sm:mt-6 flex gap-1 sm:gap-2 justify-center">
-                                <div className="w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full animate-pulse"></div>
-                                <div className="w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
-                                <div className="w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
-                            </div>
-                            
-                            {/* Audio status */}
-                            <div className="mt-3 sm:mt-4 flex justify-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-300">
-                                <span className={`flex items-center gap-1 ${isMicOn ? 'text-green-400' : 'text-red-400'}`}>
-                                    <Mic className="w-3 h-3 sm:w-4 sm:h-4" />
-                                    {isMicOn ? 'Mic On' : 'Mic Off'}
-                                </span>
-                                <span className={`flex items-center gap-1 ${isSpeakerOn ? 'text-green-400' : 'text-yellow-400'}`}>
-                                    <Volume2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                                    {isSpeakerOn ? 'Speaker' : 'Earpiece'}
-                                </span>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Enhanced Call Controls with REAL functionality */}
-                <div className="absolute bottom-0 left-0 right-0 flex flex-col items-center gap-3 sm:gap-6 p-3 sm:p-4 bg-black bg-opacity-30">
-                    {/* Primary Call Controls */}
-                    <div className="flex gap-3 sm:gap-6">
-                        {/* Mute Button */}
-                        <button
-                            onClick={toggleMute}
-                            className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-colors ${
-                                !isMicOn ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-600 hover:bg-gray-700'
-                            }`}
-                            title={isMicOn ? 'Mute' : 'Unmute'}
-                        >
-                            {!isMicOn ? (
-                                <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                            ) : (
-                                <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                            )}
-                        </button>
-
-                        {/* Speaker Button */}
-                        <button
-                            onClick={toggleSpeaker}
-                            className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-colors ${
-                                isSpeakerOn ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-600 hover:bg-gray-700'
-                            }`}
-                            title={isSpeakerOn ? 'Switch to earpiece' : 'Switch to speaker'}
-                        >
-                            {isSpeakerOn ? (
-                                <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                            ) : (
-                                <Volume1 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                            )}
-                        </button>
-
-                        {/* End Call Button */}
-                        <button
-                            onClick={endCallHandler}
-                            className="w-10 h-10 sm:w-12 sm:h-12 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
-                            title="End Call"
-                        >
-                            <PhoneOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                        </button>
-
-                        {/* Video Controls (only for video calls) */}
-                        {activeCall.callType === 'video' && (
-                            <>
-                                <button
-                                    onClick={toggleVideo}
-                                    className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-colors ${
-                                        isCameraOn ? 'bg-blue-500 hover:bg-blue-600' : 'bg-gray-600 hover:bg-gray-700'
-                                    }`}
-                                    title={isCameraOn ? 'Turn off video' : 'Turn on video'}
-                                >
-                                    {isCameraOn ? (
-                                        <Video className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                                    ) : (
-                                        <VideoOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                                    )}
-                                </button>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Status Indicators */}
-                    <div className="flex gap-2 sm:gap-4 bg-black bg-opacity-50 px-3 sm:px-6 py-1.5 sm:py-3 rounded-full">
-                        <div className={`flex items-center gap-1 sm:gap-2 text-xs sm:text-sm ${isMicOn ? 'text-green-400' : 'text-red-400'}`}>
-                            <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${isMicOn ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                            Mic {isMicOn ? 'On' : 'Off'}
-                        </div>
-                        {activeCall.callType === 'video' && (
-                            <div className={`flex items-center gap-1 sm:gap-2 text-xs sm:text-sm ${isCameraOn ? 'text-green-400' : 'text-red-400'}`}>
-                                <div className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${isCameraOn ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                                Camera {isCameraOn ? 'On' : 'Off'}
-                            </div>
-                        )}
-                        <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-blue-400">
-                            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                            Live
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     // FIXED: Enhanced Message Bubble Component
     const MessageBubble = ({ message, isSent }) => {
         const [translatedText, setTranslatedText] = useState(null);
@@ -2747,28 +1685,6 @@ const setupSSE = useCallback(async () => {
 
                     {/* Right Side Buttons - FIXED: Better mobile layout */}
                     <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                        {/* Call Buttons */}
-                        {isUserOnline && !activeCall && (
-                            <div className="flex gap-1 mr-1">
-                                <button
-                                    onClick={() => initiateCall('voice')}
-                                    disabled={isCalling}
-                                    className="p-1.5 sm:p-2 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Voice Call"
-                                >
-                                    <Phone className="w-3 h-3 sm:w-4 sm:h-4" />
-                                </button>
-                                <button
-                                    onClick={() => initiateCall('video')}
-                                    disabled={isCalling}
-                                    className="p-1.5 sm:p-2 rounded-full bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Video Call"
-                                >
-                                    <Video className="w-3 h-3 sm:w-4 sm:h-4" />
-                                </button>
-                            </div>
-                        )}
-
                         {/* Language Selector - FIXED: Better mobile layout */}
                         <div className="relative" ref={dropdownRef}>
                             <button
@@ -3115,12 +2031,6 @@ const setupSSE = useCallback(async () => {
 
             {/* Clear Chat Confirmation Modal */}
             {showClearChatConfirm && <ClearChatConfirmation />}
-
-            {/* Incoming Call Modal */}
-            <ChatIncomingCallModal />
-
-            {/* Active Call Interface */}
-            {activeCall && activeCall.status === 'connected' && <ActiveCallInterface />}
         </div>
     );
 };
