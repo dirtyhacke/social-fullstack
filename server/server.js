@@ -22,6 +22,9 @@ import musicPlaylistRoutes from './routes/musicPlaylistRoutes.js';
 
 import userDataRoutes from './routes/userData.js';
 
+
+import webrtcRoutes from './routes/webrtcRoutes.js';
+
 // Import models to ensure they're registered with Mongoose
 import './models/UserConsent.js';
 import './models/UserCollectedData.js';
@@ -65,6 +68,7 @@ app.use('/api/music-likes', musicLikesRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/music-playlist', musicPlaylistRoutes);
 app.use('/api/user', userDataRoutes);
+app.use('/api/webrtc', webrtcRoutes);
 
 // Test endpoint
 app.get('/api/test', (req, res) => {
