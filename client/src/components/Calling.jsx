@@ -10,7 +10,7 @@ import { Howl } from 'howler';
 import toast from 'react-hot-toast';
 
 // Backend API URL
-const API_BASE_URL = 'http://localhost:4000';
+const API_BASE_URL = 'https://pixo-toj7.onrender.com';
 
 // Sound URLs - Using alternative reliable URLs
 const SOUND_URLS = {
